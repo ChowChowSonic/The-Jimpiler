@@ -1,0 +1,36 @@
+import deez, nuts;
+public singular int e = 0; 
+private const int f = 1; 
+private int b; 
+
+object struct{
+    protected bool b = true; 
+    constructor(){
+        //inline comment
+    }
+    
+    ?? 
+     * multi line documentation comment
+    ??
+    destructor(){
+
+    }
+}
+int main(){
+    int i = 32; 
+    pointer location = -> i; 
+    char c = @location; 
+    for(int x = 0; x < 20; x++){ //while(int x = 0; x < 20; x++){
+        if(x != 0){
+            switch(x){
+                case 1{
+                    print << "yeet"; 
+                }
+                case 2{
+                    //Just do something lmao
+                }
+            }
+            c++; 
+        } 
+    }
+}
