@@ -4,7 +4,7 @@
 #include <fstream>
 #include <iomanip>
 #include "tokenizer.cpp"
-
+#include "Stream.cpp"
 using namespace std; 
 
 int main(int argc, char**args){
@@ -14,9 +14,13 @@ int main(int argc, char**args){
     while(!file.eof()){
         tokens.push_back(getNextToken(file, ln));
     }
+    Stack<Token> s(tokens);
 
-    for(Token t : tokens){
-        cout << std::setw(15) << keytokens[t.token]  << std::setw(15) <<"'" << t.lex<<"'" <<endl; 
-    }
+    while(!s.eof()){
+        cout << s.next().lex << endl; 
+    } 
+    //for(Token t : tokens){
+    //    cout << std::setw(15) << keytokens[t.token]  << std::setw(15) <<"'" << t.lex<<"'" <<endl; 
+    //}
 
 }
