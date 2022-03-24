@@ -1,10 +1,12 @@
-#include <vector>
 
 template <typename T>
 class Stack{
     public:
     int index = 0, size = 0; 
     T * items; 
+    Stack(){
+        items = 0; 
+    }
     Stack(vector<T> item){
         items = new T[item.size()]; 
         size = item.size(); 
@@ -15,7 +17,7 @@ class Stack{
         }
     };
     ~Stack(){
-        delete[] items; 
+        items->~Token();
         index = 0;
         size = 0; 
     }
@@ -31,7 +33,7 @@ class Stack{
      * Works in in O(1) time. 
      * 
      * @param i - How many item down to look
-     * @return T - Either the last item in the list, or the item I down. Whichever is smaller
+     * @return T - Either the last item in the list, or the item I down. Whichever is closer
      */
     T scry(int i){
         if(index+i >= size) return items[size-1];
@@ -39,17 +41,19 @@ class Stack{
 
     }
     /**
-     * @brief If you've ever played Magic the Gathering, SCRY 1, always putting it on top.
+     * @brief If you've ever played Magic the Gathering, SCRY 1, always putting the card on top.
      * If you havent't played Magic the Gathering, it is effectively Stream.peek(). 
      * Works in in O(1) time. 
      * 
-     * @param i - How many item down to look
-     * @return T - Either the last item in the list, or the item I down. Whichever is smaller
+     * @return T - Either the last item in the list, or the item I down. Whichever is closer
      */
     T scry(){
         if(index+1 >= size) return items[size-1];
-        return items[index+1];
+        return items[index];
 
+    }
+    T peek(){
+        return items[index]; 
     }
     bool eof(){
         return (index >= size); 
@@ -57,5 +61,13 @@ class Stack{
     void reset(){
         index = 0;
     }
-
+    /**
+     * @brief Adds I items back onto the stack. Items will be returned as if they were never removed to begin with, in the same, correct order. 
+     * 
+     * @param i - The number of items to add back onto the stack
+     */
+    void go_back(int i){
+        if(index-i <= 0) index = 0; 
+        else index -= i;
+    }
 };

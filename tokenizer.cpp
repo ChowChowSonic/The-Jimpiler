@@ -1,8 +1,5 @@
-//Tokenizer of the compilier
-#include <stdio.h>
 #include <map>
-#include <string>
-#include <istream>
+//Tokenizer of the compilier
 using namespace std; 
 
 enum KeyToken{
@@ -17,13 +14,13 @@ enum KeyToken{
     INT, SHORT, LONG, POINTER, FLOAT, DOUBLE, STRING, BOOL, CHAR, BYTE, //Done 
 };
 
-map<string, KeyToken> keywords {
+map<string, KeyToken> keywords = {
     {"", IDENT}, {"IN", IN}, {"AND",AND}, {"OR",OR}, {"TRUE", TRU}, {"FALSE", FALS}, {"IMPORT", IMPORT},
     {"IF", IF}, {"ELSE", ELSE}, {"FOR", FOR}, {"WHILE", WHILE}, {"CASE", CASE}, {"SWITCH", SWITCH},
     {"OBJECT", OBJECT}, {"CONSTRUCTOR", CONSTRUCTOR}, {"DESTRUCTOR", DESTRUCTOR},
     {"CONST", CONST}, {"SINGULAR", SINGULAR}, {"PUBLIC", PUBLIC}, {"PRIVATE", PRIVATE}, {"PROTECTED", PROTECTED},
     {"INT", INT}, {"SHORT", SHORT}, {"LONG", LONG}, {"POINTER", POINTER}, {"FLOAT", FLOAT}, {"DOUBLE", DOUBLE}, {"STRING", STRING}, {"BOOL", BOOL}, {"CHAR", CHAR}, {"BYTE", BYTE},
-    };
+};
 
 string keytokens[] {
     "IDENT","ERR","IN","AND","OR","TRU","FALS", "NOT", "IMPORT",

@@ -3,10 +3,11 @@
 #include <vector>
 #include <fstream>
 #include <iomanip>
-#include "tokenizer.cpp"
-#include "Stream.cpp"
+#include <stdio.h>
+#include "Tokenizer.cpp"
+#include "Stack.cpp"
+#include "treeifyer.cpp"
 using namespace std; 
-
 int main(int argc, char**args){
     vector<Token> tokens;
     ifstream file("test.txt"); 
@@ -15,12 +16,13 @@ int main(int argc, char**args){
         tokens.push_back(getNextToken(file, ln));
     }
     Stack<Token> s(tokens);
-
-    while(!s.eof()){
-        cout << s.next().lex << endl; 
-    } 
+    for(int i = 0; i < 10; i ++){
+    cout << getValidStmt(s); 
+    }
+    //while(!s.eof()){
+    //    cout << s.next().lex << endl; 
+    //} 
     //for(Token t : tokens){
     //    cout << std::setw(15) << keytokens[t.token]  << std::setw(15) <<"'" << t.lex<<"'" <<endl; 
     //}
-
 }
