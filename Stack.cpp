@@ -1,5 +1,11 @@
 
 template <typename T>
+/**
+ * @brief A read-only version of the stack that allows the user to go back any amount. 
+ * Intended for functions that require stack like operations, but either require 
+ * optimization or the ability to go backwards in the stack multiple times over 
+ * 
+ */
 class Stack{
     public:
     int index = 0, size = 0; 
@@ -8,8 +14,8 @@ class Stack{
         items = 0; 
     }
     Stack(vector<T> item){
-        items = new T[item.size()]; 
-        size = item.size(); 
+        size = item.size();
+        items = new T[size]; 
         int x = 0;
         for(T i : item){
             items[x] = i; 
@@ -17,7 +23,8 @@ class Stack{
         }
     };
     ~Stack(){
-        items->~Token();
+        delete[] items; 
+        //items->~Token();
         index = 0;
         size = 0; 
     }
@@ -67,7 +74,7 @@ class Stack{
      * @param i - The number of items to add back onto the stack
      */
     void go_back(int i){
-        if(index-i <= 0) index = 0; 
-        else index -= i;
+        index -=i; 
+        if(index < 0) index = 0; 
     }
 };

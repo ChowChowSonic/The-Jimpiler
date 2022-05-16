@@ -1,4 +1,6 @@
-#include <map>
+//#include <map>
+//#include <string> 
+//#include <iostream>
 //Tokenizer of the compilier
 using namespace std; 
 
@@ -49,13 +51,42 @@ class Token{
         lex = lexeme; 
         line = line; 
     }
+
+    string toString(){
+        string st; 
+        st+=keytokens[token]; 
+        st+=" '";
+        st+=lex; 
+        st+="' Line:";
+        st+=to_string(ln); 
+        return st;
+    }
+
+    friend ostream& operator<<(ostream& s, Token t){
+        string q; 
+        q+= keytokens[t.token]; 
+        if(t.token == IDENT) q+="("+t.lex+")";
+        cout <<std::setw(10)<<q;
+        cout << "\tline: " << t.ln <<endl;
+        return s; 
+    }
+    bool operator==(Token t){
+        return (token == t.token); 
+    }
+    bool operator!=(Token t){
+        return (token != t.token); 
+    }
+    bool operator==(KeyToken t){
+        return (token == t); 
+    }
+    bool operator!=(KeyToken t){
+        return (token != t); 
+    }
 };
 
-bool iequals(const string& a, const string& b)
-{
+bool iequals(const string& a, const string& b){
     unsigned int sz = a.size();
-    if (b.size() != sz)
-        return false;
+    if (b.size() != sz) return false;
     for (unsigned int i = 0; i < sz; ++i)
         if (tolower(a[i]) != tolower(b[i]))
             return false;

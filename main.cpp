@@ -4,25 +4,38 @@
 #include <fstream>
 #include <iomanip>
 #include <stdio.h>
-#include "Tokenizer.cpp"
+#include <map>
+#include <string>
+#include "tokenizer.cpp"
 #include "Stack.cpp"
 #include "treeifyer.cpp"
 using namespace std; 
 int main(int argc, char**args){
     vector<Token> tokens;
     ifstream file("test.txt"); 
-    int ln = 0;
+    int ln = 1;
     while(!file.eof()){
-        tokens.push_back(getNextToken(file, ln));
+        Token t = getNextToken(file, ln); 
+        t.ln = ln; 
+        tokens.push_back(t);
     }
     Stack<Token> s(tokens);
-    for(int i = 0; i < 10; i ++){
-    cout << getValidStmt(s); 
+    //while(!s.eof()) cout << s.next().ln<<endl;
+    bool b;
+    while((b = getValidStmt(s))){
+    }
+    if(!b){
+        Token err = s.peek(); 
+        cout <<"Error located at line "<<err.ln<<":\n";
+        Token e2; 
+        while((e2 = s.next()).ln == err.ln && !s.eof()){
+            cout << e2.lex << " "; 
+        }
     }
     //while(!s.eof()){
     //    cout << s.next().lex << endl; 
     //} 
     //for(Token t : tokens){
     //    cout << std::setw(15) << keytokens[t.token]  << std::setw(15) <<"'" << t.lex<<"'" <<endl; 
-    //}
+    //} 
 }

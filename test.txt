@@ -1,7 +1,7 @@
 import deez, nuts;
-public singular int e = 0; 
-private const int f = 1; 
-private int b; 
+public singular int e = 0; //equivalent of Java's Static modifier
+private const int f = 1; //equivalent of Java's Final modifier
+int b; 
 
 object struct{
     protected bool b = true; 
@@ -20,6 +20,7 @@ int main(){
     int i = 32; 
     pointer location = -> i; 
     char c = @location; 
+    int i2 = 5; 
     for(int x = 0; x < 20; x++){ //while(int x = 0; x < 20; x++){
         if(x != 0){
             switch(x){
