@@ -16,12 +16,13 @@ object struct{
 
     }
 }
-int main(){
+
+int main(string args){
     int i = 32; 
     pointer location = -> i; 
     char c = @location; 
     int i2 = 5; 
-    for(int x = 0; x < 20; x++){ //while(int x = 0; x < 20; x++){
+    for(int x = 0; x < 20 & x > 0; x++){ //while(int x = 0; x < 20; x++){
         if(x != 0){
             switch(x){
                 case 1{

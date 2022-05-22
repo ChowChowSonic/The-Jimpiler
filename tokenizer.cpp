@@ -39,9 +39,9 @@ enum LexState{START, INNUM, INSTRING, INCOMMENT, INLINECOMMENT, INIDENT};
 
 class Token{
     public:
-    KeyToken token;
+    KeyToken token = ERR;
     string lex; 
-    int ln; 
+    int ln = -1; 
     Token(){
         token = ERR; 
         ln = -1; 
@@ -127,6 +127,8 @@ Token getNextToken(istream & s, int & line){
                 }
             if(ch == '@') return Token(REFRENCETO, "@", line); 
             else if(ch == ';') return Token(SEMICOL, ";", line); 
+            else if(ch == '&') return Token(AND, "&", line); 
+            else if(ch == '|') return Token(OR, "|", line); 
             else if (ch == '{') return Token(OPENCURL, "{", line); 
             else if (ch == '}') return Token(CLOSECURL, "}", line); 
             else if (ch == ')') return Token(RPAREN, ")", line); 
@@ -167,7 +169,7 @@ Token getNextToken(istream & s, int & line){
                 state = INCOMMENT; 
                 continue;
             }else if (isalpha(ch)) {
-                if(isalpha(nextchar)){
+                if(isValidIdent(nextchar)){
                 state = INIDENT; 
                 }else {
                     lexeme = ch; 
@@ -186,9 +188,10 @@ Token getNextToken(istream & s, int & line){
             break;
             }
             case INIDENT:{
-            bool isvalidchar = isValidIdent(ch) && isValidIdent(nextchar);
-            if(!isspace(ch))lexeme+=ch; 
-            if(!isvalidchar) return Token(keywords[toUpper(lexeme)], lexeme, line); 
+            bool isvalidchar = isValidIdent(ch);// && isValidIdent(nextchar);
+            bool isnextvalid = isValidIdent(nextchar);
+            if(isvalidchar && !isspace(ch))lexeme+=ch; 
+            if(!isnextvalid) return Token(keywords[toUpper(lexeme)], lexeme, line); 
             break;
             }
             case INNUM:{

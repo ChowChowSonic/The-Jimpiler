@@ -11,6 +11,7 @@
 #include "treeifyer.cpp"
 using namespace std; 
 int main(int argc, char**args){
+    //time_t now = time(nullptr);
     vector<Token> tokens;
     ifstream file("test.txt"); 
     int ln = 1;
@@ -19,6 +20,7 @@ int main(int argc, char**args){
         t.ln = ln; 
         tokens.push_back(t);
     }
+
     Stack<Token> s(tokens);
     //while(!s.eof()) cout << s.next().ln<<endl;
     bool b;
@@ -26,12 +28,14 @@ int main(int argc, char**args){
     }
     if(!b){
         Token err = s.peek(); 
-        cout <<"Error located at line "<<err.ln<<":\n";
+        cout <<"Syntax error located at token '"<< err.lex <<"' on line "<<err.ln<<":\n";
         Token e2; 
         while((e2 = s.next()).ln == err.ln && !s.eof()){
-            cout << e2.lex << " "; 
+            cout <<e2.lex << " "; 
         }
     }
+    //time_t end = time(nullptr); 
+    //cout << endl <<"compiled in approx: "<< (end - now) << " seconds"; 
     //while(!s.eof()){
     //    cout << s.next().lex << endl; 
     //} 

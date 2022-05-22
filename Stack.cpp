@@ -71,9 +71,9 @@ class Stack{
     /**
      * @brief Adds I items back onto the stack. Items will be returned as if they were never removed to begin with, in the same, correct order. 
      * 
-     * @param i - The number of items to add back onto the stack
+     * @param i - The number of items to add back onto the stack. Is set to 1 if no paramater is passed
      */
-    void go_back(int i){
+    void go_back(int i = 1){
         index -=i; 
         if(index < 0) index = 0; 
     }
