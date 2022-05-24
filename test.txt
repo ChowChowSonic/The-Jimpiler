@@ -18,12 +18,12 @@ object struct{
 }
 
 int main(string args){
-    int i = 32; 
+    int i = 32 - --i; 
     pointer location = -> i; 
     char c = @location; 
     int i2 = 5; 
-    for(int x = 0; x < 20 & x > 0; x++){ //while(int x = 0; x < 20; x++){
-        if(x != 0){
+    for(int x = 0; x < 20 and x > 0; x++){ //while(x < 20 or x > 0){
+        if(x > 0){
             switch(x){
                 case 1{
                     print << "yeet"; 
@@ -31,8 +31,11 @@ int main(string args){
                 case 2{
                     //Just do something lmao
                 }
+                case 3{
+
+                }
             }
-            c++; 
+            ++c; 
         } 
     }
 }

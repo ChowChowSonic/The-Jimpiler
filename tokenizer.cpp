@@ -6,7 +6,7 @@ using namespace std;
 
 enum KeyToken{
     IDENT, ERR, IN, AND, OR, TRU, FALS, NOT, IMPORT, //Done
-    EQUALCMP, EQUALS, GREATER, LESS, INSERTION, REMOVAL, //Done
+    EQUALCMP, EQUALS, GREATER, LESS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
     OPENCURL, CLOSECURL, LPAREN, RPAREN, COMMA, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, //Done
     IF, ELSE, FOR, WHILE, CASE, SWITCH, //Done
@@ -26,7 +26,7 @@ map<string, KeyToken> keywords = {
 
 string keytokens[] {
     "IDENT","ERR","IN","AND","OR","TRU","FALS", "NOT", "IMPORT",
-    "EQUALCMP","EQUALS","GREATER", "LESS", "INSERTION","REMOVAL",
+    "EQUALCMP","EQUALS","GREATER", "LESS", "INSERTION","REMOVAL", "INCREMENT", "DECREMENT",
     "OPENCURL","CLOSECURL","LPAREN","RPAREN", "COMMA",
     "PLUS","MINUS","MULT","DIV","LEFTOVER","POWERTO","POINTERTO","REFRENCETO",
     "IF","ELSE","FOR","WHILE","CASE","SWITCH",
@@ -127,18 +127,19 @@ Token getNextToken(istream & s, int & line){
                 }
             if(ch == '@') return Token(REFRENCETO, "@", line); 
             else if(ch == ';') return Token(SEMICOL, ";", line); 
-            else if(ch == '&') return Token(AND, "&", line); 
-            else if(ch == '|') return Token(OR, "|", line); 
             else if (ch == '{') return Token(OPENCURL, "{", line); 
             else if (ch == '}') return Token(CLOSECURL, "}", line); 
             else if (ch == ')') return Token(RPAREN, ")", line); 
             else if (ch == '(') return Token(LPAREN, "(", line); 
-            else if (ch == '+') return Token(PLUS, "+", line); 
             else if (ch == '*') return Token(MULT, "*", line); 
             else if (ch == '^') return Token(POWERTO, "^", line); 
             else if (ch == '%') return Token(LEFTOVER, "%", line); 
             else if (ch == '!') return Token(NOT, "!", line); 
             else if (ch == ',') return Token(COMMA, ",", line); 
+            else if (ch == '+' && nextchar == '+') {
+                s.get(); 
+                return Token(INCREMENT, "++", line); }
+            else if (ch == '+') return Token(PLUS, "+", line); 
             //Removal operator vs. Less Than
             else if (ch == '<' && nextchar == '<') {
                 s.get();
@@ -158,6 +159,9 @@ Token getNextToken(istream & s, int & line){
             else if (ch == '-' && nextchar == '>') {
                 s.get();
                 return Token(POINTERTO, "->", line); 
+            }else if (ch == '-' && nextchar == '-') {
+                s.get();
+                return Token(DECREMENT, "--", line); 
             }else if (ch == '-') return Token(MINUS, "-", line); 
             //Equals compare vs Equals assign; 
             else if (ch == '=' && nextchar == '=') {

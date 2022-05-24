@@ -8,7 +8,7 @@
 #include <string>
 #include "tokenizer.cpp"
 #include "Stack.cpp"
-#include "treeifyer.cpp"
+#include "analyzer.cpp"
 using namespace std; 
 int main(int argc, char**args){
     //time_t now = time(nullptr);
@@ -22,18 +22,21 @@ int main(int argc, char**args){
     }
 
     Stack<Token> s(tokens);
-    //while(!s.eof()) cout << s.next().ln<<endl;
+    //while(!s.eof()) cout << s.next().lex << s.index << " " << s.size<<endl;
+    //s.reset(); 
     bool b;
-    while((b = getValidStmt(s))){
+    while(!s.eof() && (b = getValidStmt(s))){
     }
-    if(!b){
-        Token err = s.peek(); 
+    if(!b || openbrackets != 0){
+        Token err = s.peek(); //cout << openbrackets <<endl ;
         cout <<"Syntax error located at token '"<< err.lex <<"' on line "<<err.ln<<":\n";
         Token e2; 
         while((e2 = s.next()).ln == err.ln && !s.eof()){
             cout <<e2.lex << " "; 
         }
+        return 0; 
     }
+    cout << "Successful analysis of provided code - no syntax errors found"; 
     //time_t end = time(nullptr); 
     //cout << endl <<"compiled in approx: "<< (end - now) << " seconds"; 
     //while(!s.eof()){

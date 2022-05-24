@@ -15,6 +15,7 @@ class Stack{
     }
     Stack(vector<T> item){
         size = item.size();
+        //cout << item.size() << " " <<size; 
         items = new T[size]; 
         int x = 0;
         for(T i : item){
@@ -69,9 +70,10 @@ class Stack{
         index = 0;
     }
     /**
-     * @brief Adds I items back onto the stack. Items will be returned as if they were never removed to begin with, in the same, correct order. 
+     * @brief Adds "i" items back onto the stack. Items will be returned to the stack as if they were never removed to begin with, in the same, correct order. 
      * 
      * @param i - The number of items to add back onto the stack. Is set to 1 if no paramater is passed
+     * @return void
      */
     void go_back(int i = 1){
         index -=i; 
