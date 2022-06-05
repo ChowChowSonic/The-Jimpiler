@@ -25,14 +25,15 @@ class Stack{
     };
     ~Stack(){
         delete[] items; 
-        //items->~Token();
+        //items->~T();
         index = 0;
         size = 0; 
     }
     T next(){
-        if(index >= size) index--; 
+        //cout << index << " " << items[index] <<endl; 
         T Q = items[index]; 
         index++; 
+        //if(index >= size) index--; 
         return Q; 
     }
     /**
@@ -64,7 +65,7 @@ class Stack{
         return items[index]; 
     }
     bool eof(){
-        return (index >= size); 
+        return (index >= size-1); 
     }
     void reset(){
         index = 0;

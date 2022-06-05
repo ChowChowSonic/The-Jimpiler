@@ -2,13 +2,8 @@
 //#include "Stack.cpp"
 using namespace std; 
 //Syntax analyzer for the Compilier
-
-/**
- * @brief The number of open curly brackets that the current function is nested within. Whenever an opening bracket is seen ("{"),
- * this number is incremented by 1. Whenever a closing curly bracket is seen ("}"), it is reduced by 1. 
- * 
- */
-int openbrackets = 0; 
+scope * currentScope = 0; 
+//vector<scope> scopes; 
 bool import(Stack<Token>& tokens){
 	Token t = tokens.next(); 
 	while((t.token == IDENT || t.token == COMMA) && t.token != SEMICOL){
@@ -51,7 +46,6 @@ bool logicStmt(Stack<Token>& tokens){
 	if(t1 == TRU || t1 == FALS) return true; 
 	//bool isbool = {} //True if t1 is a variable/function of the type bool
 	if(t1 != IDENT && t1!=SCONST && t1!=NUMCONST){ //Check if it's a boolean when implemented
-	
 		tokens.go_back(1); 
 		return false; 
 	}
@@ -79,7 +73,7 @@ bool logicStmt(Stack<Token>& tokens){
  * @brief using EBNF notation, a term is defined as: 
  * <number> = <IDENT> (*of integer type*) | <NUMCONST>; 
  *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<number>["++"|"--"]; 
- * However the ending [++|--] are only allowed if there is no ++|-- at the beginning of the term
+ * However the ending [++|--] are only allowed if there is no (++|--) at the beginning of the term
  * This method will probably be compiled into the getBoolStmt function, or something similar at a later point
  * 
  * @param tokens 
@@ -95,14 +89,25 @@ bool term(Stack<Token>& tokens){
 	}
 	if(t == INCREMENT || t == DECREMENT){
 		t = tokens.next();
-		return t == IDENT; 
+		bool b = t == IDENT && currentScope->hasVariable(t.lex); 
+		if(!b) {cout << "Unidentified token: " << t.lex <<endl; tokens.go_back();}
+		return b; 
 	}else if(t == POINTERTO || t == REFRENCETO){
-		return tokens.next() == IDENT; 
+		t = tokens.next(); 
+		bool b = currentScope->hasVariable(t.lex); 
+		if(!b) {cout << "Unidentified token: " << t.lex <<endl; tokens.go_back();}
+		return b; 
 	}else if(t == IDENT && (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)){
 		tokens.next(); 
+		bool b = currentScope->hasVariable(t.lex); 
+		if(!b) {cout << "Unidentified token: " << t.lex <<endl; tokens.go_back();}
 		return true; 
+	}else if(t == IDENT){
+		bool b = currentScope->hasVariable(t.lex); 
+		if(!b) {cout << "Unidentified token: " << t.lex <<endl;}
+		return b; 
 	}
-	return t == IDENT || t == NUMCONST; 
+	return t == NUMCONST; 
 }
 
 bool expr(Stack<Token>& tokens){
@@ -131,25 +136,37 @@ bool expr(Stack<Token>& tokens){
  * @return true 
  * @return false 
  */
-bool declare(Stack<Token>& tokens){
+bool declare(Stack<Token>& tokens){ 
 	tokens.go_back(1); 
 	Token t = tokens.next();
 	KeyToken type = t.token; 
 	t = tokens.next();
+	//cout <<currentScope->hasVariable(t.lex) <<endl; 
 	if(t.token != IDENT){
-		
+		cout << "Error: Not an identifier: " << t.lex <<endl; 
 		tokens.go_back(2); 
 		return false; 
+	}else if(currentScope->hasVariable(t.lex)){
+		cout << "Variable redclaration" << endl; 
+		tokens.go_back(2);
+		return false; 
+	}
+	//cout << "Adding variable: " << t; 
+	currentScope->addVariable(t.lex); 
+	 if(tokens.peek() ==SEMICOL){tokens.next(); return true; }
+	 else if(tokens.next() == EQUALS){ 
+		bool b = false; 
+		if(type == BOOL)b = logicStmt(tokens);
+		else b = expr(tokens);
+		if(!b){
+			//tokens.go_back(); 
+			tokens.next(); 
+			if(t.lex == tokens.next().lex) cout << "Cannot use variable in its own declaration statement" << endl; 
+			tokens.go_back();
+			return false; 
+		}
 	}
 	
-	 if(tokens.peek() ==SEMICOL) return true; 
-	 else if(tokens.next() == EQUALS){ 
-		 bool b = false; 
-		 if(type == BOOL)b = logicStmt(tokens);
-		 else b = expr(tokens);
-		return b && tokens.next() == SEMICOL; 
-	}
-	 
 	t = tokens.next(); 
 	//variables[t] = type; 
 	//put a way to interpret statements here
@@ -162,9 +179,7 @@ bool obj(Stack<Token>& tokens){
 	if(tokens.next().token != IDENT){
 		return false; 
 	}
-	if(tokens.next().token != OPENCURL){
-		return false; 
-	}openbrackets++; 
+	//tokens.next(); //UNCOMMENT 
 	//go into the method that defines an object:
 	//TBI
 	//Need to handle closing curly bracket
@@ -192,10 +207,6 @@ bool functionParamList(Stack<Token>& tokens){
 
 bool function(Stack<Token>& tokens){
 bool b = functionParamList(tokens); 
-if(tokens.next() != OPENCURL){
-	tokens.go_back(1); 
-	return false; 
-}openbrackets++; 
 return b; 
 }
 
@@ -216,18 +227,16 @@ bool declareOrFunction(Stack<Token>& tokens){
 		tokens.go_back(1); 
 		return false;
 	}
-	if(t!=IDENT) t = tokens.next(); 
 
+	if(t!=IDENT){t = tokens.next(); }
 	if(t.token == IDENT){
 		t = tokens.next(); 
 		if(t.token == LPAREN){//It's a function
 			return function(tokens); 
 			//return function(tokens); //TBI
-		}else if(t== EQUALS){//It's a variable
+		}else if(t== EQUALS || t == SEMICOL){//It's a variable
 			tokens.go_back(2); 
 			return declare(tokens); 
-		}else if(t == SEMICOL){//It's a variable
-			return true; 
 		}
 	} 
 	tokens.go_back(2);
@@ -245,12 +254,6 @@ bool construct(Stack<Token>& tokens){
 		tokens.go_back(1); 
 		return false; 
 	}
-	t = tokens.next(); 
-	if(t != OPENCURL){
-		tokens.go_back(1); 
-		return false; 
-	}
-	openbrackets++; 
 	return true; 
 	//Need to handle closing curly bracket
 }
@@ -266,12 +269,6 @@ bool destruct(Stack<Token>& tokens){
 		tokens.go_back(1); 
 		return false; 
 	}
-	t = tokens.next(); 
-	if(t != OPENCURL){
-		tokens.go_back(1); 
-		return false; 
-	}
-	openbrackets++; 
 	return true; 
 	//Need to handle closing curly bracket
 }
@@ -285,10 +282,23 @@ bool destruct(Stack<Token>& tokens){
  */
 bool genericStmt(Stack<Token>& tokens){
 	Token t = tokens.next(); 
-	if(t == INCREMENT || t == DECREMENT){return tokens.next() == IDENT;}
+	if(t == INCREMENT || t == DECREMENT){
+		Token t2 = tokens.next(); 
+		//cout << t2;
+		bool b = t2 == IDENT && currentScope->hasVariable(t2.lex);
+		if(!b){
+			tokens.go_back(1); 
+			cout << "Unidentified token: " << t2.lex <<endl; 
+		}
+		return b; 
+	}
 	if(t != IDENT){
 		tokens.go_back();
 		return false; 
+	}else if(!currentScope->hasVariable(t.lex)){
+		tokens.go_back(); 
+			cout << "Unidentified token: " << t.lex <<endl; 
+			return false; 
 	}
 	t = tokens.next(); 
 	if(t == INCREMENT || t == DECREMENT) return true;
@@ -314,11 +324,6 @@ bool forStmt(Stack<Token>& tokens){
 		tokens.go_back(1);
 		return false;
 	}
-	t = tokens.next();
-	if(t != OPENCURL){
-		tokens.go_back(1);
-		return false; 
-	}openbrackets++; 
 	return b; 
 }
 
@@ -334,21 +339,14 @@ bool ifStmt(Stack<Token>& tokens){
 		tokens.go_back(1);
 		return false; 
 	}
-	t = tokens.next(); 
-	if(t!=OPENCURL){
-		tokens.go_back(1);
-		return false; 
-	}openbrackets++; 
+	return true; 
 }
 bool caseStmt(Stack<Token>& tokens){
 	//int availablebrackets = 0; // equals zero if the next closing curly is for the case stmt
 	Token variable = tokens.next(), t; 
 	//if(tokens.next() == OPENCURL) openbrackets++; 
 	while((t = tokens.next()) != CLOSECURL) {
-		if(t == OPENCURL) openbrackets++; 
-		if(t == CLOSECURL) openbrackets--;
 	}
-	if(t == CLOSECURL) openbrackets--; 
 	return true; //Leaving this for now because I have to figure the specifics out later... 
 	//I Probably just need a simple call to getNextStmt(); 
 }
@@ -359,14 +357,19 @@ bool caseSwitchStmt(Stack<Token>& tokens){
 	else return false; 
 	if(tokens.next() != RPAREN) return false; 
 	if(tokens.next() != OPENCURL) return false; 
-	else openbrackets++; 
 	Token next; bool b = true; 
 	while( (next = tokens.next()) == CASE && b){
 		b = caseStmt(tokens); 
 	}
-	if(next == CLOSECURL) openbrackets--; 
 	return b; 
 }
+
+//void printAllScopes(){
+//	for(int i = 0; i < scopes.size(); i++){
+//		cout<< "Number " <<i<<": "<<scopes[i].getVarsNames() <<endl;
+//	}
+//	cout << "End of scopes" <<endl<<endl;
+//}
 
 /**
  * @brief Get the next Valid Stmt in the code file provided. 
@@ -376,8 +379,16 @@ bool caseSwitchStmt(Stack<Token>& tokens){
  * @return false 
  */
 bool getValidStmt(Stack<Token>& tokens){
+	//Reminder: Vector of scopes has to keep moving whenever the list gets extended
+	//so the pointers are no longer usable; occasionally everything gets corrupted
+	if(currentScope == 0) {
+		scope s; 
+		//scopes.push_back(s); 
+		currentScope = &s; 
+	}
 	bool status = false; 
 	Token t = tokens.next(); 
+	//cout << t; 
 	switch(t.token){
 		case IMPORT:
 		return import(tokens); 
@@ -398,16 +409,19 @@ bool getValidStmt(Stack<Token>& tokens){
 		case DECREMENT:
 		tokens.go_back(1); 
 		return genericStmt(tokens) && tokens.next() == SEMICOL; 
-		case OPENCURL: 
-		openbrackets++;
-		break; 
-		case CLOSECURL: //move these around later
-		openbrackets--; 
-		if(openbrackets < 0){
+		case OPENCURL: {
+		scope s = new scope(*currentScope); 
+		currentScope = &s;
+		return true; }
+		case CLOSECURL:
+		//printAllScopes(); 
+		//cout << "Current Scope: " << currentScope->toString(); 
+		if(currentScope->getParentPointer() == 0){
 			cout << "unbalanced brackets" <<endl; 
 			tokens.go_back(1);
 			return false; 
 		}
+		currentScope = currentScope->getParentPointer();
 		return true; 
 		case INT:       case SHORT: //int i = 0; << We start at the int token, then have to move to the ident, so we go back 1 to undo that
 		case POINTER:   case LONG: 
@@ -419,10 +433,15 @@ bool getValidStmt(Stack<Token>& tokens){
 		case SINGULAR: case CONST:
 		return declareOrFunction(tokens); 
 		default:{
-			cout << "ERROR: Unknown token"<<endl ;
+			cout << "ERROR: Unknown token: \n" << t <<endl ;
 			tokens.go_back(1);
 			return false;  
 		}
 	}
+	cout << "Returning false by error?"<<endl;
 	return false; 
 }
+
+//void deleteScopes(){
+//	scopes.clear(); 
+//}

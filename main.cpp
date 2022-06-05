@@ -6,9 +6,12 @@
 #include <stdio.h>
 #include <map>
 #include <string>
+#include <algorithm>
+#include "Scope.cpp"
 #include "tokenizer.cpp"
 #include "Stack.cpp"
 #include "analyzer.cpp"
+
 using namespace std; 
 int main(int argc, char**args){
     //time_t now = time(nullptr);
@@ -26,8 +29,10 @@ int main(int argc, char**args){
     //s.reset(); 
     bool b;
     while(!s.eof() && (b = getValidStmt(s))){
+        //if(s.eof() == false)cout << s.eof();
     }
-    if(!b || openbrackets != 0){
+    if(!b || !currentScope->hasParent()){
+        //if(currentScope->getParentPointer() != 0) cout << currentScope->getCascadingVars() <<endl; 
         Token err = s.peek(); //cout << openbrackets <<endl ;
         cout <<"Syntax error located at token '"<< err.lex <<"' on line "<<err.ln<<":\n";
         Token e2; 
