@@ -7,8 +7,8 @@
 #include <map>
 #include <string>
 #include <algorithm>
-#include "Scope.cpp"
 #include "tokenizer.cpp"
+#include "Scope.cpp"
 #include "Stack.cpp"
 #include "analyzer.cpp"
 
@@ -41,7 +41,8 @@ int main(int argc, char**args){
         }
         return 0; 
     }
-    cout << "Successful analysis of provided code - no syntax errors found"; 
+    cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
+    deleteScopes(); 
     //time_t end = time(nullptr); 
     //cout << endl <<"compiled in approx: "<< (end - now) << " seconds"; 
     //while(!s.eof()){

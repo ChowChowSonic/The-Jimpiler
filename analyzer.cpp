@@ -3,7 +3,7 @@
 using namespace std; 
 //Syntax analyzer for the Compilier
 scope * currentScope = 0; 
-//vector<scope> scopes; 
+vector<scope> scopes; 
 bool import(Stack<Token>& tokens){
 	Token t = tokens.next(); 
 	while((t.token == IDENT || t.token == COMMA) && t.token != SEMICOL){
@@ -94,14 +94,14 @@ bool term(Stack<Token>& tokens){
 		return b; 
 	}else if(t == POINTERTO || t == REFRENCETO){
 		t = tokens.next(); 
-		bool b = currentScope->hasVariable(t.lex); 
+		bool b = t == IDENT && currentScope->hasVariable(t.lex); 
 		if(!b) {cout << "Unidentified token: " << t.lex <<endl; tokens.go_back();}
 		return b; 
 	}else if(t == IDENT && (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)){
 		tokens.next(); 
 		bool b = currentScope->hasVariable(t.lex); 
 		if(!b) {cout << "Unidentified token: " << t.lex <<endl; tokens.go_back();}
-		return true; 
+		return b; 
 	}else if(t == IDENT){
 		bool b = currentScope->hasVariable(t.lex); 
 		if(!b) {cout << "Unidentified token: " << t.lex <<endl;}
@@ -139,8 +139,9 @@ bool expr(Stack<Token>& tokens){
 bool declare(Stack<Token>& tokens){ 
 	tokens.go_back(1); 
 	Token t = tokens.next();
-	KeyToken type = t.token; 
+	KeyToken type = t.token; //int, char, bool, etc. 
 	t = tokens.next();
+	string id = t.lex; //the variable name
 	//cout <<currentScope->hasVariable(t.lex) <<endl; 
 	if(t.token != IDENT){
 		cout << "Error: Not an identifier: " << t.lex <<endl; 
@@ -152,21 +153,27 @@ bool declare(Stack<Token>& tokens){
 		return false; 
 	}
 	//cout << "Adding variable: " << t; 
-	currentScope->addVariable(t.lex); 
-	 if(tokens.peek() ==SEMICOL){tokens.next(); return true; }
-	 else if(tokens.next() == EQUALS){ 
+	//cout << currentScope->getCascadingVars()<<endl<<endl; 
+	if(tokens.peek() ==SEMICOL){
+		 tokens.next(); 
+		 currentScope->addVariable(type, t.lex); 
+		 return true; 
+	}else if(tokens.next() == EQUALS){ 
 		bool b = false; 
-		if(type == BOOL)b = logicStmt(tokens);
+		if(type == BOOL) b = logicStmt(tokens);
 		else b = expr(tokens);
+		//tokens.go_back(); 
+		//cout <<tokens.peek(); 
 		if(!b){
 			//tokens.go_back(); 
-			tokens.next(); 
-			if(t.lex == tokens.next().lex) cout << "Cannot use variable in its own declaration statement" << endl; 
+			//cout << tokens.peek(); 
+			if(tokens.next().lex == id) cout << "Cannot use variable in its own declaration statement" << endl; 
 			tokens.go_back();
 			return false; 
 		}
 	}
-	
+	//cout << t.lex <<endl ; 
+	currentScope->addVariable(type, id); 
 	t = tokens.next(); 
 	//variables[t] = type; 
 	//put a way to interpret statements here
@@ -363,13 +370,13 @@ bool caseSwitchStmt(Stack<Token>& tokens){
 	}
 	return b; 
 }
-
-//void printAllScopes(){
-//	for(int i = 0; i < scopes.size(); i++){
-//		cout<< "Number " <<i<<": "<<scopes[i].getVarsNames() <<endl;
-//	}
-//	cout << "End of scopes" <<endl<<endl;
-//}
+// /*
+void printAllScopes(){
+	for(int i = 0; i < scopes.size(); i++){
+		cout<< "Number " <<i<<": "<<scopes[i].getCascadingVars() <<endl;
+	}
+	cout << "End of scopes" <<endl<<endl;
+}//*/
 
 /**
  * @brief Get the next Valid Stmt in the code file provided. 
@@ -383,8 +390,9 @@ bool getValidStmt(Stack<Token>& tokens){
 	//so the pointers are no longer usable; occasionally everything gets corrupted
 	if(currentScope == 0) {
 		scope s; 
-		//scopes.push_back(s); 
-		currentScope = &s; 
+		scopes.emplace_back(s); 
+		currentScope = &scopes[0]; 
+		//printAllScopes(); 
 	}
 	bool status = false; 
 	Token t = tokens.next(); 
@@ -410,8 +418,12 @@ bool getValidStmt(Stack<Token>& tokens){
 		tokens.go_back(1); 
 		return genericStmt(tokens) && tokens.next() == SEMICOL; 
 		case OPENCURL: {
+		//cout << "Scope created"<<endl;
+		//Move below code to its own seperate function? Nah probably not. At least not yet. 
 		scope s = new scope(*currentScope); 
-		currentScope = &s;
+		scopes.emplace_back(s); 
+		currentScope = &scopes[scopes.size()-1];
+		//printAllScopes(); 
 		return true; }
 		case CLOSECURL:
 		//printAllScopes(); 
@@ -442,6 +454,7 @@ bool getValidStmt(Stack<Token>& tokens){
 	return false; 
 }
 
-//void deleteScopes(){
-//	scopes.clear(); 
-//}
+void deleteScopes(){
+	scopes.clear(); 
+	scopes.shrink_to_fit(); 
+}

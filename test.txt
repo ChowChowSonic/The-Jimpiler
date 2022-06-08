@@ -7,7 +7,7 @@ object struct{
     protected bool b2 = true; 
     constructor(){
         //inline comment
-        b2 = 1; 
+        b2 = 1; //havent gotten types working yet, so this is technically valid
     }
     
     ?? 
@@ -19,17 +19,15 @@ object struct{
 }
 
 int main(string args){
-    int i = 32 - -- b; 
+    int i = 32 - b--; 
     pointer location = -> i;
     char c = @location;
     int i2 = i++;
-    for(int x = 0; x < 20 and x > 0; x++){ //while(x < 20 or x > 0){
-        for(int x2 = 0; x < 20 and x > 0; x++){
-            ++c; 
-        } 
-    }
-
-    ??    switch(x){
+    for(int x = 0; x < 20 and x > 0; x++){  //while(x < 20 or x > 0){ 
+        bool q = true;
+        if(x < 20 and x > 0){
+            bool l = false; 
+            switch(x){
                 case 1{
                     print << "yeet"; 
                 }
@@ -39,5 +37,10 @@ int main(string args){
                 case 3{
 
                 }
-            }??
+        }
+            ++c; 
+        } 
+    }
+
+        
 }
