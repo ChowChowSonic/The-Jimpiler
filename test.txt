@@ -29,7 +29,7 @@ int main(string args){
             bool l = false; 
             switch(x){
                 case 1{
-                    print << "yeet"; 
+                    //print << "yeet"; 
                 }
                 case 2{
                     //Just do something lmao

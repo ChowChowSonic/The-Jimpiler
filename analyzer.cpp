@@ -186,7 +186,6 @@ bool obj(Stack<Token>& tokens){
 	if(tokens.next().token != IDENT){
 		return false; 
 	}
-	//tokens.next(); //UNCOMMENT 
 	//go into the method that defines an object:
 	//TBI
 	//Need to handle closing curly bracket
@@ -350,10 +349,11 @@ bool ifStmt(Stack<Token>& tokens){
 }
 bool caseStmt(Stack<Token>& tokens){
 	//int availablebrackets = 0; // equals zero if the next closing curly is for the case stmt
-	Token variable = tokens.next(), t; 
+	Token variable = tokens.next(); 
+	if(variable.token != SCONST && variable.token != NUMCONST && variable.token != TRU && variable.token != FALS) return false; 
 	//if(tokens.next() == OPENCURL) openbrackets++; 
-	while((t = tokens.next()) != CLOSECURL) {
-	}
+	//while((t = tokens.next()) != CLOSECURL) {
+	//}
 	return true; //Leaving this for now because I have to figure the specifics out later... 
 	//I Probably just need a simple call to getNextStmt(); 
 }
@@ -363,12 +363,12 @@ bool caseSwitchStmt(Stack<Token>& tokens){
 	if(tokens.next() == LPAREN) Token variable = tokens.next(); 
 	else return false; 
 	if(tokens.next() != RPAREN) return false; 
-	if(tokens.next() != OPENCURL) return false; 
-	Token next; bool b = true; 
-	while( (next = tokens.next()) == CASE && b){
-		b = caseStmt(tokens); 
-	}
-	return b; 
+	if(tokens.peek() != OPENCURL) return false; 
+	Token next;
+	//while( (next = tokens.next()) == CASE && b){
+	//	b = caseStmt(tokens); 
+	//}
+	return true; 
 }
 // /*
 void printAllScopes(){
@@ -406,6 +406,8 @@ bool getValidStmt(Stack<Token>& tokens){
 		return ifStmt(tokens); 
 		case SWITCH://heh
 		return caseSwitchStmt(tokens);
+		case CASE:
+		return caseStmt(tokens);
 		case OBJECT:
 		return obj(tokens); 
 		case CONSTRUCTOR: 

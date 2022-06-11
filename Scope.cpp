@@ -8,18 +8,36 @@ class variable{
 	bool isPointer = false; 
 	KeyToken type = ERR;
 	string name; 
-	protected:
+	char * value; //I need bytes and there is no default byte type in C++. Fuck. 
+	public:
 	variable(){
 	}
-	variable(KeyToken datatype, string ident, bool isPtr = false){
+
+	variable(KeyToken datatype, string ident, int ptrsize = 1){
 		type = datatype; 
 		name = ident; 
-		isPointer = isPtr; 
+		isPointer = ptrsize != 1; 
+		switch(type){
+			case FLOAT:
+			case INT: 
+			value = new char[ptrsize*sizeof(int)]; 
+			break;
+			case BYTE:
+			case BOOL: 
+			case CHAR:
+			value = new char[ptrsize*sizeof(char)]; 
+			break;
+			default:
+			value = new char[ptrsize*sizeof(int)]; 
+			break;  
+		}
 	}
-	public:
+	
 	virtual ~variable(){
 		type = ERR; 
+		isPointer = false; 
 		delete &name; 
+		delete[] value; 
 	}
 
 	virtual bool operator ==(variable v){
@@ -35,57 +53,6 @@ class variable{
 	}
 };
 
-class intVariable : public variable{
-	private:
-	int value = 0; 
-	public:
-	intVariable(KeyToken datatype, string ident, int val)		: variable(datatype, ident){
-		value = val; 
-	}
-
-};
-
-class floatVariable : public variable{
-	private:
-	float value = 0; 
-	public:
-	floatVariable(KeyToken datatype, string ident, float val)  	: variable(datatype, ident){
-		value = val; 
-	}
-};
-
-class boolVariable : public variable{
-	private:
-	bool value = false; 
-	public:
-	boolVariable(KeyToken datatype, string ident, bool val)  	: variable(datatype, ident){
-		value = val; 
-	}
-
-};
-
-class stringVariable : public variable{
-	private:
-	string value; 
-	public:
-	stringVariable(KeyToken datatype, string ident, string val)	: variable(datatype, ident){
-		value = val; 
-	}
-
-	~stringVariable(){
-		delete &value; 
-	}
-
-};
-/**
- * @brief Not yet going to be used, will be implemented later
- * 
- */
-class objectVariable : public variable{
-	private:
-	//byte * data; //vector<variable> vars; 
-}; 
-
 /**
  * @brief A block of code bounded by an opening and closing curly bracket, with variables inside of it.
  * A scope can access any variables owned by itself or it's parent (or it's parent's parent, or it's parent's parent's parent, etc...)
@@ -98,7 +65,8 @@ class scope{
 	private: 
 	bool hasPar = false; 
 	scope * parent = 0; 
-	std::vector<string> vars; 
+	//std::vector<string> vars; 
+	std::vector<variable> vars; 
 	//std::vector<unique_ptr<variable>> vars; //Lord help me unique_ptrs are hell to deal with
 
 	public:
@@ -111,7 +79,11 @@ class scope{
 		this->hasPar = false; 
 		this->parent = 0; 
 	}
-
+	/**
+	 * @brief Construct a new scope object, with a parent
+	 * 
+	 * @param parnt 
+	 */
 	scope(scope* parnt){
 		//cout << "Scope made" <<endl; 
 		this->hasPar = true; 
@@ -127,23 +99,30 @@ class scope{
 	}//*/
 
 	bool addVariable(KeyToken type, string s){
-		intVariable b = intVariable(type, s, 0); 
+		variable b(type, s); 
 		//unique_ptr<variable>* v = new unique_ptr<variable>(&b); 
 		//vars.push_back(*new unique_ptr<variable>(&b));
-		vars.push_back(s);
-		return std::find(vars.begin(), vars.end(), s) == vars.end(); 
+		vars.emplace_back(b);
+		return std::find(vars.begin(), vars.end(), b) == vars.end(); 
 	}
 
 	bool hasVariable(string s){
 		//cout <<"Finding: "<< s << ", Vars: " << this->getVarsNames()<<endl; 
-		if(find(vars.begin(), vars.end(), s) != vars.end()) {
-			//cout << "Returning true" <<endl; 
-			return true; 
-		}else if(this->hasPar) {
+		for(variable v : vars){
+			if(v.getName() == s) {
+				//cout << "Returning true" <<endl; 
+				return true; 
+			}
+		} 
+		if(this->hasPar) {
 			return parent->hasVariable(s); 
 		}
 		//cout << "Returning false" <<endl; 
 		return false; 
+	}
+	
+	bool hasVariable(variable v){
+		return hasVariable(v.getName()); 
 	}
 
 	bool hasParent(){
@@ -158,8 +137,8 @@ class scope{
 		string s;
 		//for(int i = 0; i <vars.size(); i++){
 			//string s2 = vars[i].get()->getName(); 
-		for(string s2 : vars){
-			s+=s2;
+		for(variable s2 : vars){
+			s+=s2.getName();
 			s+= ", "; 
 		}
 		//if(parent != 0) s+= parent->getVarsNames(); 
@@ -171,8 +150,8 @@ class scope{
 		string s;
 		//for(int i = 0; i <vars.size(); i++){
 		//	string s2 = vars[i].get()->getName(); 
-		for(string s2 : vars){
-			s+=s2;
+		for(variable s2 : vars){
+			s+=s2.getName();
 			s+= ", "; 
 		}
 		if(s == "") s = "No variables found locally ";
