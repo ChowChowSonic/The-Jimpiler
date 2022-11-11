@@ -61,6 +61,10 @@ class Stack{
         return items[index];
 
     }
+    T currentToken(){
+        if (index == 0)return items[0]; 
+        return items[index-1]; 
+    }
     T peek(){
         return items[index]; 
     }

@@ -5,10 +5,10 @@ using namespace std;
 
 class variable{
 	private:
-	bool isPointer = false; 
+	//bool isPointer = false; 
 	KeyToken type = ERR;
 	string name; 
-	char * value; //I need bytes and there is no default byte type in C++. Fuck. 
+	//char * value = NULL; //I need bytes and there is no default byte type in C++. Fuck. 
 	public:
 	variable(){
 	}
@@ -16,32 +16,13 @@ class variable{
 	variable(KeyToken datatype, string ident, int ptrsize = 1){
 		type = datatype; 
 		name = ident; 
-		isPointer = ptrsize != 1; 
-		switch(type){
-			case FLOAT:
-			case INT: 
-			value = new char[ptrsize*sizeof(int)]; 
-			break;
-			case BYTE:
-			case BOOL: 
-			case CHAR:
-			value = new char[ptrsize*sizeof(char)]; 
-			break;
-			default:
-			value = new char[ptrsize*sizeof(int)]; 
-			break;  
-		}
 	}
 	
 	virtual ~variable(){
-		type = ERR; 
-		isPointer = false; 
-		delete &name; 
-		delete[] value; 
 	}
 
 	virtual bool operator ==(variable v){
-		return (this->name == v.name) && (this->type == v.type); 
+		return (this->name == v.name) && (this->type == v.type);
 	}
 	
 	string getName(){
@@ -63,9 +44,7 @@ class variable{
  */
 class scope{
 	private: 
-	bool hasPar = false; 
 	scope * parent = 0; 
-	//std::vector<string> vars; 
 	std::vector<variable> vars; 
 	//std::vector<unique_ptr<variable>> vars; //Lord help me unique_ptrs are hell to deal with
 
@@ -75,64 +54,60 @@ class scope{
 	 * 
 	 */
 	scope(){
-		//cout << "Base scope" <<endl; 
-		this->hasPar = false; 
-		this->parent = 0; 
+		this->parent = 0;  
+	}
+	scope(const scope & cpy){
+		this->parent = cpy.parent; 
+		this->vars = cpy.vars; 
 	}
 	/**
 	 * @brief Construct a new scope object, with a parent
 	 * 
 	 * @param parnt 
 	 */
-	scope(scope* parnt){
-		//cout << "Scope made" <<endl; 
-		this->hasPar = true; 
+	scope(scope * parnt){
 		this->parent = parnt; 
 	}
-
-	~scope(){
-		//cout << "Destroying scope: " <<this->getCascadingVars() <<endl; 
-		hasPar = false; 
-		parent = 0; 
-		vars.clear();
-		vars.shrink_to_fit(); 
-	}//*/
 
 	bool addVariable(KeyToken type, string s){
 		variable b(type, s); 
 		//unique_ptr<variable>* v = new unique_ptr<variable>(&b); 
 		//vars.push_back(*new unique_ptr<variable>(&b));
-		vars.emplace_back(b);
-		return std::find(vars.begin(), vars.end(), b) == vars.end(); 
+		vars.push_back(b);
+		return true;
 	}
 
 	bool hasVariable(string s){
-		//cout <<"Finding: "<< s << ", Vars: " << this->getVarsNames()<<endl; 
-		for(variable v : vars){
-			if(v.getName() == s) {
-				//cout << "Returning true" <<endl; 
-				return true; 
-			}
-		} 
-		if(this->hasPar) {
-			return parent->hasVariable(s); 
+		for(variable & v : vars){
+			if(v.getName() == s) return true; 
+
 		}
-		//cout << "Returning false" <<endl; 
-		return false; 
+		if(this->hasParent()){
+			return this->parent->hasVariable(s); 
+		} 
+		return false; ///find(vars.begin(), vars.end(), s) != vars.end(); 
 	}
 	
-	bool hasVariable(variable v){
-		return hasVariable(v.getName()); 
+	bool hasVariable(variable &v){
+		
+		if(this->hasParent()) {
+			return parent->hasVariable(v); 
+		}
+		return find(vars.begin(), vars.end(), v) != vars.end(); 
 	}
 
 	bool hasParent(){
-		return this->hasPar; 
+		return this->parent != NULL; 
 	}
 
 	scope* getParentPointer(){
 		return parent; 
 	}
-
+	/**
+	 * @brief Get the Variable Names of THIS SCOPE ONLY - not the parent scopes. See getCascadingVars() for parent scopes as well.
+	 * 
+	 * @return string 
+	 */
 	string getVarsNames(){
 		string s;
 		//for(int i = 0; i <vars.size(); i++){
@@ -145,7 +120,11 @@ class scope{
 		if(s == "") s = "No variables found";
 		return s;
 	}
-
+	/**
+	 * @brief Get the Cascading Vars of this scope - AKA, get the variables of this scope and all parent scopes
+	 * 
+	 * @return string 
+	 */
 	string getCascadingVars(){
 		string s;
 		//for(int i = 0; i <vars.size(); i++){
@@ -157,17 +136,16 @@ class scope{
 		if(s == "") s = "No variables found locally ";
 		s+= " / ";
 		//if(this->hasPar || parent != 0) cout << endl << parent << " " << ((this->hasPar)? "true" : "false"); 
-		if(hasPar)s+= parent->getCascadingVars(); 
+		if(this->hasParent())s+= parent->getCascadingVars(); 
 		else{
 			s+= " No further scopes found"; 
 		}
-		//cout << parent<<endl ; 
 		return s;
 	}
 
 	string toString(){
 		string s = this->getVarsNames()+" "; 
-		if(this->hasPar) s+= "Has Parent";
+		if(this->hasParent()) s+= "Has Parent";
 		s+="\n";
 		return s; 
 	}

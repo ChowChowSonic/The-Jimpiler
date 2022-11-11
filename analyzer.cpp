@@ -3,7 +3,7 @@
 using namespace std; 
 //Syntax analyzer for the Compilier
 scope * currentScope = 0; 
-vector<scope> scopes; 
+vector<scope> scopes(1);//Can't use a default constructor because APPARENTLY if I try that it overlaps with currentScope and corrupts the end result???????? 
 bool import(Stack<Token>& tokens){
 	Token t = tokens.next(); 
 	while((t.token == IDENT || t.token == COMMA) && t.token != SEMICOL){
@@ -15,6 +15,13 @@ bool import(Stack<Token>& tokens){
 	}
 	return true; 
 }
+
+bool addScope(){
+		scopes.emplace_back(currentScope); 
+		currentScope = &scopes[scopes.size()-1];
+		return true; 
+}
+
 /* //I don't think I need this?
 bool declare(Stack<Token>& tokens, KeyToken type){
 	Token t = tokens.next();
@@ -33,39 +40,59 @@ bool declare(Stack<Token>& tokens, KeyToken type){
 	tokens.go_back(2); 
 	return false; 
 }*/
+bool logicStmt(Stack<Token>& tokens); 
+
+bool logicHelper(Stack<Token>& tokens){
+	Token t1; 
+	//cout << "In helper\n";
+	if((t1 = tokens.next()) == LPAREN){
+		return logicStmt(tokens); 
+	} 
+	if(t1 == TRU || t1 == FALS){ return true;} 
+	//cout << t1; 
+	if(t1 != IDENT && t1 !=SCONST && t1 !=NUMCONST)return false; 
+	t1 = tokens.next(); //cout <<t1; 
+	if(t1 != GREATER && t1 != LESS && t1 != EQUALCMP) return false; 
+	t1 = tokens.next(); //cout <<t1; 
+	if(t1 != IDENT && t1 !=SCONST && t1 !=NUMCONST)return false; 
+	//cout << "Out of helper\n";
+	return true; 
+}
+
+
 /**
  * @brief Parses a logic statement (bool value; I.E. "x == 5") consisting of only idents and string/number constants.
- * I need to add in the ability to parse valid complex statements later on
+ * logicStmt 	-> (?<helper>)? <Join> (?<helper>)?
+ * helper		-> <base> | <logicStmt>
+ * base			-> <terminal> <op> <terminal> | "true" | "false";
+ * op			-> "==" | ">=" | "<=" | ">" | "<"
+ * join			-> "and" | "or"
+ * terminal		-> SCONST | NUMCONST | VARIABLE //Literal string number or variable values
  * 
  * @param tokens 
  * @return true 
  * @return false 
  */
 bool logicStmt(Stack<Token>& tokens){
-	Token t1 = tokens.next(); 
-	if(t1 == TRU || t1 == FALS) return true; 
-	//bool isbool = {} //True if t1 is a variable/function of the type bool
-	if(t1 != IDENT && t1!=SCONST && t1!=NUMCONST){ //Check if it's a boolean when implemented
-		tokens.go_back(1); 
-		return false; 
-	}
-	//if(isbool){
-	t1 = tokens.next(); 
-	if(t1 != EQUALCMP && t1!=GREATER && t1!=LESS){
-		tokens.go_back(1); 
-		return false; 
-	}
-	t1=tokens.next(); 
-	if(t1 != IDENT && t1!=SCONST && t1!=NUMCONST){
-		tokens.go_back(1); 
-		return false; 
-	}
-	if(tokens.peek() == AND || tokens.peek() == OR) {
-		tokens.next(); 
-		return logicStmt(tokens); 
-	}
-	//}
+	bool x = false; 
+
+	// (? <helper> )? 
+	x = logicHelper(tokens);
+	if(!x) return false; 
+	if(tokens.next() != RPAREN) tokens.go_back(); 
+	
+	//<join>
+	if(tokens.peek() != AND && tokens.peek() != OR){ return true; }
+	tokens.next(); 
+	
+
+	// (? <helper> )?
+	x = logicHelper(tokens);
+	if(!x)return false ;
+	if(tokens.next() != RPAREN) tokens.go_back(); 
+	
 	return true; 
+	
 }
 
 
@@ -186,9 +213,6 @@ bool obj(Stack<Token>& tokens){
 	if(tokens.next().token != IDENT){
 		return false; 
 	}
-	//go into the method that defines an object:
-	//TBI
-	//Need to handle closing curly bracket
 	return true; 
 }
 
@@ -211,9 +235,9 @@ bool functionParamList(Stack<Token>& tokens){
 	return t == RPAREN; 
 }
 
-bool function(Stack<Token>& tokens){
-bool b = functionParamList(tokens); 
-return b; 
+bool func(Stack<Token>& tokens){
+	bool b = functionParamList(tokens); 
+	return b; 
 }
 
 /**
@@ -233,12 +257,11 @@ bool declareOrFunction(Stack<Token>& tokens){
 		tokens.go_back(1); 
 		return false;
 	}
-
 	if(t!=IDENT){t = tokens.next(); }
 	if(t.token == IDENT){
 		t = tokens.next(); 
 		if(t.token == LPAREN){//It's a function
-			return function(tokens); 
+			return func(tokens); 
 			//return function(tokens); //TBI
 		}else if(t== EQUALS || t == SEMICOL){//It's a variable
 			tokens.go_back(2); 
@@ -334,17 +357,17 @@ bool forStmt(Stack<Token>& tokens){
 }
 
 bool ifStmt(Stack<Token>& tokens){
-	Token t = tokens.next(); 
-	if(t!=LPAREN){
+	//Token t = tokens.next(); 
+	/*if(t!=LPAREN){
 		tokens.go_back(1);
 		return false; 
-	}
+	}//*/
 	bool b = logicStmt(tokens); 
-	t = tokens.next(); 
-	if(t!=RPAREN){
+	//t = tokens.next(); 
+	/*if(t!=RPAREN){
 		tokens.go_back(1);
 		return false; 
-	}
+	}//*/
 	return true; 
 }
 bool caseStmt(Stack<Token>& tokens){
@@ -389,10 +412,7 @@ bool getValidStmt(Stack<Token>& tokens){
 	//Reminder: Vector of scopes has to keep moving whenever the list gets extended
 	//so the pointers are no longer usable; occasionally everything gets corrupted
 	if(currentScope == 0) {
-		scope s; 
-		scopes.emplace_back(s); 
-		currentScope = &scopes[0]; 
-		//printAllScopes(); 
+		addScope(); 
 	}
 	bool status = false; 
 	Token t = tokens.next(); 
@@ -420,16 +440,9 @@ bool getValidStmt(Stack<Token>& tokens){
 		tokens.go_back(1); 
 		return genericStmt(tokens) && tokens.next() == SEMICOL; 
 		case OPENCURL: {
-		//cout << "Scope created"<<endl;
-		//Move below code to its own seperate function? Nah probably not. At least not yet. 
-		scope s = new scope(*currentScope); 
-		scopes.emplace_back(s); 
-		currentScope = &scopes[scopes.size()-1];
-		//printAllScopes(); 
-		return true; }
+		return addScope(); 
+		}
 		case CLOSECURL:
-		//printAllScopes(); 
-		//cout << "Current Scope: " << currentScope->toString(); 
 		if(currentScope->getParentPointer() == 0){
 			cout << "unbalanced brackets" <<endl; 
 			tokens.go_back(1);

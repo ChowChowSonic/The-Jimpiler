@@ -51,6 +51,13 @@
         "xtree": "cpp",
         "xutility": "cpp",
         "stack": "cpp",
-        "deque": "cpp"
+        "deque": "cpp",
+        "*.tcc": "cpp",
+        "functional": "cpp",
+        "algorithm": "cpp",
+        "random": "cpp",
+        "numeric": "cpp",
+        "sstream": "cpp",
+        "string_view": "cpp"
     }
 }

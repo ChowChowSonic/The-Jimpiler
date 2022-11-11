@@ -23,7 +23,7 @@ int main(int argc, char**args){
         t.ln = ln; 
         tokens.push_back(t);
     }
-
+    
     Stack<Token> s(tokens);
     //while(!s.eof()) cout << s.next().lex << s.index << " " << s.size<<endl;
     //s.reset(); 
@@ -31,6 +31,7 @@ int main(int argc, char**args){
     while(!s.eof() && (b = getValidStmt(s))){
         //if(s.eof() == false)cout << s.eof();
     }
+    
     if(!b || !currentScope->hasParent()){
         //if(currentScope->getParentPointer() != 0) cout << currentScope->getCascadingVars() <<endl; 
         Token err = s.peek(); //cout << openbrackets <<endl ;
@@ -39,10 +40,11 @@ int main(int argc, char**args){
         while((e2 = s.next()).ln == err.ln && !s.eof()){
             cout <<e2.lex << " "; 
         }
+        cout << endl; 
         return 0; 
     }
     cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
-    deleteScopes(); 
+    //deleteScopes(); 
     //time_t end = time(nullptr); 
     //cout << endl <<"compiled in approx: "<< (end - now) << " seconds"; 
     //while(!s.eof()){
