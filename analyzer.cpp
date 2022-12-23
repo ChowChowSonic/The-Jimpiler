@@ -43,11 +43,8 @@ bool declare(Stack<Token>& tokens, KeyToken type){
 bool logicStmt(Stack<Token>& tokens); 
 
 bool logicHelper(Stack<Token>& tokens){
-	Token t1; 
-	//cout << "In helper\n";
-	if((t1 = tokens.next()) == LPAREN){
-		return logicStmt(tokens); 
-	} 
+	Token t1 = tokens.next(); 
+
 	if(t1 == TRU || t1 == FALS){ return true;} 
 	//cout << t1; 
 	if(t1 != IDENT && t1 !=SCONST && t1 !=NUMCONST)return false; 
@@ -62,7 +59,9 @@ bool logicHelper(Stack<Token>& tokens){
 
 /**
  * @brief Parses a logic statement (bool value; I.E. "x == 5") consisting of only idents and string/number constants.
- * logicStmt 	-> (?<helper>)? <Join> (?<helper>)?
+ * EBNF isn't technically 100% accurate, but that's because a few assumptions should be made going into this, like, for example, all open parenthesis should have a matching closing parenthesis
+ * logicStmt 	-> <Stmt> <join> <logicStmt> | <Stmt>
+ * Stmt			-> (?<helper>)? <Join> (?<helper>)?
  * helper		-> <base> | <logicStmt>
  * base			-> <terminal> <op> <terminal> | "true" | "false";
  * op			-> "==" | ">=" | "<=" | ">" | "<"
@@ -74,22 +73,30 @@ bool logicHelper(Stack<Token>& tokens){
  * @return false 
  */
 bool logicStmt(Stack<Token>& tokens){
-	bool x = false; 
+	bool x = false, hasParen = false;
 
 	// (? <helper> )? 
+	if(tokens.peek() == LPAREN){
+		hasParen= true; 
+		tokens.next(); 
+		x = logicStmt(tokens); 
+		if(tokens.peek() == RPAREN) {
+			if(!hasParen) {tokens.go_back(2); return false; }
+			hasParen = false; 
+			tokens.next(); 
+		}else return false;
+	}else{
 	x = logicHelper(tokens);
+	}
 	if(!x) return false; 
-	if(tokens.next() != RPAREN) tokens.go_back(); 
 	
 	//<join>
-	if(tokens.peek() != AND && tokens.peek() != OR){ return true; }
-	tokens.next(); 
-	
-
-	// (? <helper> )?
-	x = logicHelper(tokens);
-	if(!x)return false ;
-	if(tokens.next() != RPAREN) tokens.go_back(); 
+	if(tokens.peek() == AND || tokens.peek() == OR){ 
+		tokens.next(); 
+		//<logicStmt>
+		x = logicStmt(tokens); 
+		return x; 
+	}
 	
 	return true; 
 	
@@ -182,9 +189,9 @@ bool declare(Stack<Token>& tokens){
 	//cout << "Adding variable: " << t; 
 	//cout << currentScope->getCascadingVars()<<endl<<endl; 
 	if(tokens.peek() ==SEMICOL){
-		 tokens.next(); 
-		 currentScope->addVariable(type, t.lex); 
-		 return true; 
+		tokens.next(); 
+		currentScope->addVariable(type, t.lex); 
+		return true; 
 	}else if(tokens.next() == EQUALS){ 
 		bool b = false; 
 		if(type == BOOL) b = logicStmt(tokens);
@@ -368,7 +375,8 @@ bool ifStmt(Stack<Token>& tokens){
 		tokens.go_back(1);
 		return false; 
 	}//*/
-	return true; 
+	if(!b) tokens.go_back(); 
+	return b; 
 }
 bool caseStmt(Stack<Token>& tokens){
 	//int availablebrackets = 0; // equals zero if the next closing curly is for the case stmt

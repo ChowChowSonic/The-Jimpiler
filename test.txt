@@ -23,9 +23,15 @@ int main(string args){
     pointer location = -> i;
     char c = @location;
     int i2 = i++;
+    if ( x < 20 and x > 0 or x > 5 ) {
+    }
+
+
+
+    ??
     for(int x = 0; x < 20 and x > 0; x++){  //while(x < 20 or x > 0){ 
         bool q = true;
-        if (x < 20 and x > 0 ) or x > 5{
+        if x < 20 and x > 0 or x > 5{
             bool l = false; 
             switch(x){
                 case 1{
@@ -40,5 +46,6 @@ int main(string args){
             }
             ++c; 
         } 
-    }        
+    }
+    ??
 }
