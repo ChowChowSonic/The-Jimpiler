@@ -16,6 +16,12 @@ bool import(Stack<Token>& tokens){
 	return true; 
 }
 
+bool isValidVariable(Token& t){
+	bool x = t == IDENT && currentScope->hasVariable(t.lex); 
+	if(!x) cout << "Error: Unknown variable '" << t.lex << "' at position:" <<endl; 
+	return x; 
+}
+
 bool addScope(){
 		scopes.emplace_back(currentScope); 
 		currentScope = &scopes[scopes.size()-1];
@@ -49,7 +55,7 @@ bool logicHelper(Stack<Token>& tokens){
 	//cout << t1; 
 	if(t1 != IDENT && t1 !=SCONST && t1 !=NUMCONST)return false; 
 	t1 = tokens.next(); //cout <<t1; 
-	if(t1 != GREATER && t1 != LESS && t1 != EQUALCMP) return false; 
+	if(t1 != GREATER && t1 != LESS && t1 != EQUALCMP && t1 != NOTEQUAL && t1 != GREATEREQUALS && t1 != LESSEQUALS) return false; 
 	t1 = tokens.next(); //cout <<t1; 
 	if(t1 != IDENT && t1 !=SCONST && t1 !=NUMCONST)return false; 
 	//cout << "Out of helper\n";
@@ -74,7 +80,7 @@ bool logicHelper(Stack<Token>& tokens){
  */
 bool logicStmt(Stack<Token>& tokens){
 	bool x = false, hasParen = false;
-
+	if(tokens.next() != NOT) tokens.go_back(); 
 	// (? <helper> )? 
 	if(tokens.peek() == LPAREN){
 		hasParen= true; 
@@ -84,7 +90,7 @@ bool logicStmt(Stack<Token>& tokens){
 			if(!hasParen) {tokens.go_back(2); return false; }
 			hasParen = false; 
 			tokens.next(); 
-		}else return false;
+		}else {cout << "Expected an additional ')' at position:"<<endl; return false;}
 	}else{
 	x = logicHelper(tokens);
 	}
@@ -224,7 +230,7 @@ bool obj(Stack<Token>& tokens){
 }
 
 bool functionParamList(Stack<Token>& tokens){
-	Token t = tokens.next();
+	Token t = tokens.next();; 
 	if( t == RPAREN) return true; 
 		if(t.token <= INT){
 			tokens.go_back(1); 
@@ -310,8 +316,9 @@ bool destruct(Stack<Token>& tokens){
 }
 /**
  * @brief Described in short using EBNF, generic statements consist of: \n 
- * ( <variable>["++"|"--"|"=", <stmts>] ) | [++|--]<variable>; 
- * 
+ * generic	-> <inc/dec> | <assign>	 
+ * inc/dec	-> <variable>["++"|"--"]";" | [++|--]<variable>";"
+ * assign	-> <variable> "=" <someValue>; 
  * @param tokens 
  * @return true 
  * @return false 
@@ -321,20 +328,15 @@ bool genericStmt(Stack<Token>& tokens){
 	if(t == INCREMENT || t == DECREMENT){
 		Token t2 = tokens.next(); 
 		//cout << t2;
-		bool b = t2 == IDENT && currentScope->hasVariable(t2.lex);
+		bool b = isValidVariable(t2);
 		if(!b){
 			tokens.go_back(1); 
 			cout << "Unidentified token: " << t2.lex <<endl; 
 		}
 		return b; 
 	}
-	if(t != IDENT){
-		tokens.go_back();
+	if(!isValidVariable(t)){
 		return false; 
-	}else if(!currentScope->hasVariable(t.lex)){
-		tokens.go_back(); 
-			cout << "Unidentified token: " << t.lex <<endl; 
-			return false; 
 	}
 	t = tokens.next(); 
 	if(t == INCREMENT || t == DECREMENT) return true;
@@ -346,59 +348,38 @@ bool genericStmt(Stack<Token>& tokens){
 
 bool forStmt(Stack<Token>& tokens){
 	Token t = tokens.next(); 
-	if(t != LPAREN){
-		tokens.go_back(1);
-		return false; 
-	}
-	t = tokens.next(); 
+
 	bool b = declare(tokens); 
+	
 	b = logicStmt(tokens); 
-	t = tokens.next();
-	b = expr(tokens); //TBI alongside variable checking 
-	t = tokens.next();
-	if(t != RPAREN){
-		tokens.go_back(1);
-		return false;
-	}
+	if(tokens.next() != SEMICOL){ cout << "Expected a ';' instead of the token here:" << endl; tokens.go_back(1);  return false; }
+	b = expr(tokens); //TBI: variable checking 
+	if(tokens.peek() == SEMICOL) tokens.next(); 
 	return b; 
 }
 
 bool ifStmt(Stack<Token>& tokens){
-	//Token t = tokens.next(); 
-	/*if(t!=LPAREN){
-		tokens.go_back(1);
-		return false; 
-	}//*/
 	bool b = logicStmt(tokens); 
-	//t = tokens.next(); 
-	/*if(t!=RPAREN){
-		tokens.go_back(1);
-		return false; 
-	}//*/
 	if(!b) tokens.go_back(); 
 	return b; 
 }
 bool caseStmt(Stack<Token>& tokens){
-	//int availablebrackets = 0; // equals zero if the next closing curly is for the case stmt
 	Token variable = tokens.next(); 
 	if(variable.token != SCONST && variable.token != NUMCONST && variable.token != TRU && variable.token != FALS) return false; 
-	//if(tokens.next() == OPENCURL) openbrackets++; 
-	//while((t = tokens.next()) != CLOSECURL) {
-	//}
 	return true; //Leaving this for now because I have to figure the specifics out later... 
-	//I Probably just need a simple call to getNextStmt(); 
 }
 
 bool caseSwitchStmt(Stack<Token>& tokens){
-	//int availablebrackets = 0; // equals zero if the next closing curly is for the switch stmt
-	if(tokens.next() == LPAREN) Token variable = tokens.next(); 
-	else return false; 
-	if(tokens.next() != RPAREN) return false; 
-	if(tokens.peek() != OPENCURL) return false; 
-	Token next;
-	//while( (next = tokens.next()) == CASE && b){
-	//	b = caseStmt(tokens); 
-	//}
+	Token variable = tokens.next(); 
+	if(variable != IDENT){ 
+		cout << "Unexpected token: '" << variable.lex << "' - expected a variable." <<endl; 
+		tokens.go_back(); 
+		return false; 
+	}else if (!isValidVariable(variable)) {
+		cout << "Unknown variable name: '" << variable.lex << "'" <<endl; 
+		tokens.go_back(); 
+		return false; 
+		}
 	return true; 
 }
 // /*
@@ -446,9 +427,11 @@ bool getValidStmt(Stack<Token>& tokens){
 		case INCREMENT:
 		case DECREMENT:
 		tokens.go_back(1); 
-		return genericStmt(tokens) && tokens.next() == SEMICOL; 
+		return genericStmt(tokens); 
+		case SEMICOL:
+			return true;
 		case OPENCURL: {
-		return addScope(); 
+			return addScope(); 
 		}
 		case CLOSECURL:
 		if(currentScope->getParentPointer() == 0){

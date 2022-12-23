@@ -6,7 +6,7 @@ using namespace std;
 
 enum KeyToken{
     IDENT, ERR, IN, AND, OR, TRU, FALS, NOT, IMPORT, //Done
-    EQUALCMP, EQUALS, GREATER, LESS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
+    EQUALCMP, EQUALS, NOTEQUAL, GREATER, GREATEREQUALS, LESS, LESSEQUALS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
     OPENCURL, CLOSECURL, LPAREN, RPAREN, COMMA, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, //Done
     IF, ELSE, FOR, WHILE, CASE, SWITCH, //Done
@@ -17,7 +17,7 @@ enum KeyToken{
 };
 
 map<string, KeyToken> keywords = {
-    {"", IDENT}, {"IN", IN}, {"AND",AND}, {"OR",OR}, {"TRUE", TRU}, {"FALSE", FALS}, {"IMPORT", IMPORT},
+    {"", IDENT}, {"IN", IN}, {"AND",AND}, {"OR",OR}, {"TRUE", TRU}, {"FALSE", FALS}, {"NOT", NOT},{"IMPORT", IMPORT},
     {"IF", IF}, {"ELSE", ELSE}, {"FOR", FOR}, {"WHILE", WHILE}, {"CASE", CASE}, {"SWITCH", SWITCH},
     {"OBJECT", OBJECT}, {"CONSTRUCTOR", CONSTRUCTOR}, {"DESTRUCTOR", DESTRUCTOR},
     {"CONST", CONST}, {"SINGULAR", SINGULAR}, {"PUBLIC", PUBLIC}, {"PRIVATE", PRIVATE}, {"PROTECTED", PROTECTED},
@@ -26,7 +26,7 @@ map<string, KeyToken> keywords = {
 
 string keytokens[] {
     "IDENT","ERR","IN","AND","OR","TRU","FALS", "NOT", "IMPORT",
-    "EQUALCMP","EQUALS","GREATER", "LESS", "INSERTION","REMOVAL", "INCREMENT", "DECREMENT",
+    "EQUALCMP","EQUALS", "NOTEQUAL", "GREATER", "GREATEREQUALS", "LESS", "LESSEQUALS", "INSERTION","REMOVAL", "INCREMENT", "DECREMENT",
     "OPENCURL","CLOSECURL","LPAREN","RPAREN", "COMMA",
     "PLUS","MINUS","MULT","DIV","LEFTOVER","POWERTO","POINTERTO","REFRENCETO",
     "IF","ELSE","FOR","WHILE","CASE","SWITCH",
@@ -134,9 +134,11 @@ Token getNextToken(istream & s, int & line){
             else if (ch == '*') return Token(MULT, "*", line); 
             else if (ch == '^') return Token(POWERTO, "^", line); 
             else if (ch == '%') return Token(LEFTOVER, "%", line); 
-            else if (ch == '!') return Token(NOT, "!", line); 
             else if (ch == ',') return Token(COMMA, ",", line); 
-            else if (ch == '+' && nextchar == '+') {
+            else if (ch == '!') {
+                if(nextchar == '=') {s.get(); return Token(NOTEQUAL, "!=", line); }
+                return Token(NOT, "!", line);
+            }else if (ch == '+' && nextchar == '+') {
                 s.get(); 
                 return Token(INCREMENT, "++", line); }
             else if (ch == '+') return Token(PLUS, "+", line); 
@@ -144,11 +146,17 @@ Token getNextToken(istream & s, int & line){
             else if (ch == '<' && nextchar == '<') {
                 s.get();
                 return Token(INSERTION, "<<", line);
+            }else if(ch == '<' && nextchar == '='){
+                s.get();
+                return Token(LESSEQUALS, "<=", line); 
             }else if (ch == '<') return Token(LESS, "<", line); 
             //Insertion operator vs. Greater than; 
             else if(ch == '>' && nextchar == '>'){
                 s.get(); 
                 return Token(REMOVAL, ">>", line); 
+            }else if(ch == '>' && nextchar == '='){
+                s.get();
+                return Token(GREATEREQUALS, ">=", line); 
             }else if (ch == '>') return Token(GREATER, ">", line);
             //Inline comment vs. Division
             else if (ch == '/' && nextchar == '/') {
