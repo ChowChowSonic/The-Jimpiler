@@ -1,19 +1,29 @@
-//#include "tokenizer.cpp"
-//#include "Stack.cpp"
 using namespace std; 
 //Syntax analyzer for the Compilier
 scope * currentScope = 0; 
 vector<scope> scopes(1);//Can't use a default constructor because APPARENTLY if I try that it overlaps with currentScope and corrupts the end result???????? 
+
+bool analyzeFile(string fileDir);
+
 bool import(Stack<Token>& tokens){
 	Token t = tokens.next(); 
-	while((t.token == IDENT || t.token == COMMA) && t.token != SEMICOL){
+	bool b = true; 
+	while((t.token == IDENT || t.token == COMMA) && t.token != SEMICOL && b){
+		
+		if(t == IDENT){ 
+			string s = t.lex + ".jmb";
+			b = analyzeFile(s); 
+		}else{
+			cout<< ""; //Are you fucking kidding me for once in my life I ACTUALLY found a bug in the G++ compilier.
+			//If I delete this, the loop doesn't terminate properly and the program comes up as correct when it shouldn't. 
+		}
 		t = tokens.next(); 
 	}
-	if(t.token != SEMICOL){ 
+	if(t.token != SEMICOL || !b){ 
 			tokens.go_back(2); 
 			return false; 
 	}
-	return true; 
+	return b; 
 }
 
 bool isValidVariable(Token& t){
@@ -55,7 +65,9 @@ bool logicHelper(Stack<Token>& tokens){
 	//cout << t1; 
 	if(t1 != IDENT && t1 !=SCONST && t1 !=NUMCONST)return false; 
 	t1 = tokens.next(); //cout <<t1; 
-	if(t1 != GREATER && t1 != LESS && t1 != EQUALCMP && t1 != NOTEQUAL && t1 != GREATEREQUALS && t1 != LESSEQUALS) return false; 
+	if(	t1 != GREATER && t1 != LESS && 
+		t1 != EQUALCMP && t1 != NOTEQUAL && 
+		t1 != GREATEREQUALS && t1 != LESSEQUALS) return false; 
 	t1 = tokens.next(); //cout <<t1; 
 	if(t1 != IDENT && t1 !=SCONST && t1 !=NUMCONST)return false; 
 	//cout << "Out of helper\n";
@@ -110,9 +122,8 @@ bool logicStmt(Stack<Token>& tokens){
 
 
 /**
- * @brief using EBNF notation, a term is defined as: 
- * <number> = <IDENT> (*of integer type*) | <NUMCONST>; 
- *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<number>["++"|"--"]; 
+ * @brief using EBNF notation, a term is defined as:  
+ *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<IDENT>["++"|"--"]; 
  * However the ending [++|--] are only allowed if there is no (++|--) at the beginning of the term
  * This method will probably be compiled into the getBoolStmt function, or something similar at a later point
  * 
@@ -180,6 +191,7 @@ bool declare(Stack<Token>& tokens){
 	tokens.go_back(1); 
 	Token t = tokens.next();
 	KeyToken type = t.token; //int, char, bool, etc. 
+	if(tokens.peek() == POINTER) t = tokens.next(); 
 	t = tokens.next();
 	string id = t.lex; //the variable name
 	//cout <<currentScope->hasVariable(t.lex) <<endl; 
@@ -262,6 +274,7 @@ bool func(Stack<Token>& tokens){
  */
 bool declareOrFunction(Stack<Token>& tokens){
 	Token t = tokens.next();
+	if(tokens.peek() == POINTER) t = tokens.next(); 
 	if(t.token >= CONST && t.token <= PROTECTED){
 		//Operators.push_back(t) //Add this to the variable modifier memory
 		return declareOrFunction(tokens); 
@@ -413,7 +426,7 @@ bool getValidStmt(Stack<Token>& tokens){
 		return forStmt(tokens); 
 		case IF:
 		return ifStmt(tokens); 
-		case SWITCH://heh
+		case SWITCH:
 		return caseSwitchStmt(tokens);
 		case CASE:
 		return caseStmt(tokens);
@@ -460,7 +473,43 @@ bool getValidStmt(Stack<Token>& tokens){
 	return false; 
 }
 
-void deleteScopes(){
-	scopes.clear(); 
-	scopes.shrink_to_fit(); 
+Stack<Token> loadTokens(string fileDir){
+    vector<Token> tokens;
+	
+    ifstream file; 
+	file.open(fileDir); 
+	if(!file){	
+		cout << "File '" << fileDir << "' does not exist"<<endl; 
+		Stack<Token> s; 
+		return s; 
+	}
+    int ln = 1;
+    while(!file.eof()){
+            Token t = getNextToken(file, ln); 
+            t.ln = ln; 
+            tokens.push_back(t);
+    }
+	Stack<Token> s(tokens);
+    return s; 
+}
+
+
+bool analyzeFile(string fileDir){
+    bool b;
+    Stack<Token> s = loadTokens(fileDir); 
+    while(!s.eof() && (b = getValidStmt(s))){
+        //if(s.eof() == false)cout << s.eof();
+    }
+    if(!b || !currentScope->hasParent()){
+        //if(currentScope->getParentPointer() != 0) cout << currentScope->getCascadingVars() <<endl; 
+        Token err = s.peek(); //cout << openbrackets <<endl ;
+        cout <<"Syntax error located at token '"<< err.lex <<"' on line "<<err.ln<<" in file: "<< fileDir << "\n";
+        Token e2; 
+        while(err.ln != -1 && (e2 = s.next()).ln == err.ln && !s.eof()){
+            cout <<e2.lex << " "; 
+        }
+        cout << endl; 
+        return false; 
+    }
+    return true; 
 }

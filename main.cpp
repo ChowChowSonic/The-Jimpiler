@@ -7,46 +7,22 @@
 #include <map>
 #include <string>
 #include <algorithm>
+#include <filesystem>
 #include "tokenizer.cpp"
 #include "Scope.cpp"
 #include "Stack.cpp"
 #include "analyzer.cpp"
-
 using namespace std; 
 int main(int argc, char**args){
-    //time_t now = time(nullptr);
-    vector<Token> tokens;
-    ifstream file("test.txt"); 
-    int ln = 1;
-    while(!file.eof()){
-        Token t = getNextToken(file, ln); 
-        t.ln = ln; 
-        tokens.push_back(t);
-    }
-    
-    Stack<Token> s(tokens);
-    //while(!s.eof()) cout << s.next().lex << s.index << " " << s.size<<endl;
-    //s.reset(); 
-    bool b;
-    while(!s.eof() && (b = getValidStmt(s))){
-        //if(s.eof() == false)cout << s.eof();
-    }
-    
-    if(!b || !currentScope->hasParent()){
-        //if(currentScope->getParentPointer() != 0) cout << currentScope->getCascadingVars() <<endl; 
-        Token err = s.peek(); //cout << openbrackets <<endl ;
-        cout <<"Syntax error located at token '"<< err.lex <<"' on line "<<err.ln<<":\n";
-        Token e2; 
-        while((e2 = s.next()).ln == err.ln && !s.eof()){
-            cout <<e2.lex << " "; 
-        }
-        cout << endl; 
-        return 0; 
-    }
-    cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
-    //deleteScopes(); 
-    //time_t end = time(nullptr); 
-    //cout << endl <<"compiled in approx: "<< (end - now) << " seconds"; 
+    string f; 
+    if (argc == 1) f = "test.txt"; //technically bad practice, but not a big deal for now. 
+    else f = args[1]; 
+    time_t now = time(nullptr);
+    bool correct = analyzeFile(f); 
+    time_t end = time(nullptr); 
+    if(correct)
+        cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
+    cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
     //while(!s.eof()){
     //    cout << s.next().lex << endl; 
     //} 

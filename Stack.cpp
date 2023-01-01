@@ -24,10 +24,6 @@ class Stack{
         }
     };
     ~Stack(){
-        delete[] items; 
-        //items->~T();
-        index = 0;
-        size = 0; 
     }
     T next(){
         //cout << index << " " << items[index] <<endl; 
@@ -57,15 +53,18 @@ class Stack{
      * @return T - Either the last item in the list, or the item I down. Whichever is closer
      */
     T scry(){
+        if(size == 0) return Token(ERR, "-1", -1);
         if(index+1 >= size) return items[size-1];
         return items[index];
 
     }
     T currentToken(){
         if (index == 0)return items[0]; 
+        if (size == 0) return Token(ERR, "-1", -1);
         return items[index-1]; 
     }
     T peek(){
+        if(size == 0) return Token(ERR, "-1", -1);
         return items[index]; 
     }
     bool eof(){

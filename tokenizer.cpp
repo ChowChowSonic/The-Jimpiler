@@ -10,7 +10,7 @@ enum KeyToken{
     OPENCURL, CLOSECURL, LPAREN, RPAREN, COMMA, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, //Done
     IF, ELSE, FOR, WHILE, CASE, SWITCH, //Done
-    OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, //Done
+    OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, PERIOD,//Done
     CONST, SINGULAR, PUBLIC, PRIVATE, PROTECTED, //Done
     SCONST, NUMCONST, //Done
     INT, SHORT, LONG, POINTER, FLOAT, DOUBLE, STRING, BOOL, CHAR, BYTE, //Done 
@@ -102,7 +102,7 @@ bool isValidInt(char ch){
     return (isdigit(ch) || ch == '.');
 }
 bool isValidIdent(char ch){
-    return (isalnum(ch) || ch == '_') && (ch != ';');
+    return (isalnum(ch) || ch == '_') && ch != ';' && ch != '.';
 }
 /**
  * @brief Get the Next Token object in the stringstream provided. Also takes a 'line' variable to keep track of possible errors.
@@ -132,6 +132,7 @@ Token getNextToken(istream & s, int & line){
             else if (ch == ')') return Token(RPAREN, ")", line); 
             else if (ch == '(') return Token(LPAREN, "(", line); 
             else if (ch == '*') return Token(MULT, "*", line); 
+            else if (ch == '.') return Token(PERIOD, ".", line); 
             else if (ch == '^') return Token(POWERTO, "^", line); 
             else if (ch == '%') return Token(LEFTOVER, "%", line); 
             else if (ch == ',') return Token(COMMA, ",", line); 

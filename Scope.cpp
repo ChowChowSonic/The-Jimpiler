@@ -70,7 +70,7 @@ class scope{
 	}
 
 	bool addVariable(KeyToken type, string s){
-		variable b(type, s); 
+		variable b = variable(type, s); 
 		//unique_ptr<variable>* v = new unique_ptr<variable>(&b); 
 		//vars.push_back(*new unique_ptr<variable>(&b));
 		vars.push_back(b);
