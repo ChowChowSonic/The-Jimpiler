@@ -1,6 +1,6 @@
 //import e, test; 
 public singular int e = 0; //equivalent of Java's Static modifier
-private const int f = 1; //equivalent of Java's Final modifier
+private const int f = 6+5^2; //equivalent of Java's Final modifier
 int b; 
 
 object struct{
@@ -19,14 +19,14 @@ object struct{
 }
 
 int main(string args){
-    int i = 32 - b--; 
-    private int pointer location = -> i;
+    int x = 32 - b--; 
+    private int pointer location = -> x;
     char c = @location;
-    int i2 = i++;
-    if  x < 20 and x > 0 or x > 5  {
+    int i2 = x++;
+    if  @location == x  {
     }
-    i++; 
-    for int pointer x = 0; not (x == 20 and x >= 0); x++ {  //while(x < 20 or x > 0){ 
+    x++; 
+    for int pointer i = 0; not (x == 20 and x >= 0); x++ {  //while(x < 20 or x > 0){ 
         bool q = true;
         if x < 20 and (x > 0 or x > 5){
             bool l = false; 
