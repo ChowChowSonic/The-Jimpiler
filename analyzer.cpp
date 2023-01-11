@@ -41,33 +41,27 @@ bool addScope(){
 }
 bool mathExpr(Stack<Token> &tokens); 
 bool logicStmt(Stack<Token> &tokens);
-/**
- * TODO: Remove this statement in favor of a traditional operator precidence style
- * 
- * @param tokens 
- * @return true - if it is a valid statement,
- * @return false otherwise
- */
-bool logicHelper(Stack<Token> &tokens){
-	Token t1 = tokens.peek();
 
-	// cout << t1;
+bool greaterLessStmt(Stack<Token>& tokens){
 	bool b = mathExpr(tokens); 
-	t1 = tokens.peek(); // cout <<t1;
-	if (t1 != GREATER && t1 != LESS &&
-		t1 != GREATEREQUALS && t1 != LESSEQUALS)
-		return true;
-	tokens.next(); 
-	b = mathExpr(tokens); // cout <<t1;
-	// cout << "Out of helper\n";
-	return b;
+	if(!b) return false; 
+	Token t = tokens.next(); 
+	while(t == GREATER || t == GREATEREQUALS || t == LESS || t == LESSEQUALS){
+		b = mathExpr(tokens); 
+		if(!b) return false; 
+		t = tokens.next(); 
+	}
+	tokens.go_back(); 
+	return true; 
+
 }
+
 /**
  * @brief checks for a basic <IDENT> (["=="|"!="] <IDENT>)* However, 
  * I am torn between enabling N-way comparison (I.E.: "x == y == z == a == b").
  * No other programming languages that I know of include this, and I have a 
- * feeling it's for good reason... But at the same time I want to add it as I 
- * feel that is extremely convienent in the situations that it comes up in. 
+ * feeling it's for good reason... But at the same time, I want to add it as I 
+ * feel that is extremely convienent in the situations it comes up in. 
  * 
  * @param tokens 
  * @return true - if it is a valid statement,
@@ -75,11 +69,11 @@ bool logicHelper(Stack<Token> &tokens){
  */
 bool compareStmt(Stack<Token>& tokens){
 	// cout << t1;
-	bool b = logicHelper(tokens); 
+	bool b = greaterLessStmt(tokens); 
 	Token t1 = tokens.next(); //cout <<t1;
 	//Keeping N-way comparison in for now, but I might remove it later
 	while (t1 == EQUALCMP || t1 == NOTEQUAL){
-		b = logicHelper(tokens); 
+		b = greaterLessStmt(tokens); 
 		if(!b) return false; 
 		t1 = tokens.next(); 
 	}
@@ -101,7 +95,6 @@ bool compareStmt(Stack<Token>& tokens){
  * join			-> "and" | "or"
  * terminal		-> SCONST | NUMCONST | VARIABLE //Literal string number or variable values
  *
- * TODO: Change this function to be in line with the MathStmt setup
  * TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
  * 
  * @param tokens
@@ -123,7 +116,7 @@ bool logicStmt(Stack<Token> &tokens){
 		isValidTerm = compareStmt(tokens);
 		if (!isValidTerm)
 		{
-			tokens.go_back();
+			
 			return false;
 		}
 		t = tokens.next();
@@ -134,7 +127,7 @@ bool logicStmt(Stack<Token> &tokens){
 
 /**
  * @brief using EBNF notation, a term is roughly defined as:
- *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<IDENT>["++"|"--"] | "true" | "false";
+ *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<IDENT>["++"|"--"] | "true" | "false" | "(" <expr> ")";
  * However the ending [++|--] are only allowed if there is no (++|--) at the beginning of the term
  *
  * @param tokens
@@ -143,6 +136,17 @@ bool logicStmt(Stack<Token> &tokens){
  */
 bool term(Stack<Token> &tokens){
 	// int x = 0++;  //Testing C++ syntax and what's valid
+	if(tokens.peek() == LPAREN){
+		tokens.next();
+		bool t = logicStmt(tokens); 
+		if(tokens.peek() != RPAREN || !t) {
+			if(t)
+				cout << "Expected a closing parenthesis" << endl; 
+			return false;
+		}  
+		tokens.next(); 
+		return true; 
+	}
 	Token t = tokens.next();
 	if(t == TRU || t == FALS) return true;
 
@@ -208,7 +212,6 @@ bool raisedToExpr(Stack<Token> &tokens){
 		bool isValidTerm = term(tokens);
 		if (!isValidTerm)
 		{
-			tokens.go_back();
 			return false;
 		}
 		tok = tokens.next();
@@ -228,7 +231,6 @@ bool multAndDivExpr(Stack<Token> &tokens){
 		bool isValidTerm = raisedToExpr(tokens);
 		if (!isValidTerm)
 		{
-			tokens.go_back();
 			return false;
 		}
 		tok = tokens.next();
@@ -248,12 +250,11 @@ bool multAndDivExpr(Stack<Token> &tokens){
  * @return true - if it is a valid statement,
  * @return false otherwise
  */
-bool mathExpr(Stack<Token> &tokens)
-{
-	bool isValidTerm = multAndDivExpr(tokens);
+bool mathExpr(Stack<Token> &tokens){
+	bool isValidTerm; 
+	isValidTerm = multAndDivExpr(tokens);
 	if (!isValidTerm)
 	{
-		tokens.go_back();
 		return false;
 	}
 	Token t = tokens.next();
@@ -262,7 +263,6 @@ bool mathExpr(Stack<Token> &tokens)
 		isValidTerm = multAndDivExpr(tokens);
 		if (!isValidTerm)
 		{
-			tokens.go_back();
 			return false;
 		}
 		t = tokens.next();
@@ -323,7 +323,6 @@ bool declare(Stack<Token> &tokens)
 			// cout << tokens.peek();
 			if (tokens.next().lex == id)
 				cout << "Cannot use variable in its own declaration statement" << endl;
-			tokens.go_back();
 			return false;
 		}
 	}
@@ -516,8 +515,6 @@ bool forStmt(Stack<Token> &tokens)
 bool ifStmt(Stack<Token> &tokens)
 {
 	bool b = logicStmt(tokens);
-	if (!b)
-		tokens.go_back();
 	return b;
 }
 bool caseStmt(Stack<Token> &tokens)

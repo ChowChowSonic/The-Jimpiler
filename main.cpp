@@ -15,7 +15,7 @@
 using namespace std; 
 int main(int argc, char**args){
     string f; 
-    if (argc == 1) f = "test.txt"; //technically bad practice, but not a big deal for now. 
+    if (argc == 1) f = "test.txt";
     else f = args[1]; 
     time_t now = time(nullptr);
     bool correct = analyzeFile(f); 

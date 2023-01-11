@@ -1,11 +1,12 @@
 //import e, test; 
+private const int y = (6+5)^2; //equivalent of Java's Final modifier
 public singular int x = 0; //equivalent of Java's Static modifier
-private const int y = 6+5^2; //equivalent of Java's Final modifier
 
 int main(string args){
-
-    if x == y == 5{
+    int z = 5; 
+    if (x == y) == 5{
     }
+    
     x++; 
     for int pointer i = 0; x == 20 and x >= 0; x++ {  //while(x < 20 or x > 0){ 
         bool q = true;
