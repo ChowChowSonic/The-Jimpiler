@@ -27,7 +27,7 @@ bool import(Stack<Token> &tokens)
 
 bool isValidVariable(Token &t)
 {
-	bool x = t == IDENT && currentScope->hasVariable(t.lex);
+	bool x = (t == IDENT) && currentScope->hasVariable(t.lex);
 	if (!x)
 		cout << "Error: Unknown variable '" << t.lex << "' at position:" << endl;
 	return x;
@@ -39,39 +39,60 @@ bool addScope(){
 	currentScope = &scopes[scopes.size() - 1];
 	return true;
 }
-bool expr(Stack<Token> &tokens); 
+bool mathExpr(Stack<Token> &tokens); 
 bool logicStmt(Stack<Token> &tokens);
 /**
- * @brief checks for a basic <IDENT> (["=="|">="|"<="|"!="|">"|"<"] <IDENT>)?
+ * TODO: Remove this statement in favor of a traditional operator precidence style
  * 
  * @param tokens 
- * @return true 
- * @return false 
+ * @return true - if it is a valid statement,
+ * @return false otherwise
  */
 bool logicHelper(Stack<Token> &tokens){
 	Token t1 = tokens.peek();
 
-	if (t1 == TRU || t1 == FALS)
-	{
-		tokens.next(); 
-		return true;
-	}
 	// cout << t1;
-	bool b = expr(tokens); 
+	bool b = mathExpr(tokens); 
 	t1 = tokens.peek(); // cout <<t1;
 	if (t1 != GREATER && t1 != LESS &&
-		t1 != EQUALCMP && t1 != NOTEQUAL &&
 		t1 != GREATEREQUALS && t1 != LESSEQUALS)
 		return true;
 	tokens.next(); 
-	b = expr(tokens); // cout <<t1;
+	b = mathExpr(tokens); // cout <<t1;
+	// cout << "Out of helper\n";
+	return b;
+}
+/**
+ * @brief checks for a basic <IDENT> (["=="|"!="] <IDENT>)* However, 
+ * I am torn between enabling N-way comparison (I.E.: "x == y == z == a == b").
+ * No other programming languages that I know of include this, and I have a 
+ * feeling it's for good reason... But at the same time I want to add it as I 
+ * feel that is extremely convienent in the situations that it comes up in. 
+ * 
+ * @param tokens 
+ * @return true - if it is a valid statement,
+ * @return false otherwise
+ */
+bool compareStmt(Stack<Token>& tokens){
+	// cout << t1;
+	bool b = logicHelper(tokens); 
+	Token t1 = tokens.next(); //cout <<t1;
+	//Keeping N-way comparison in for now, but I might remove it later
+	while (t1 == EQUALCMP || t1 == NOTEQUAL){
+		b = logicHelper(tokens); 
+		if(!b) return false; 
+		t1 = tokens.next(); 
+	}
+
+	tokens.go_back(); 
 	// cout << "Out of helper\n";
 	return b;
 }
 
 /**
  * @brief Parses a logic statement (bool value; I.E. "x == 5") consisting of only idents and string/number constants.
- * EBNF isn't technically 100% accurate, but that's because a few assumptions should be made going into this, like, for example, all open parenthesis should have a matching closing parenthesis
+ * EBNF isn't technically 100% accurate, but that's because a few assumptions should be made going into this, like, 
+ * for example, all open parenthesis should have a matching closing parenthesis 
  * logicStmt 	-> <Stmt> <join> <logicStmt> | <Stmt>
  * Stmt			-> "("?<helper>")"? <Join> "("?<helper>")"?
  * helper		-> <base> | <logicStmt>
@@ -80,57 +101,40 @@ bool logicHelper(Stack<Token> &tokens){
  * join			-> "and" | "or"
  * terminal		-> SCONST | NUMCONST | VARIABLE //Literal string number or variable values
  *
+ * TODO: Change this function to be in line with the MathStmt setup
+ * TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
+ * 
  * @param tokens
- * @return true
- * @return false
+ * @return true - if it is a valid logic statement,
+ * @return false otherwise
  */
 bool logicStmt(Stack<Token> &tokens){
-	bool x = false, hasParen = false;
-	if (tokens.next() != NOT)
+	if(tokens.peek() == NOT) tokens.next(); 
+	bool isValidTerm = compareStmt(tokens);
+	if (!isValidTerm)
+	{
 		tokens.go_back();
-	// (? <helper> )?
-	if (tokens.peek() == LPAREN){
-		hasParen = true;
-		tokens.next();
-		x = logicStmt(tokens);
-		if (tokens.peek() == RPAREN)
+		return false;
+	}
+	Token t = tokens.next();
+	while (t == AND || t == OR)
+	{
+		if(tokens.peek() == NOT) tokens.next(); 
+		isValidTerm = compareStmt(tokens);
+		if (!isValidTerm)
 		{
-			if (!hasParen)
-			{
-				tokens.go_back(2);
-				return false;
-			}
-			hasParen = false;
-			tokens.next();
-		}
-		else
-		{
-			cout << "Expected an additional ')' at position:" << endl;
+			tokens.go_back();
 			return false;
 		}
+		t = tokens.next();
 	}
-	else
-	{
-		x = logicHelper(tokens);
-	}
-	if (!x)
-		return false;
-
-	//<join>
-	if (tokens.peek() == AND || tokens.peek() == OR)
-	{
-		tokens.next();
-		//<logicStmt>
-		x = logicStmt(tokens);
-		return x;
-	}
-
+	tokens.go_back();
 	return true;
 }
 
 /**
- * @brief using EBNF notation, a term is defined as:
- *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<IDENT>["++"|"--"];
+ * @brief using EBNF notation, a term is roughly defined as:
+ *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<IDENT>["++"|"--"] | "true" | "false";
  * However the ending [++|--] are only allowed if there is no (++|--) at the beginning of the term
  *
  * @param tokens
@@ -140,6 +144,8 @@ bool logicStmt(Stack<Token> &tokens){
 bool term(Stack<Token> &tokens){
 	// int x = 0++;  //Testing C++ syntax and what's valid
 	Token t = tokens.next();
+	if(t == TRU || t == FALS) return true;
+
 	if (t == PLUS || t == MINUS)
 	{
 		t = tokens.next();
@@ -191,14 +197,14 @@ bool term(Stack<Token> &tokens){
 	return t == NUMCONST;
 }
 
-bool raisedTo(Stack<Token> &tokens){
+bool raisedToExpr(Stack<Token> &tokens){
 	bool t = term(tokens);
 	if (!t)
 	{
 		return false;
 	}
 	Token tok = tokens.next(); 
-	while (tok == POWERTO|| tok == LEFTOVER){
+	while (tok == POWERTO || tok == LEFTOVER){
 		bool isValidTerm = term(tokens);
 		if (!isValidTerm)
 		{
@@ -211,7 +217,7 @@ bool raisedTo(Stack<Token> &tokens){
 	return true; 
 }
 bool multAndDivExpr(Stack<Token> &tokens){
-	bool t = raisedTo(tokens);
+	bool t = raisedToExpr(tokens);
 	if (!t)
 	{
 		return false;
@@ -219,7 +225,7 @@ bool multAndDivExpr(Stack<Token> &tokens){
 	Token tok = tokens.next(); 
 	while (tok == MULT || tok == DIV)
 	{
-		bool isValidTerm = raisedTo(tokens);
+		bool isValidTerm = raisedToExpr(tokens);
 		if (!isValidTerm)
 		{
 			tokens.go_back();
@@ -231,18 +237,18 @@ bool multAndDivExpr(Stack<Token> &tokens){
 	return true; 
 }
 /**
- * @brief Parses a mathematical expression. expr itself only handles 
- * addition and subtraction, but calls multAndDivExpr for any multiplication or division. 
- * An expr is approximately defined as:
+ * @brief Parses a mathematical expression. mathExpr itself only handles 
+ * addition and subtraction, but calls multAndDivExpr & RaisedToExper for any multiplication or division. 
+ * A mathExpr is approximately defined as:
  * 
  * expr		-> <TERM> <join> <expr> | <TERM>
  * join		-> "+" | "-" | "*" | "/" | "^"
  * term is denfined in the function of the same name -> "bool term(Stack<Token> tokens)"
  * @param tokens 
- * @return true 
- * @return false 
+ * @return true - if it is a valid statement,
+ * @return false otherwise
  */
-bool expr(Stack<Token> &tokens)
+bool mathExpr(Stack<Token> &tokens)
 {
 	bool isValidTerm = multAndDivExpr(tokens);
 	if (!isValidTerm)
@@ -308,7 +314,7 @@ bool declare(Stack<Token> &tokens)
 		if (type == BOOL)
 			b = logicStmt(tokens);
 		else
-			b = expr(tokens);
+			b = mathExpr(tokens);
 		// tokens.go_back();
 		// cout <<tokens.peek();
 		if (!b)
@@ -484,7 +490,7 @@ bool genericStmt(Stack<Token> &tokens)
 		return true;
 	if (t == EQUALS)
 	{
-		return expr(tokens);
+		return mathExpr(tokens);
 	}
 	return false;
 }
@@ -498,11 +504,10 @@ bool forStmt(Stack<Token> &tokens)
 	b = logicStmt(tokens);
 	if (tokens.next() != SEMICOL)
 	{
-		cout << "Expected a ';' instead of the token here:" << endl;
 		tokens.go_back(1);
 		return false;
 	}
-	b = expr(tokens); // TBI: variable checking
+	b = mathExpr(tokens); // TBI: variable checking
 	if (tokens.peek() == SEMICOL)
 		tokens.next();
 	return b;
