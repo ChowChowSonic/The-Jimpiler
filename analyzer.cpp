@@ -141,7 +141,7 @@ bool logicStmt(Stack<Token> &tokens){
  * @return false if syntax is not valid
  */
 bool term(Stack<Token> &tokens){
-	// int x = 0++;  //Testing C++ syntax and what's valid
+	//int y=0,x = ++y++;  //Testing C++ syntax and what's valid
 	if(tokens.peek() == LPAREN){
 		tokens.next();
 		bool t = logicStmt(tokens); 

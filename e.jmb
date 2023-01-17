@@ -1,3 +1,4 @@
+import test; 
 int y = 0;
 int main(){
 	int e = 0; 

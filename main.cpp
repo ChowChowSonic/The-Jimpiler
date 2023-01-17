@@ -1,4 +1,8 @@
-//cd "c:\\Users\\joeya\\Documents\\GitHub\\CompilierAttempt\\" && g++ main.cpp -o tokenizer && "c:\\Users\\joeya\\Documents\\GitHub\\CompilierAttempt\\"tokenizer
+/*
+Shell command to run the file: (I should probably just run this in a .sh)
+g++ -g -O3 -c `llvm-config --cxxflags --ldflags --system-libs --libs core` main.cpp -o unlinked_exe && 
+g++ unlinked_exe $(llvm-config --ldflags --libs) -lpthread -o jmb && ./jmb
+*/
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -8,6 +12,7 @@
 #include <string>
 #include <algorithm>
 #include <filesystem>
+#include "jimpilier.h"
 #include "tokenizer.cpp"
 #include "Scope.cpp"
 #include "Stack.cpp"
