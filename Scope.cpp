@@ -1,5 +1,4 @@
 using namespace std; 
-
 class variable{
 	private:
 	//bool isPointer = false; 
@@ -33,16 +32,21 @@ class variable{
 
 /**
  * @brief A block of code bounded by an opening and closing curly bracket, with variables inside of it.
- * A scope can access any variables owned by itself or it's parent (or it's parent's parent, or it's parent's parent's parent, etc...)
+ * A scope can access any variables owned by itself or it's parent 
+ * (or it's parent's parent, or it's parent's parent's parent, etc...)
  * A scope with no parent is called a "base" scope. 
  * 
- * Currently unsafe (I think), and badly coded As all hell... still trying to debug stuff before I correct alot of these problems. 
+ * Currently unsafe (I think), and badly coded As all hell... 
+ * still trying to debug stuff before I correct alot of these problems. 
  * 
  */
+static int IDs =0; 
 class scope{
 	private: 
 	scope * parent = 0; 
 	std::vector<variable> vars; 
+	int id; 
+
 	//std::vector<unique_ptr<variable>> vars; //Lord help me unique_ptrs are hell to deal with
 
 	public:
@@ -52,10 +56,13 @@ class scope{
 	 */
 	scope(){
 		this->parent = 0;  
+		id = IDs; 
+		IDs++; 
 	}
 	scope(const scope & cpy){
 		this->parent = cpy.parent; 
 		this->vars = cpy.vars; 
+		id = cpy.id; 
 	}
 	/**
 	 * @brief Construct a new scope object, with a parent
@@ -64,6 +71,8 @@ class scope{
 	 */
 	scope(scope * parnt){
 		this->parent = parnt; 
+		id = IDs;
+		IDs++;  
 	}
 
 	bool addVariable(KeyToken type, string s){
@@ -101,7 +110,8 @@ class scope{
 		return parent; 
 	}
 	/**
-	 * @brief Get the Variable Names of THIS SCOPE ONLY - not the parent scopes. See getCascadingVars() for parent scopes as well.
+	 * @brief Get the Variable Names of THIS SCOPE ONLY - not the parent scopes. See getCascadingVars() 
+	 * for parent scopes as well.
 	 * 
 	 * @return string 
 	 */
@@ -124,18 +134,16 @@ class scope{
 	 */
 	string getCascadingVars(){
 		string s;
-		//for(int i = 0; i <vars.size(); i++){
-		//	string s2 = vars[i].get()->getName(); 
+		s+=to_string(id); s+=": "; 
 		for(variable s2 : vars){
 			s+=s2.getName();
 			s+= ", "; 
 		}
 		if(s == "") s = "No variables found locally ";
-		s+= " / ";
-		//if(this->hasPar || parent != 0) cout << endl << parent << " " << ((this->hasPar)? "true" : "false"); 
-		if(this->hasParent())s+= parent->getCascadingVars(); 
-		else{
-			s+= " No further scopes found"; 
+		
+		if(this->hasParent()){
+			s+= "/ ";
+			s+= parent->getCascadingVars(); 
 		}
 		return s;
 	}

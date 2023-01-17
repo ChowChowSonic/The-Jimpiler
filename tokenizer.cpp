@@ -30,7 +30,7 @@ string keytokens[] {
     "OPENCURL","CLOSECURL","LPAREN","RPAREN", "COMMA",
     "PLUS","MINUS","MULT","DIV","LEFTOVER","POWERTO","POINTERTO","REFRENCETO",
     "IF","ELSE","FOR","WHILE","CASE","SWITCH",
-    "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL",
+    "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL", "PERIOD",
     "CONST","SINGULAR","PUBLIC","PRIVATE","PROTECTED",
     "SCONST", "NUMCONST",
     "INT","SHORT","LONG","POINTER","FLOAT","DOUBLE","STRING","BOOL","CHAR","BYTE"
@@ -232,5 +232,5 @@ Token getNextToken(istream & s, int & line){
             if(ch == '\n') state = START; 
         }
     }
-    return Token(ERR, string(""), -1);
+    return Token(ERR, string("ERROR"), -1);
 }

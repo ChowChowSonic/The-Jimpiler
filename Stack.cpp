@@ -18,10 +18,13 @@ class Stack{
         //cout << item.size() << " " <<size; 
         items = new T[size]; 
         int x = 0;
+        //I know there are better ways to do this, but I'm doing it this way for debugging purposes
         for(T i : item){
+            //cout << i; 
             items[x] = i; 
             x++;
         }
+        //cout <<endl; 
     };
     ~Stack(){
     }
@@ -68,7 +71,8 @@ class Stack{
         return items[index]; 
     }
     bool eof(){
-        return (index >= size-1); 
+        //cout << items[index]<< ": " <<index << " - "<<  sizeof(items)/sizeof(items[0]) <<endl; 
+        return !(index < size); 
     }
     void reset(){
         index = 0;

@@ -1,8 +1,9 @@
+#include "SLL.cpp"
 using namespace std;
 // Syntax analyzer for the Compilier
 scope *currentScope = 0;
-vector<scope> scopes(1); // Can't use a default constructor because APPARENTLY if I try that it overlaps with currentScope and corrupts the end result????????
-
+SLL<scope> scopes; // Can't use a default constructor because APPARENTLY if I try that it overlaps with currentScope and corrupts the end result????????
+vector<string> importedFiles; 
 bool analyzeFile(string fileDir);
 
 bool import(Stack<Token> &tokens)
@@ -14,7 +15,12 @@ bool import(Stack<Token> &tokens)
 		if (t == IDENT)
 		{
 			string s = t.lex + ".jmb";
-			b = analyzeFile(s);
+			if(find(importedFiles.begin(), importedFiles.end(), s) == importedFiles.end()){
+				importedFiles.push_back(s); 
+				b = analyzeFile(s);
+			}
+			//currentScope = currentScope->getParentPointer(); 
+
 		}
 	}
 	if (t.token != SEMICOL || !b)
@@ -34,9 +40,9 @@ bool isValidVariable(Token &t)
 }
 
 bool addScope(){
-	scope s;
-	scopes.emplace_back(currentScope);
-	currentScope = &scopes[scopes.size() - 1];
+	scope s(currentScope);
+	scopes.emplace_back(s);
+	currentScope = scopes.getHead();
 	return true;
 }
 bool mathExpr(Stack<Token> &tokens); 
@@ -304,7 +310,6 @@ bool declare(Stack<Token> &tokens)
 	// cout << currentScope->getCascadingVars()<<endl<<endl;
 	if (tokens.peek() == SEMICOL)
 	{
-		tokens.next();
 		currentScope->addVariable(type, t.lex);
 		return true;
 	}
@@ -547,7 +552,7 @@ void printAllScopes()
 {
 	for (int i = 0; i < scopes.size(); i++)
 	{
-		cout << "Number " << i << ": " << scopes[i].getCascadingVars() << endl;
+		cout << "Number " << i << ": " << scopes.getHead()->getCascadingVars();
 	}
 	cout << "End of scopes" << endl
 		<< endl;
@@ -568,9 +573,9 @@ bool getValidStmt(Stack<Token> &tokens)
 	{
 		addScope();
 	}
+	cout << currentScope->getCascadingVars() <<endl; 
 	bool status = false;
 	Token t = tokens.next();
-	// cout << t;
 	switch (t.token)
 	{
 	case IMPORT:
@@ -601,6 +606,7 @@ bool getValidStmt(Stack<Token> &tokens)
 		return addScope();
 	}
 	case CLOSECURL:
+		//cout << "Close curl called" << endl;
 		if (currentScope->getParentPointer() == 0)
 		{
 			cout << "unbalanced brackets" << endl;
@@ -655,7 +661,8 @@ Stack<Token> loadTokens(string fileDir)
 	{
 		Token t = getNextToken(file, ln);
 		t.ln = ln;
-		tokens.push_back(t);
+		if(t != ERR)
+			tokens.push_back(t);
 	}
 	Stack<Token> s(tokens);
 	return s;
@@ -667,9 +674,9 @@ bool analyzeFile(string fileDir)
 	Stack<Token> s = loadTokens(fileDir);
 	while (!s.eof() && (b = getValidStmt(s)))
 	{
-		// if(s.eof() == false)cout << s.eof();
+		//cout<< s.eof() <<endl;
 	}
-	if (!b || !currentScope->hasParent())
+	if (!b || currentScope->hasParent())
 	{
 		// if(currentScope->getParentPointer() != 0) cout << currentScope->getCascadingVars() <<endl;
 		Token err = s.peek(); // cout << openbrackets <<endl ;

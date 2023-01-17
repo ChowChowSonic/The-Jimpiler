@@ -1,3 +1,4 @@
+int y = 0;
 int main(){
-	int x = 5^2;
+	int e = 0; 
 }

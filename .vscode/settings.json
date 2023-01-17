@@ -59,6 +59,14 @@
         "numeric": "cpp",
         "sstream": "cpp",
         "string_view": "cpp",
-        "array": "cpp"
+        "array": "cpp",
+        "chrono": "cpp",
+        "codecvt": "cpp",
+        "cstdarg": "cpp",
+        "cwctype": "cpp",
+        "unordered_map": "cpp",
+        "memory_resource": "cpp",
+        "ratio": "cpp",
+        "numbers": "cpp"
     }
 }
