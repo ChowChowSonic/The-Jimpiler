@@ -7,7 +7,7 @@ using namespace std;
 enum KeyToken{
     IDENT, ERR, IN, AND, OR, TRU, FALS, NOT, IMPORT, //Done
     EQUALCMP, EQUALS, NOTEQUAL, GREATER, GREATEREQUALS, LESS, LESSEQUALS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
-    OPENCURL, CLOSECURL, LPAREN, RPAREN, COMMA, //Done
+    OPENCURL, CLOSECURL, OPENSQUARE, CLOSESQUARE, LPAREN, RPAREN, COMMA, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, //Done
     IF, ELSE, FOR, WHILE, CASE, SWITCH, RET, //Done
     OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, PERIOD,//Done
@@ -27,7 +27,7 @@ map<string, KeyToken> keywords = {
 string keytokens[] {
     "IDENT","ERR","IN","AND","OR","TRU","FALS", "NOT", "IMPORT",
     "EQUALCMP","EQUALS", "NOTEQUAL", "GREATER", "GREATEREQUALS", "LESS", "LESSEQUALS", "INSERTION","REMOVAL", "INCREMENT", "DECREMENT",
-    "OPENCURL","CLOSECURL","LPAREN","RPAREN", "COMMA",
+    "OPENCURL","CLOSECURL", "OPENSQUARE", "CLOSESQUARE", "LPAREN","RPAREN", "COMMA",
     "PLUS","MINUS","MULT","DIV","LEFTOVER","POWERTO","POINTERTO","REFRENCETO",
     "IF","ELSE","FOR","WHILE","CASE","SWITCH", "RET",
     "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL", "PERIOD",
@@ -129,6 +129,8 @@ Token getNextToken(istream & s, int & line){
             else if(ch == ';') return Token(SEMICOL, ";", line); 
             else if (ch == '{') return Token(OPENCURL, "{", line); 
             else if (ch == '}') return Token(CLOSECURL, "}", line); 
+            else if (ch == '[') return Token(OPENSQUARE, "[", line); 
+            else if (ch == ']') return Token(CLOSESQUARE, "]", line); 
             else if (ch == ')') return Token(RPAREN, ")", line); 
             else if (ch == '(') return Token(LPAREN, "(", line); 
             else if (ch == '*') return Token(MULT, "*", line); 

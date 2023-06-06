@@ -16,12 +16,12 @@ namespace jimpilier
 	llvm::LLVMContext ctxt;
 	llvm::IRBuilder<> builder(ctxt);
 	static std::unique_ptr<llvm::Module> GlobalVarsAndFunctions = std::make_unique<llvm::Module>("default", ctxt);
-	std::map<string, llvm::Value *> variables;
+	std::map<std::string, llvm::Value *> variables;
 
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
 	{
-	public:
+	public: //TODO: Implement types here
 		virtual ~ExprAST(){};
 		virtual llvm::Value *codegen() = 0;
 	};
@@ -35,7 +35,7 @@ namespace jimpilier
 		NumberExprAST(double Val) : Val(Val) {}
 		llvm::Value *codegen()
 		{
-			cout << Val << endl;
+			std::cout << Val << std::endl;
 			return NULL;
 		}
 	};
@@ -74,8 +74,8 @@ namespace jimpilier
 		vector<std::unique_ptr<ExprAST>> Args;
 
 	public:
-		CallExprAST(const string &Callee, vector<std::unique_ptr<ExprAST>> Args)
-			: Callee(Callee), Args(std::move(Args)) {}
+		CallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> Arg)
+			: Callee(callee), Args(Arg) {}
 		llvm::Value *codegen()
 		{
 			return nullptr;
@@ -87,11 +87,12 @@ namespace jimpilier
 */
 	class ListExprAST : public ExprAST
 	{
+		public:
 		std::vector<std::unique_ptr<ExprAST>> Contents;
 		ListExprAST(std::vector<std::unique_ptr<ExprAST>> Args)
-			: Contents(std::move(Args)) {}
+			: Contents(Args) {}
 
-		llvm::Value *ListExprAST::codegen()
+		llvm::Value * codegen()
 		{
 			llvm::Value *ret = NULL;
 			for (auto i = Contents.begin(); i < Contents.end(); i++)
@@ -149,7 +150,8 @@ namespace jimpilier
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
 
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
-
+	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens);
+	
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
 		Token t;
@@ -186,9 +188,9 @@ namespace jimpilier
 		while (tokens.peek() == GREATER || tokens.peek() == LESS)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(RHS), std::move(mathExpr(tokens))));
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(mathExpr(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(LHS), std::move(RHS)));
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -212,9 +214,9 @@ namespace jimpilier
 		while (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(RHS), std::move(greaterLessStmt(tokens))));
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(greaterLessStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(LHS), std::move(RHS)));
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
@@ -227,9 +229,9 @@ namespace jimpilier
 		while (tokens.peek() == AND)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(RHS), std::move(compareStmt(tokens))));
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(compareStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(LHS), std::move(RHS)));
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -261,9 +263,9 @@ namespace jimpilier
 		while (tokens.peek() == OR)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(RHS), std::move(andStmt(tokens))));
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(andStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(LHS), std::move(RHS)));
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -287,24 +289,24 @@ namespace jimpilier
 			if (tokens.peek() != RPAREN || !LHS)
 			{
 				if (LHS)
-					cout << "Expected a closing parenthesis" << endl;
+					std::cout << "Expected a closing parenthesis" << std::endl;
 				return NULL;
 			}
 			tokens.next();
 		}
 		Token t = tokens.next();
 		if (t == TRU || t == FALS)
-			return std::make_unique<NumberExprAST>(new NumberExprAST(1));
+			return std::make_unique<NumberExprAST>(1);
 
 		if (t == IDENT && (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT))
 		{
 			tokens.next();
-			LHS = std::make_unique<VariableExprAST>(new VariableExprAST(t.lex));
+			LHS = std::make_unique<VariableExprAST>(t.lex);
 			return LHS;
 		}
 		else if (t == IDENT)
 		{
-			return std::make_unique<VariableExprAST>(new VariableExprAST(t.lex));
+			return std::make_unique<VariableExprAST>(t.lex);
 		}
 
 		return LHS;
@@ -321,13 +323,13 @@ namespace jimpilier
 		while (tokens.peek() == POWERTO || tokens.peek() == LEFTOVER)
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(RHS), std::move(term(tokens))));
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(term(tokens)));
 			if (!LHS)
 			{
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(LHS), std::move(RHS)));
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> multAndDivExpr(Stack<Token> &tokens)
@@ -341,13 +343,13 @@ namespace jimpilier
 		while (tokens.peek() == MULT || tokens.peek() == DIV)
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(RHS), std::move(raisedToExpr(tokens))));
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(raisedToExpr(tokens)));
 			if (!LHS)
 			{
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(LHS), std::move(RHS)));
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -383,6 +385,28 @@ namespace jimpilier
 	}
 
 	/**
+	 * Note: This function does not yet parse the square brackets, only the innter sections.
+	 * A list representation can be displayed in EBNF as:
+	 *  <OBRACKET> 	-> [ //Literal character
+	 *  <CBRACKET> 	-> ] //Literal character
+	 * 	<REGLIST>	-> <BoolStmt>{, <BoolStmt>} //Regular list: [1, 2, 3, 4, 5]
+	 * 	<ITERATOR>	-> <VAR> <FOREACHSTMT> //stolen directly from python syntax: [x+1 for x in list]
+	 *  <ListRep>	-> <OBRACKET> (<REGLIST>|<ITERATOR>) <CBRACKET>
+	 */
+	std::unique_ptr<ExprAST> listRepresentation(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> LHS = std::move(logicStmt(tokens));
+		std::vector<std::unique_ptr<ExprAST>> contents;
+		while (tokens.peek() == COMMA)
+		{
+			tokens.next();
+			contents.push_back(std::move(LHS));
+			LHS = std::move(logicStmt(tokens));
+		}
+		return std::make_unique<ListExprAST>(contents);
+	}
+
+	/**
 	 * @brief Called whenever a primitive type or object type keyword is seen.
 	 *
 	 * @param tokens
@@ -400,13 +424,13 @@ namespace jimpilier
 		string id = t.lex; // the variable name
 		if (t.token != IDENT)
 		{
-			cout << "Error: Not an identifier: " << t.lex << endl;
+			std::cout << "Error: Not an identifier: " << t.lex << std::endl;
 			tokens.go_back(2);
 			return NULL;
 		}
 		if (tokens.peek() == SEMICOL)
 		{
-			return std::make_unique<VariableExprAST>(new VariableExprAST(id));
+			return std::make_unique<VariableExprAST>(id);
 		}
 		else if (tokens.next() != EQUALS)
 		{
@@ -416,18 +440,18 @@ namespace jimpilier
 		if (tokens.peek().lex != "[")
 			b = logicStmt(tokens);
 		else
-			b = listRepresentation(tokens); // Ok now I have to figure out what to do with b...
+			b = std::move(listRepresentation(tokens)); // Ok now I have to figure out what to do with b...
 		// tokens.go_back();
-		// cout <<tokens.peek();
+		// std::cout <<tokens.peek();
 		if (!b)
 		{
 			// tokens.go_back();
-			// cout << tokens.peek();
+			// std::cout << tokens.peek();
 			if (tokens.next().lex == id)
-				cout << "Cannot use variable in its own declaration statement" << endl;
+				std::cout << "Cannot use variable in its own declaration statement" << std::endl;
 			return NULL;
 		}
-		// cout << t.lex <<endl ;
+		// std::cout << t.lex <<std::endl ;
 		t = tokens.next();
 		// variables[t] = type;
 		// put a way to interpret statements here
@@ -447,27 +471,6 @@ namespace jimpilier
 			return NULL;
 		}
 		return NULL; // TODO: Fix this
-	}
-	/**
-	 * Note: This function does not yet parse the square brackets, only the innter sections.
-	 * A list representation can be displayed in EBNF as:
-	 *  <OBRACKET> 	-> [ //Literal character
-	 *  <CBRACKET> 	-> ] //Literal character
-	 * 	<REGLIST>	-> <BoolStmt>{, <BoolStmt>} //Regular list: [1, 2, 3, 4, 5]
-	 * 	<ITERATOR>	-> <VAR> <FOREACHSTMT> //stolen directly from python syntax: [x+1 for x in list]
-	 *  <ListRep>	-> <OBRACKET> (<REGLIST>|<ITERATOR>) <CBRACKET>
-	 */
-	std::unique_ptr<ExprAST> listRepresentation(Stack<Token> &tokens)
-	{
-		std::unique_ptr<ExprAST> LHS = std::move(logicStmt(tokens));
-		std::vector<std::unique_ptr<ExprAST>> contents;
-		while (tokens.peek() == COMMA)
-		{
-			tokens.next();
-			contents.push_back(std::move(LHS));
-			LHS = std::move(logicStmt(tokens));
-		}
-		return std::make_unique<ListExprAST>(std::move(contents));
 	}
 
 	std::unique_ptr<FunctionAST> func(Stack<Token> &tokens)
@@ -491,6 +494,7 @@ namespace jimpilier
 		std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, std::move(argnames));
 		if(auto E = getValidStmt(tokens))
 			return std::make_unique<FunctionAST>(std::move(proto), std::move(E)); 
+		return NULL;
 	}
 
 	/**
@@ -524,7 +528,7 @@ namespace jimpilier
 			t = tokens.peek();
 			if (t.token == LPAREN)
 			{ // It's a function
-				return func(tokens);
+				return NULL; //func(tokens); //TODO: Fix this
 				// return function(tokens); //TBI
 			}
 			else if (t == EQUALS || t == SEMICOL)
@@ -588,18 +592,16 @@ namespace jimpilier
 		if (t == INCREMENT || t == DECREMENT)
 		{
 			Token t2 = tokens.next();
-			retval = new VariableExprAST(t2.lex);
-			return std::make_unique<ExprAST>(retval);
+			return std::make_unique<VariableExprAST>(t2.lex);
 		}
 		t = tokens.next();
-		retval = new VariableExprAST(t.lex);
 		if (t == INCREMENT || t == DECREMENT)
-			return std::make_unique<ExprAST>(retval);
+			return std::make_unique<VariableExprAST>(t.lex);
 		if (t == EQUALS)
 		{
 			return mathExpr(tokens);
 		}
-		return std::make_unique<ExprAST>(retval);
+		return std::make_unique<VariableExprAST>(t.lex);
 	}
 
 	std::unique_ptr<ExprAST> forStmt(Stack<Token> &tokens)
@@ -640,7 +642,7 @@ namespace jimpilier
 		Token variable = tokens.next();
 		if (variable != IDENT)
 		{
-			cout << "Unexpected token: '" << variable.lex << "' - expected a variable." << endl;
+			std::cout << "Unexpected token: '" << variable.lex << "' - expected a variable." << std::endl;
 			tokens.go_back();
 			return NULL;
 		}
@@ -690,7 +692,7 @@ namespace jimpilier
 			return NULL;
 		}
 		case CLOSECURL:
-			// cout << "Close curl called" << endl;
+			// std::cout << "Close curl called" << std::endl;
 			return NULL;
 		case RET:
 			return NULL;
@@ -713,13 +715,13 @@ namespace jimpilier
 			return declareOrFunction(tokens);
 		default:
 		{
-			cout << "ERROR: Unknown token: \n"
-				 << t << endl;
+			std::cout << "ERROR: Unknown token: \n"
+				 << t << std::endl;
 			tokens.go_back(1);
 			return NULL;
 		}
 		}
-		cout << "Returning NULL by error?" << endl;
+		std::cout << "Returning NULL by error?" << std::endl;
 		return NULL;
 	}
 	Stack<Token> loadTokens(string fileDir)
@@ -730,7 +732,7 @@ namespace jimpilier
 		file.open(fileDir);
 		if (!file)
 		{
-			cout << "File '" << fileDir << "' does not exist" << endl;
+			std::cout << "File '" << fileDir << "' does not exist" << std::endl;
 			Stack<Token> s;
 			return s;
 		}
@@ -752,18 +754,18 @@ namespace jimpilier
 		Stack<Token> s = loadTokens(fileDir);
 		while (!s.eof() && (b = getValidStmt(s)))
 		{
-			// cout<< s.eof() <<endl;
+			// std::cout<< s.eof() <<std::endl;
 		}
 		if (!b)
 		{
-			Token err = s.peek(); // cout << openbrackets <<endl ;
-			cout << "Syntax error located at token '" << err.lex << "' on line " << err.ln << " in file: " << fileDir << "\n";
+			Token err = s.peek(); // std::cout << openbrackets <<std::endl ;
+			std::cout << "Syntax error located at token '" << err.lex << "' on line " << err.ln << " in file: " << fileDir << "\n";
 			Token e2;
 			while (err.ln != -1 && (e2 = s.next()).ln == err.ln && !s.eof())
 			{
-				cout << e2.lex << " ";
+				std::cout << e2.lex << " ";
 			}
-			cout << endl;
+			std::cout << std::endl;
 			return NULL;
 		}
 		return NULL; // TODO: Fix this
