@@ -9,27 +9,24 @@ template <typename T>
 class Stack{
     public:
     int index = 0, size = 0; 
-    T * items; 
+    vector<T> items; 
     Stack(){
-        items = 0; 
+        // items = 0; 
     }
     Stack(vector<T> item){
         size = item.size();
         //cout << item.size() << " " <<size; 
-        items = new T[size]; 
         int x = 0;
         //I know there are better ways to do this, but I'm doing it this way for debugging purposes
-        for(T i : item){
-            //cout << i; 
-            items[x] = i; 
-            x++;
-        }
+        items = vector<T>(item.begin(), item.end()); 
+        size = items.size(); 
         //cout <<endl; 
     };
     ~Stack(){
     }
     T next(){
         //cout << index << " " << items[index] <<endl; 
+        if(index >= size) return Token(ERR, "", -1); 
         T Q = items[index]; 
         index++; 
         //if(index >= size) index--; 
@@ -67,7 +64,7 @@ class Stack{
         return items[index-1]; 
     }
     T peek(){
-        if(size == 0) return Token(ERR, "-1", -1);
+        if(size == 0 || index >= size) return Token(ERR, "-1", -1);
         return items[index]; 
     }
     bool eof(){

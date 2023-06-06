@@ -43,10 +43,11 @@ class variable{
 static int IDs =0; 
 class scope{
 	private: 
-	scope * parent = 0; 
 	std::vector<variable> vars; 
-	int id; 
-
+	std::string asmcode, name; 
+	std::stack<std::string> queuedinstructions; 
+	scope * parent = 0; 
+	int dumpcount = 0;
 	//std::vector<unique_ptr<variable>> vars; //Lord help me unique_ptrs are hell to deal with
 
 	public:
@@ -56,23 +57,31 @@ class scope{
 	 */
 	scope(){
 		this->parent = 0;  
-		id = IDs; 
+		name = "Main"; 
 		IDs++; 
+		this->asmcode = name+":\n"; 
 	}
+
 	scope(const scope & cpy){
 		this->parent = cpy.parent; 
 		this->vars = cpy.vars; 
-		id = cpy.id; 
+		name = cpy.name; 
+		this->asmcode = cpy.asmcode; 
+	}
+	scope(scope* parnt, std::string ident){
+		this->parent = parnt;
+		name = ident; 
+		this->asmcode = name+":\n";
 	}
 	/**
 	 * @brief Construct a new scope object, with a parent
 	 * 
 	 * @param parnt 
 	 */
-	scope(scope * parnt){
-		this->parent = parnt; 
-		id = IDs;
-		IDs++;  
+	scope(scope * parnt) {
+		this->parent = parnt;
+		name = "Scope_"+to_string(IDs); 
+		this->asmcode = name+":\n";
 	}
 
 	bool addVariable(KeyToken type, string s){
@@ -134,7 +143,7 @@ class scope{
 	 */
 	string getCascadingVars(){
 		string s;
-		s+=to_string(id); s+=": "; 
+		s+=name; s+=": "; 
 		for(variable s2 : vars){
 			s+=s2.getName();
 			s+= ", "; 
@@ -154,18 +163,71 @@ class scope{
 		s+="\n";
 		return s; 
 	}
-	//I completely forget why I did this. Pretty sure it's unsafe to at least some extent...
-	//I was probably just way more overtired than I thought I was. 
-	/*static void operator delete(void* s){
-		scope* s2 = static_cast<scope*>(s);
-		s2->hasPar = false; 
-		s2->parent = 0;
-		for(int i = 0; i < s2->vars.size(); i++){
-			//s2->vars[i].get_deleter(); 
-			delete &s2->vars[i]; 
-		}
-		s2->vars.clear(); 
-		s2->vars.shrink_to_fit();  
-	}//*/
+
+/**
+ * Prepares an instruction to be inserted into the assembly code. Adds it to an internal stack, 
+ * where it can be later removed from that stack and inserted onto the end of the asm code via pushInstruction()
+ * @return void
+ * @see pushInstruction()
+*/
+	void prepInstruction(std::string s){
+		queuedinstructions.push(s); 
+	}
+/**
+ * Takes the most recently pushed instruction on the internal instruction stack and inserts it into the assembly code.
+ * returns true if it was successful, false if not
+ * @return whether or not the operation was successful
+*/
+	bool pushInstruction(){
+		if(queuedinstructions.empty()) return false; 
+		writeASM(queuedinstructions.top()); 
+		queuedinstructions.pop(); 
+		return true; 
+	}
+
+	void writeASM(string s){
+		asmcode.append(s); 
+	}
+
+/**
+ * Writes assembly for this scope only into a new file named after the scope, then clears any prepared asm
+*/
+	void dumpASM(){
+		fstream f; 
+		string s = name+".s"; 
+		f.open(s, std::fstream::out); 
+		if(!f)
+			f << asmcode << endl; 
+		if(f.bad()){
+			cout << "error writing to file"<<endl; 
+		}else
+			f.close(); 
+		asmcode.clear(); 
+		asmcode = name+"_Dump_"+to_string(dumpcount++)+':'; 
+	}
+/**
+ * Writes assembly to an existing file, then clears any prepared asm
+*/
+	void dumpASM(fstream & out){
+		out << asmcode << endl; 
+		asmcode.clear(); 
+		asmcode = name+"_Dump_"+to_string(dumpcount++)+':'; 
+	}
+/**
+ * Writes assembly into a new or existing file with a given name. Then clears any prepared asm.
+*/
+	void dumpASM(string out){
+		fstream f; 
+		f.open(out, std::fstream::out | std::fstream::app);
+
+		f << asmcode << endl; 
+		f.close(); 
+		asmcode.clear(); 
+		asmcode = name+"_Dump_"+to_string(dumpcount++)+':'; 
+	}
+
+	std::string getName(){
+		return name; 
+	}
 
 };

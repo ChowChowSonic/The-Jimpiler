@@ -1,6 +1,7 @@
 #include "SLL.cpp"
 using namespace std;
 // Syntax analyzer for the Compilier
+namespace analyzer { 
 scope *currentScope = 0;
 SLL<scope> scopes; // Can't use a default constructor because APPARENTLY if I try that it overlaps with currentScope and corrupts the end result????????
 vector<string> importedFiles; 
@@ -81,6 +82,8 @@ bool compareStmt(Stack<Token>& tokens){
 	while (t1 == EQUALCMP || t1 == NOTEQUAL){
 		b = greaterLessStmt(tokens); 
 		if(!b) return false; 
+		if(t1 == EQUALCMP) currentScope->prepInstruction("je"); 
+		else currentScope->prepInstruction("jne"); 
 		t1 = tokens.next(); 
 	}
 
@@ -156,8 +159,7 @@ bool term(Stack<Token> &tokens){
 	Token t = tokens.next();
 	if(t == TRU || t == FALS) return true;
 
-	if (t == PLUS || t == MINUS)
-	{
+	if (t == PLUS || t == MINUS){
 		t = tokens.next();
 		// return t == IDENT || t == NUMCONST;
 	}
@@ -172,8 +174,7 @@ bool term(Stack<Token> &tokens){
 		}
 		return b;
 	}
-	else if (t == POINTERTO || t == REFRENCETO)
-	{
+	else if (t == POINTERTO || t == REFRENCETO){
 		t = tokens.next();
 		bool b = t == IDENT && currentScope->hasVariable(t.lex);
 		if (!b)
@@ -351,7 +352,7 @@ bool obj(Stack<Token> &tokens)
 	return true;
 }
 
-bool functionParamList(Stack<Token> &tokens)
+bool listRepresentation(Stack<Token> &tokens)
 {
 	Token t = tokens.next();
 	;
@@ -371,14 +372,14 @@ bool functionParamList(Stack<Token> &tokens)
 	t = tokens.next();
 	if (t == COMMA)
 	{
-		return functionParamList(tokens);
+		return listRepresentation(tokens);
 	}
 	return t == RPAREN;
 }
 
 bool func(Stack<Token> &tokens)
 {
-	bool b = functionParamList(tokens);
+	bool b = listRepresentation(tokens);
 	return b;
 }
 
@@ -519,7 +520,13 @@ bool forStmt(Stack<Token> &tokens)
 
 bool ifStmt(Stack<Token> &tokens)
 {
+	scope* prevScope = currentScope; 
 	bool b = logicStmt(tokens);
+	if(tokens.next() != OPENCURL) return false; 
+	addScope(); 
+	prevScope->writeASM("cmp %ebx, %ecx;\n");
+	prevScope->pushInstruction();  
+	prevScope->writeASM(" "+currentScope->getName()+";\n"); 
 	return b;
 }
 bool caseStmt(Stack<Token> &tokens)
@@ -562,18 +569,16 @@ void printAllScopes()
  * @brief Get the next Valid Stmt in the code file provided.
  *
  * @param tokens
- * @return true
- * @return false
+ * @return true if the statement is valid
+ * @return false if it is not a vald statement
  */
 bool getValidStmt(Stack<Token> &tokens)
 {
-	// Reminder: Vector of scopes has to keep moving whenever the list gets extended
-	// so the pointers are no longer usable; occasionally everything gets corrupted
 	if (currentScope == 0)
 	{
 		addScope();
 	}
-	cout << currentScope->getCascadingVars() <<endl; 
+//	cout << currentScope->getCascadingVars() <<endl; 
 	bool status = false;
 	Token t = tokens.next();
 	switch (t.token)
@@ -603,6 +608,7 @@ bool getValidStmt(Stack<Token> &tokens)
 		return true;
 	case OPENCURL:
 	{
+		currentScope->dumpASM("out.s"); 
 		return addScope();
 	}
 	case CLOSECURL:
@@ -613,8 +619,12 @@ bool getValidStmt(Stack<Token> &tokens)
 			tokens.go_back(1);
 			return false;
 		}
+		currentScope->dumpASM("out.s");
 		currentScope = currentScope->getParentPointer();
 		return true;
+	case RET:
+		currentScope->writeASM("ret\n"); //TODO: Turn this into a full fledged operator sooner or later
+		return true; 
 	case INT:
 	case SHORT: // int i = 0; << We start at the int token, then have to move to the ident, so we go back 1 to undo that
 	case POINTER:
@@ -690,4 +700,5 @@ bool analyzeFile(string fileDir)
 		return false;
 	}
 	return true;
+}
 }

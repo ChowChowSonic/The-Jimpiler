@@ -13,15 +13,11 @@ class SLL{
 			data = _item; 
 			next = nullptr; 
 		};
-
-		~node(){
-			if(next != nullptr)
-				delete next; 
-		}
 	};
+	private:
 	node<T>* head;
-	int len; 
-	public:
+	int len;
+	public: 
 	SLL(){
 		head = nullptr; 
 		len = 0;
@@ -39,7 +35,13 @@ class SLL{
 	}
 
 	T* getHead(){
-		return &head->data;
+		return &head->data; 
+	}
+	T* pop(){
+		if(head == NULL) return NULL; 
+		T* x = &head->data;
+		head = head->next; 
+		return x;  
 	}
 	int size(){
 		return len; 
