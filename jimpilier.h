@@ -82,25 +82,30 @@ namespace jimpilier
 		}
 	};
 
+/**
+ * Represents a list of items in code, usually represented by a string such as : [1, 2, 3, 4, 5]
+*/
 	class ListExprAST : public ExprAST
 	{
-		vector<std::unique_ptr<ExprAST>> Contents;
+		std::vector<std::unique_ptr<ExprAST>> Contents;
 		ListExprAST(std::vector<std::unique_ptr<ExprAST>> Args)
 			: Contents(std::move(Args)) {}
-		llvm::Value *codegen()
+
+		llvm::Value *ListExprAST::codegen()
 		{
-			// for (std::unique_ptr<ExprAST> x : Contents) //TODO: Fix this
-			// {
-			// 	x->codegen();
-			// };
-			return nullptr;
+			llvm::Value *ret = NULL;
+			for (auto i = Contents.begin(); i < Contents.end(); i++)
+			{
+				ret = i->get()->codegen();
+			};
+			return ret;
 		}
 	};
 
 	/// PrototypeAST - This class represents the "prototype" for a function,
 	/// which captures its name, and its argument names (thus implicitly the number
 	/// of arguments the function takes).
-	class PrototypeAST
+	class PrototypeAST 
 	{
 		string Name;
 		vector<std::string> Args;
@@ -368,13 +373,13 @@ namespace jimpilier
 		while (tokens.peek() == PLUS || tokens.peek() == MINUS)
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(RHS), std::move(multAndDivExpr(tokens))));
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(multAndDivExpr(tokens)));
 			if (!LHS)
 			{
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(new BinaryExprAST(t.lex[0], std::move(LHS), std::move(RHS)));
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -426,9 +431,10 @@ namespace jimpilier
 		t = tokens.next();
 		// variables[t] = type;
 		// put a way to interpret statements here
-		if (t == SEMICOL){
-			variables.insert({id, std::move(b)->codegen()}); //TODO: Double check that this is correct
-			return std::make_unique<VariableExprAST>(new VariableExprAST(id));
+		if (t == SEMICOL)
+		{
+			variables.insert({id, std::move(b)->codegen()}); // TODO: Double check that this is correct
+			return std::make_unique<VariableExprAST>(id);
 		}
 		tokens.go_back(2);
 		return NULL;
@@ -440,7 +446,7 @@ namespace jimpilier
 		{
 			return NULL;
 		}
-		return NULL;//TODO: Fix this
+		return NULL; // TODO: Fix this
 	}
 	/**
 	 * Note: This function does not yet parse the square brackets, only the innter sections.
@@ -464,10 +470,27 @@ namespace jimpilier
 		return std::make_unique<ListExprAST>(std::move(contents));
 	}
 
-	std::unique_ptr<ExprAST> func(Stack<Token> &tokens)
+	std::unique_ptr<FunctionAST> func(Stack<Token> &tokens)
 	{
-		std::unique_ptr<ExprAST> b = listRepresentation(tokens);
-		return b;
+		tokens.go_back();
+		Token t;
+		if ((t = tokens.next()) != IDENT)
+			return NULL;
+		std::string name = t.lex;
+		t = tokens.next();
+		if (t != RPAREN)
+			return NULL;
+		std::vector<std::string> argnames;
+		while (tokens.peek().token >= INT)
+		{
+			tokens.next();
+			argnames.push_back(tokens.next().lex);
+			tokens.next();
+		}
+		if (tokens.peek() != LPAREN) return NULL;
+		std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, std::move(argnames));
+		if(auto E = getValidStmt(tokens))
+			return std::make_unique<FunctionAST>(std::move(proto), std::move(E)); 
 	}
 
 	/**
@@ -498,7 +521,7 @@ namespace jimpilier
 		}
 		if (t.token == IDENT)
 		{
-			t = tokens.next();
+			t = tokens.peek();
 			if (t.token == LPAREN)
 			{ // It's a function
 				return func(tokens);
@@ -528,7 +551,7 @@ namespace jimpilier
 			tokens.go_back(1);
 			return NULL;
 		}
-		return NULL;//TODO: Fix this
+		return NULL; // TODO: Fix this
 		// Need to handle closing curly bracket
 	}
 
@@ -546,7 +569,7 @@ namespace jimpilier
 			tokens.go_back(1);
 			return NULL;
 		}
-		return NULL;//TODO: Fix this
+		return NULL; // TODO: Fix this
 		// Need to handle closing curly bracket
 	}
 	/**
@@ -621,7 +644,7 @@ namespace jimpilier
 			tokens.go_back();
 			return NULL;
 		}
-		return NULL;//TODO: Fix this
+		return NULL; // TODO: Fix this
 	}
 
 	/**
@@ -743,6 +766,6 @@ namespace jimpilier
 			cout << endl;
 			return NULL;
 		}
-		return NULL;//TODO: Fix this
+		return NULL; // TODO: Fix this
 	}
 };
