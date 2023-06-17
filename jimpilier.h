@@ -37,7 +37,8 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			cout << Val << endl;
-			return NULL;
+			return llvm::ConstantFP::get(ctxt, llvm::APFloat(Val));
+			;
 		}
 	};
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -49,8 +50,13 @@ namespace jimpilier
 		VariableExprAST(const string &Name) : Name(Name) {}
 		llvm::Value *codegen()
 		{
-			cout << Name << endl;
-			return nullptr;
+			llvm::Value *V = variables[Name];
+			if (!V)
+			{
+				cout << "Unknown variable name: " << Name << endl;
+				return nullptr;
+			}
+			return V;
 		}
 	};
 
@@ -66,13 +72,26 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			cout << Op << "( ";
-			LHS->codegen();
-			RHS->codegen();
-			cout << " )"<<endl;
-			return nullptr;
+			llvm::Value *L = LHS->codegen(), *R = RHS->codegen();
+			cout << " )" << endl;
+			switch (Op)
+			{
+			case '+':
+				return builder.CreateFAdd(L, R, "addtmp");
+			case '-':
+				return builder.CreateFSub(L, R, "subtmp");
+			case '*':
+				return builder.CreateFMul(L, R, "multmp");
+			case '<':
+				L = builder.CreateFCmpULT(L, R, "cmptmp");
+				// Convert bool 0/1 to double 0.0 or 1.0
+				return builder.CreateUIToFP(L, llvm::Type::getDoubleTy(ctxt),
+											"booltmp");
+			default:
+				return NULL;
+			}
 		}
 	};
-
 	/// CallExprAST - Expression class for function calls.
 	class CallExprAST : public ExprAST
 	{
@@ -84,7 +103,29 @@ namespace jimpilier
 		//: Callee(callee), Args(Arg) {}
 		llvm::Value *codegen()
 		{
-			return nullptr;
+			// Look up the name in the global module table.
+			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
+			if (!CalleeF)
+			{
+				cout << "Unknown function referenced:" << Callee << endl;
+				return NULL;
+			}
+			// If argument mismatch error.
+			if (CalleeF->arg_size() != Args.size())
+			{
+				cout << "Incorrect Argument count from function: " << Callee << endl;
+				return NULL;
+			}
+
+			std::vector<llvm::Value *> ArgsV;
+			for (unsigned i = 0, e = Args.size(); i != e; ++i)
+			{
+				ArgsV.push_back(Args[i]->codegen());
+				if (!ArgsV.back())
+					return nullptr;
+			}
+
+			return builder.CreateCall(CalleeF, ArgsV, "calltmp");
 		}
 	};
 
@@ -122,9 +163,20 @@ namespace jimpilier
 			: Name(name), Args(std::move(Args)) {}
 
 		const std::string &getName() const { return Name; }
-		llvm::Value *codegen()
+		llvm::Function *codegen()
 		{
-			return nullptr;
+			std::vector<llvm::Type *> Doubles(Args.size(),
+											  llvm::Type::getDoubleTy(ctxt));
+			llvm::FunctionType *FT =
+				llvm::FunctionType::get(llvm::Type::getDoubleTy(ctxt), Doubles, false);
+
+			llvm::Function *F =
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, GlobalVarsAndFunctions.get());
+			unsigned Idx = 0;
+			for (auto &Arg : F->args())
+				Arg.setName(Args[Idx++]);
+
+			return F;
 		}
 	};
 
@@ -140,7 +192,39 @@ namespace jimpilier
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
 		llvm::Value *codegen()
 		{
-			return nullptr;
+			llvm::Function *TheFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
+
+			if (!TheFunction)
+				TheFunction = Proto->codegen();
+
+			if (!TheFunction)
+				return nullptr;
+
+			if (!TheFunction->empty())
+			{
+				cout << "Function Cannot be redefined"<<endl;	
+				return (llvm::Function *) NULL;
+			}
+
+			llvm::BasicBlock *BB = llvm::BasicBlock::Create(ctxt, "entry", TheFunction);
+			builder.SetInsertPoint(BB);
+
+			// Record the function arguments in the NamedValues map.
+			variables.clear();
+			for (auto &Arg : TheFunction->args())
+				variables[std::string(Arg.getName())] = &Arg;
+			
+			if (llvm::Value *RetVal = Body->codegen()) {
+				// Finish off the function.
+				builder.CreateRet(RetVal);
+
+  			// Validate the generated code, checking for consistency.
+  			verifyFunction(*TheFunction);
+
+  			return TheFunction;
+			}
+			TheFunction->eraseFromParent();
+  			return nullptr;
 		}
 	};
 
@@ -483,7 +567,7 @@ namespace jimpilier
 		{ // It's a function
 			logError("I haven't added function parsing functionality yet lol", t);
 			return NULL; // func(tokens); //TODO: Fix this
-			// return function(tokens); //TBI
+						 // return function(tokens); //TBI
 		}
 		else if (t == EQUALS)
 		{ // It's a variable
@@ -725,7 +809,7 @@ namespace jimpilier
 		Stack<Token> s = loadTokens(fileDir);
 		while (!s.eof() && (b = std::move(getValidStmt(s))))
 		{
-			// if(!b) b->codegen();
+			if(!b) b->codegen();
 			// std::cout<< s.eof() <<std::endl;
 		}
 		// if (!b)
