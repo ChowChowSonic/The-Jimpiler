@@ -1,6 +1,6 @@
-int f = 0; 
+int f = 0
 ??
-private const int alpha = (6+5)^2; //equivalent of Java's Final modifier
+private const int alpha = (6+5)+2; //equivalent of Java's Final modifier
 public singular int x = 0; //equivalent of Java's Static modifier
 
 int main(string args){

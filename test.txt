@@ -1,7 +1,7 @@
-import e; 
+import test;
 
-private const int alpha = (6+5)^2; //equivalent of Java's Final modifier
-public singular int x = 0; //equivalent of Java's Static modifier
+private const int alpha = 6+5 //equivalent of Java's Final modifier
+public singular int x = 0 //equivalent of Java's Static modifier
 
 int main(string args){
     int z = 5;

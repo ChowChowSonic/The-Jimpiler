@@ -26,10 +26,12 @@ int main(int argc, char**args){
     if (argc == 1) f = "test.txt";
     else f = args[1]; 
     time_t now = time(nullptr);
-    bool correct = analyzer::analyzeFile(f); 
-    time_t end = time(nullptr); 
-    if(correct)
-        cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
+    //bool correct = analyzer::analyzeFile(f); 
+    //if(correct){
+    //   cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
+        jimpilier::analyzeFile(f)->codegen();
+    //}else return 1;
+        time_t end = time(nullptr); 
     cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
     
     scope* s;

@@ -17,6 +17,7 @@ namespace jimpilier
 	llvm::IRBuilder<> builder(ctxt);
 	static std::unique_ptr<llvm::Module> GlobalVarsAndFunctions = std::make_unique<llvm::Module>("default", ctxt);
 	std::map<std::string, llvm::Value *> variables;
+	vector<string> importedFiles; 
 
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
@@ -74,8 +75,8 @@ namespace jimpilier
 		vector<std::unique_ptr<ExprAST>> Args;
 
 	public:
-		CallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> Arg)
-			: Callee(callee), Args(Arg) {}
+		CallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> Arg){}
+			//: Callee(callee), Args(Arg) {}
 		llvm::Value *codegen()
 		{
 			return nullptr;
@@ -89,9 +90,9 @@ namespace jimpilier
 	{
 		public:
 		std::vector<std::unique_ptr<ExprAST>> Contents;
-		ListExprAST(std::vector<std::unique_ptr<ExprAST>> Args)
-			: Contents(Args) {}
-
+		// ListExprAST(std::vector<std::unique_ptr<ExprAST>> Args) {}
+			//: Contents(Args) {}
+		ListExprAST() {}
 		llvm::Value * codegen()
 		{
 			llvm::Value *ret = NULL;
@@ -147,6 +148,10 @@ namespace jimpilier
 	// 	}
 	// };
 
+	void logError(string s, Token t){
+		cout << s << " - Token: '" << t.lex << "' on line " << t.ln <<endl;
+	}
+
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
 
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
@@ -154,24 +159,29 @@ namespace jimpilier
 	
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
+		if(tokens.next() != IMPORT) return NULL; 
 		Token t;
-		std::unique_ptr<ExprAST> b;
+		std::unique_ptr<ExprAST> b = std::make_unique<NumberExprAST>(1);
 		while ((t = tokens.next()).token != SEMICOL && (t.token == IDENT || t.token == COMMA) && b)
 		{
 			if (t == IDENT)
 			{
-				/*string s = t.lex + ".jmb";
+				string s = t.lex + ".jmb";
 				if(find(importedFiles.begin(), importedFiles.end(), s) == importedFiles.end()){
 					importedFiles.push_back(s);
 					b = analyzeFile(s);
-				}*/
+				}//*/
 			}
 		}
-		if (t.token != SEMICOL || !b)
-		{
+		if (t.token != SEMICOL){
 			tokens.go_back(2);
+			logError("Invalid token when importing:", t); 
 			return NULL;
 		}
+		// if(!b){
+		// 	logError("Error in dependency designated by the following import:", t); 
+		// 	return NULL; 
+		// }
 		return b;
 	}
 
@@ -280,36 +290,18 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> term(Stack<Token> &tokens)
 	{
-		// int y=0,x = ++y++;  //Testing C++ syntax and what's valid
 		std::unique_ptr<ExprAST> LHS;
-		if (tokens.peek() == LPAREN)
-		{
+		if (tokens.peek() == LPAREN) {
 			tokens.next();
 			LHS = std::move(logicStmt(tokens));
-			if (tokens.peek() != RPAREN || !LHS)
-			{
-				if (LHS)
-					std::cout << "Expected a closing parenthesis" << std::endl;
-				return NULL;
+			if(tokens.peek() == RPAREN){ tokens.next(); 
+			return LHS; 
 			}
-			tokens.next();
-		}
-		Token t = tokens.next();
-		if (t == TRU || t == FALS)
-			return std::make_unique<NumberExprAST>(1);
+			} 
+		if(tokens.peek() == SCONST || tokens.peek() == NUMCONST || tokens.peek() == IDENT) {tokens.next(); return std::make_unique<NumberExprAST>(1); }
 
-		if (t == IDENT && (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT))
-		{
-			tokens.next();
-			LHS = std::make_unique<VariableExprAST>(t.lex);
-			return LHS;
-		}
-		else if (t == IDENT)
-		{
-			return std::make_unique<VariableExprAST>(t.lex);
-		}
-
-		return LHS;
+		logError("Invalid term:", tokens.currentToken()); 
+		return NULL;
 	}
 
 	std::unique_ptr<ExprAST> raisedToExpr(Stack<Token> &tokens)
@@ -326,6 +318,7 @@ namespace jimpilier
 			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(term(tokens)));
 			if (!LHS)
 			{
+				logError("Error parsing a term in raisedToExpr ", t); 
 				return NULL;
 			}
 		}
@@ -346,6 +339,7 @@ namespace jimpilier
 			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(raisedToExpr(tokens)));
 			if (!LHS)
 			{
+								logError("Error parsing a term in multDivExpr ", t); 
 				return NULL;
 			}
 		}
@@ -378,6 +372,7 @@ namespace jimpilier
 			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(multAndDivExpr(tokens)));
 			if (!LHS)
 			{
+								logError("Error parsing a term in mathExpr", t); 
 				return NULL;
 			}
 		}
@@ -403,73 +398,35 @@ namespace jimpilier
 			contents.push_back(std::move(LHS));
 			LHS = std::move(logicStmt(tokens));
 		}
-		return std::make_unique<ListExprAST>(contents);
+		return std::make_unique<ListExprAST>();
 	}
 
 	/**
 	 * @brief Called whenever a primitive type or object type keyword is seen.
-	 *
+	 *	TODO: Oh brother I may as well just restart from the ground up here
 	 * @param tokens
 	 * @return true
 	 * @return NULL
 	 */
 	std::unique_ptr<ExprAST> declare(Stack<Token> &tokens)
 	{
-		tokens.go_back(1);
-		Token t = tokens.next();
-		KeyToken type = t.token; // int, char, std::unique_ptr<ExprAST>, etc.
-		if (tokens.peek() == POINTER)
-			t = tokens.next();
-		t = tokens.next();
-		string id = t.lex; // the variable name
-		if (t.token != IDENT)
+		std::unique_ptr<ExprAST> t = std::move(logicStmt(tokens)); 
+		if (!t)
 		{
-			std::cout << "Error: Not an identifier: " << t.lex << std::endl;
-			tokens.go_back(2);
+			logError("Error: Not a valid boolean, string or numerical statement", tokens.currentToken()); 
 			return NULL;
 		}
-		if (tokens.peek() == SEMICOL)
-		{
-			return std::make_unique<VariableExprAST>(id);
-		}
-		else if (tokens.next() != EQUALS)
-		{
-			return NULL;
-		}
-		std::unique_ptr<ExprAST> b = NULL;
-		if (tokens.peek().lex != "[")
-			b = logicStmt(tokens);
-		else
-			b = std::move(listRepresentation(tokens)); // Ok now I have to figure out what to do with b...
-		// tokens.go_back();
-		// std::cout <<tokens.peek();
-		if (!b)
-		{
-			// tokens.go_back();
-			// std::cout << tokens.peek();
-			if (tokens.next().lex == id)
-				std::cout << "Cannot use variable in its own declaration statement" << std::endl;
-			return NULL;
-		}
-		// std::cout << t.lex <<std::endl ;
-		t = tokens.next();
-		// variables[t] = type;
-		// put a way to interpret statements here
-		if (t == SEMICOL)
-		{
-			variables.insert({id, std::move(b)->codegen()}); // TODO: Double check that this is correct
-			return std::make_unique<VariableExprAST>(id);
-		}
-		tokens.go_back(2);
-		return NULL;
+		return t;
 	}
 
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
 	{
 		if (tokens.next().token != IDENT)
 		{
+			logError("Not an identifier", tokens.currentToken()); 
 			return NULL;
 		}
+		logError("Error parsing a term in obj", tokens.peek()); 
 		return NULL; // TODO: Fix this
 	}
 
@@ -477,12 +434,16 @@ namespace jimpilier
 	{
 		tokens.go_back();
 		Token t;
-		if ((t = tokens.next()) != IDENT)
+		if ((t = tokens.next()) != IDENT){
+			logError("Not an identifier:", t); 
 			return NULL;
+			}
 		std::string name = t.lex;
 		t = tokens.next();
-		if (t != RPAREN)
+		if (t != RPAREN){
+			logError("Expecting a right parenthesis at this token:", t); 
 			return NULL;
+			}
 		std::vector<std::string> argnames;
 		while (tokens.peek().token >= INT)
 		{
@@ -490,53 +451,57 @@ namespace jimpilier
 			argnames.push_back(tokens.next().lex);
 			tokens.next();
 		}
-		if (tokens.peek() != LPAREN) return NULL;
+		if (tokens.peek() != LPAREN){ 
+			logError("Expecting a left parenthesis at this token:", t); 
+			return NULL;
+			}
 		std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, std::move(argnames));
 		if(auto E = getValidStmt(tokens))
-			return std::make_unique<FunctionAST>(std::move(proto), std::move(E)); 
+			return std::make_unique<FunctionAST>(std::move(proto), std::move(E));
+		logError("Error in func() ", t);  
 		return NULL;
 	}
 
 	/**
 	 * @brief Called whenever the words "public", "private", "protected", or a class of object/primitive ("int", "string", "object") are seen.
 	 * Essentially we don't know from here if what's being defined is a function or a variable, so we just try to account for anything that comes up.
-	 *
+	 * TODO: Revamp this function too for fucks sake
 	 * @param tokens
 	 * @return true if a valid function
 	 */
 	std::unique_ptr<ExprAST> declareOrFunction(Stack<Token> &tokens)
 	{
-		Token t = tokens.next();
-		if (tokens.peek() == POINTER)
-			t = tokens.next();
-		if (t.token >= CONST && t.token <= PROTECTED)
+		Token t;
+		while(((t = tokens.peek()).token >= CONST && t.token <= PROTECTED) || t.token >= INT)
 		{
+			t = tokens.next(); 
 			// Operators.push_back(t) //Add this to the variable modifier memory
-			return declareOrFunction(tokens);
+			// return declareOrFunction(tokens);
 		} //*/
-		if (t != IDENT && t.token < INT)
+		if (tokens.peek() != IDENT && tokens.peek().token < INT)
 		{
 			tokens.go_back(1);
+			logError("Error parsing a term in declareOrFunction ", tokens.peek()); 
 			return NULL;
 		}
-		if (t != IDENT)
+		if (tokens.peek() != IDENT)
 		{
-			t = tokens.next();
+			logError("Expected identifier in place of this token:", tokens.peek()); 
+			return NULL;
 		}
-		if (t.token == IDENT)
-		{
-			t = tokens.peek();
-			if (t.token == LPAREN)
-			{ // It's a function
-				return NULL; //func(tokens); //TODO: Fix this
-				// return function(tokens); //TBI
-			}
-			else if (t == EQUALS || t == SEMICOL)
-			{ // It's a variable
-				tokens.go_back(2);
-				return declare(tokens);
-			}
+		Token name = tokens.next();
+		t = tokens.next(); 
+		if (t.token == LPAREN)
+		{ // It's a function
+			logError("I never added function parsing functionality yet lol", t); 
+			return NULL; //func(tokens); //TODO: Fix this
+			// return function(tokens); //TBI
 		}
+		else if (t == EQUALS)
+		{ // It's a variable
+			return declare(tokens);
+		}else if(t == SEMICOL) {tokens.next(); return std::make_unique<NumberExprAST>(0);} 
+		logError("Error parsing a term in declareOrFunction()", t); 
 		tokens.go_back(2);
 		return NULL;
 	}
@@ -547,14 +512,17 @@ namespace jimpilier
 		if (t != LPAREN)
 		{
 			tokens.go_back(1);
+			logError("Expecting a Left Parenthesis at this token:", t); 
 			return NULL;
 		}
 		t = tokens.next();
 		if (t != RPAREN)
 		{
 			tokens.go_back(1);
+			logError("Expecting a right parenthesis at this token:", t); 
 			return NULL;
 		}
+		logError("Error parsing a term in construct ", t); 
 		return NULL; // TODO: Fix this
 		// Need to handle closing curly bracket
 	}
@@ -565,14 +533,17 @@ namespace jimpilier
 		if (t != LPAREN)
 		{
 			tokens.go_back(1);
+			logError("Expecting a left parenthesis at this token:", t); 
 			return NULL;
 		}
 		t = tokens.next();
 		if (t != RPAREN)
 		{
 			tokens.go_back(1);
+			logError("Expecting a right parenthesis at this token:", t); 
 			return NULL;
 		}
+		logError("Error in destruct()", t); 
 		return NULL; // TODO: Fix this
 		// Need to handle closing curly bracket
 	}
@@ -614,6 +585,7 @@ namespace jimpilier
 		if (tokens.next() != SEMICOL)
 		{
 			tokens.go_back(1);
+			logError("Expecting a semicolon at this token:", t); 
 			return NULL;
 		}
 		b = mathExpr(tokens); // TBI: variable checking
@@ -625,15 +597,20 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> ifStmt(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> b = logicStmt(tokens);
-		if (tokens.next() != OPENCURL)
+		if (tokens.next() != OPENCURL){
+			logError("Expecting an opening curly brace at this token:", tokens.peek()); 
 			return NULL;
+			}
 		return b;
 	}
 	std::unique_ptr<ExprAST> caseStmt(Stack<Token> &tokens)
 	{
 		Token variable = tokens.next();
-		if (variable.token != SCONST && variable.token != NUMCONST && variable.token != TRU && variable.token != FALS)
+		if (variable.token != SCONST && variable.token != NUMCONST && variable.token != TRU && variable.token != FALS){
+			logError("I forget why this is here lol", variable); 
 			return NULL;
+			}
+			logError("Error in CaseStmt()", variable); 
 		return NULL; // Leaving this for now because I have to figure the specifics out later...
 	}
 
@@ -642,8 +619,8 @@ namespace jimpilier
 		Token variable = tokens.next();
 		if (variable != IDENT)
 		{
-			std::cout << "Unexpected token: '" << variable.lex << "' - expected a variable." << std::endl;
 			tokens.go_back();
+			logError("Expecting a variable at this token:", variable); 
 			return NULL;
 		}
 		return NULL; // TODO: Fix this
@@ -659,7 +636,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> status = NULL;
-		Token t = tokens.next();
+		Token t = tokens.peek();
 		switch (t.token)
 		{
 		case IMPORT:
@@ -683,18 +660,20 @@ namespace jimpilier
 		case LPAREN:
 		case INCREMENT:
 		case DECREMENT:
-			tokens.go_back(1);
 			return jimpilier::genericStmt(tokens);
 		case SEMICOL:
+			logError("Returning null on token", tokens.currentToken());
 			return NULL;
 		case OPENCURL:
 		{
+			logError("Returning null on token", tokens.currentToken());
 			return NULL;
 		}
 		case CLOSECURL:
-			// std::cout << "Close curl called" << std::endl;
+			logError("Returning null on token", tokens.currentToken());
 			return NULL;
 		case RET:
+			logError("Returning null on token", tokens.currentToken());
 			return NULL;
 		case INT:
 		case SHORT: // int i = 0; << We start at the int token, then have to move to the ident, so we go back 1 to undo that
@@ -706,7 +685,6 @@ namespace jimpilier
 		case CHAR:
 		case BOOL:
 		case BYTE:
-			tokens.go_back(1);
 		case PUBLIC:
 		case PRIVATE:
 		case PROTECTED:
@@ -714,14 +692,11 @@ namespace jimpilier
 		case CONST:
 			return declareOrFunction(tokens);
 		default:
-		{
-			std::cout << "ERROR: Unknown token: \n"
-				 << t << std::endl;
+			logError("Unknown token:", tokens.currentToken());
 			tokens.go_back(1);
 			return NULL;
 		}
-		}
-		std::cout << "Returning NULL by error?" << std::endl;
+		logError("Returning null on error?", tokens.currentToken());
 		return NULL;
 	}
 	Stack<Token> loadTokens(string fileDir)
