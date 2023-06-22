@@ -38,7 +38,6 @@ namespace jimpilier
 		{
 			cout << Val << endl;
 			return llvm::ConstantFP::get(ctxt, llvm::APFloat(Val));
-			;
 		}
 	};
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -99,8 +98,14 @@ namespace jimpilier
 		vector<std::unique_ptr<ExprAST>> Args;
 
 	public:
-		CallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> Arg) {}
-		//: Callee(callee), Args(Arg) {}
+		CallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> Arg)
+		{
+			for (auto &x : Arg)
+			{
+				Args.push_back(std::move(x));
+			}
+		}
+		// : Callee(callee), Args(Arg) {}
 		llvm::Value *codegen()
 		{
 			// Look up the name in the global module table.
@@ -136,8 +141,14 @@ namespace jimpilier
 	{
 	public:
 		std::vector<std::unique_ptr<ExprAST>> Contents;
-		// ListExprAST(std::vector<std::unique_ptr<ExprAST>> Args) {}
-		//: Contents(Args) {}
+		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args)
+		{
+			for (auto &x : Args)
+			{
+				Contents.push_back(std::move(x));
+			}
+		}
+		// : Contents(std::move(Args)) {}
 		ListExprAST() {}
 		llvm::Value *codegen()
 		{
@@ -202,8 +213,8 @@ namespace jimpilier
 
 			if (!TheFunction->empty())
 			{
-				cout << "Function Cannot be redefined"<<endl;	
-				return (llvm::Function *) NULL;
+				cout << "Function Cannot be redefined" << endl;
+				return (llvm::Function *)NULL;
 			}
 
 			llvm::BasicBlock *BB = llvm::BasicBlock::Create(ctxt, "entry", TheFunction);
@@ -213,29 +224,21 @@ namespace jimpilier
 			variables.clear();
 			for (auto &Arg : TheFunction->args())
 				variables[std::string(Arg.getName())] = &Arg;
-			
-			if (llvm::Value *RetVal = Body->codegen()) {
+
+			if (llvm::Value *RetVal = Body->codegen())
+			{
 				// Finish off the function.
 				builder.CreateRet(RetVal);
 
-  			// Validate the generated code, checking for consistency.
-  			verifyFunction(*TheFunction);
+				// Validate the generated code, checking for consistency.
+				verifyFunction(*TheFunction);
 
-  			return TheFunction;
+				return TheFunction;
 			}
 			TheFunction->eraseFromParent();
-  			return nullptr;
+			return nullptr;
 		}
 	};
-
-	// class LoopAST : public ExprAST {
-
-	// public:
-
-	// 	llvm::Value* codegen(){
-
-	// 	}
-	// };
 
 	void logError(string s, Token t)
 	{
@@ -280,96 +283,7 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
-
-	std::unique_ptr<ExprAST> greaterLessStmt(Stack<Token> &tokens)
-	{
-		std::unique_ptr<ExprAST> LHS = std::move(mathExpr(tokens));
-		if (tokens.peek() != GREATER || tokens.peek() != LESS)
-			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(mathExpr(tokens));
-		while (tokens.peek() == GREATER || tokens.peek() == LESS)
-		{
-			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(mathExpr(tokens)));
-		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
-	}
-
-	/**
-	 * @brief checks for a basic <IDENT> (["=="|"!="] <IDENT>)* However,
-	 * I am torn between enabling N-way comparison (I.E.: "x == y == z == a == b").
-	 * No other programming languages that I know of include this, and I have a
-	 * feeling it's for good reason... But at the same time, I want to add it as I
-	 * feel that is extremely convienent in the situations it comes up in.
-	 *
-	 * @param tokens
-	 * @return true - if it is a valid statement,
-	 * @return NULL otherwise
-	 */
-	std::unique_ptr<ExprAST> compareStmt(Stack<Token> &tokens)
-	{
-		std::unique_ptr<ExprAST> LHS = std::move(greaterLessStmt(tokens));
-		if (tokens.peek() != EQUALCMP || tokens.peek() != NOTEQUAL)
-			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(greaterLessStmt(tokens));
-		while (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL)
-		{
-			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(greaterLessStmt(tokens)));
-		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
-	}
-
-	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
-	{
-		std::unique_ptr<ExprAST> LHS = std::move(compareStmt(tokens));
-		if (tokens.peek() != AND)
-			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(compareStmt(tokens));
-		while (tokens.peek() == AND)
-		{
-			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(compareStmt(tokens)));
-		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
-	}
-
-	/**
-	 * @brief Parses a logic statement (I.E. "x == 5") consisting of only idents and string/number constants.
-	 * LogicStmt itself only parses OR Statements (x || y), but makes calls to functions like andStmt, compareStmt, etc. to do the rest.
-	 * EBNF isn't technically 100% accurate, but that's because a few assumptions should be made going into this, like,
-	 * for example, all open parenthesis should have a matching closing parenthesis.
-	 * logicStmt 	-> <Stmt> <join> <logicStmt> | <Stmt>
-	 * Stmt			-> "("?<helper>")"? <Join> "("?<helper>")"?
-	 * helper		-> <base> | <logicStmt>
-	 * base			-> <terminal> <op> <terminal> | "true" | "NULL";
-	 * op			-> "==" | ">=" | "<=" | ">" | "<"
-	 * join			-> "and" | "or"
-	 * terminal		-> SCONST | NUMCONST | VARIABLE //Literal string number or variable values
-	 *
-	 * TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
-	 *
-	 * @param tokens
-	 * @return true - if it is a valid logic statement,
-	 * @return NULL otherwise
-	 */
-	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens)
-	{
-		std::unique_ptr<ExprAST> LHS = std::move(andStmt(tokens));
-		if (tokens.peek() != OR)
-			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(andStmt(tokens));
-		while (tokens.peek() == OR)
-		{
-			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(andStmt(tokens)));
-		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
-	}
+	std::unique_ptr<ExprAST> listRepresentation(Stack<Token> &tokens);
 
 	/**
 	 * @brief using EBNF notation, a term is roughly defined as:
@@ -387,7 +301,7 @@ namespace jimpilier
 		if (tokens.peek() == LPAREN)
 		{
 			tokens.next();
-			LHS = std::move(logicStmt(tokens));
+			LHS = std::move(listRepresentation(tokens));
 			if (tokens.peek() == RPAREN)
 			{
 				tokens.next();
@@ -479,8 +393,97 @@ namespace jimpilier
 		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
 	}
 
+	std::unique_ptr<ExprAST> greaterLessStmt(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> LHS = std::move(mathExpr(tokens));
+		if (tokens.peek() != GREATER && tokens.peek() != LESS)
+			return LHS;
+		Token t = tokens.next();
+		std::unique_ptr<ExprAST> RHS = std::move(mathExpr(tokens));
+		while (tokens.peek() == GREATER || tokens.peek() == LESS)
+		{
+			tokens.next();
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(mathExpr(tokens)));
+		}
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+	}
+
 	/**
-	 * Note: This function does not yet parse the square brackets, only the innter sections.
+	 * @brief checks for a basic <IDENT> (["=="|"!="] <IDENT>)* However,
+	 * I am torn between enabling N-way comparison (I.E.: "x == y == z == a == b").
+	 * No other programming languages that I know of include this, and I have a
+	 * feeling it's for good reason... But at the same time, I want to add it as I
+	 * feel that is extremely convienent in the situations it comes up in.
+	 *
+	 * @param tokens
+	 * @return true - if it is a valid statement,
+	 * @return NULL otherwise
+	 */
+	std::unique_ptr<ExprAST> compareStmt(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> LHS = std::move(greaterLessStmt(tokens));
+		if (tokens.peek() != EQUALCMP && tokens.peek() != NOTEQUAL)
+			return LHS;
+		Token t = tokens.next();
+		std::unique_ptr<ExprAST> RHS = std::move(greaterLessStmt(tokens));
+		while (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL)
+		{
+			tokens.next();
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(greaterLessStmt(tokens)));
+		}
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+	}
+
+	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> LHS = std::move(compareStmt(tokens));
+		if (tokens.peek() != AND)
+			return LHS;
+		Token t = tokens.next();
+		std::unique_ptr<ExprAST> RHS = std::move(compareStmt(tokens));
+		while (tokens.peek() == AND)
+		{
+			tokens.next();
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(compareStmt(tokens)));
+		}
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+	}
+
+	/**
+	 * @brief Parses a logic statement (I.E. "x == 5") consisting of only idents and string/number constants.
+	 * LogicStmt itself only parses OR Statements (x || y), but makes calls to functions like andStmt, compareStmt, etc. to do the rest.
+	 * EBNF isn't technically 100% accurate, but that's because a few assumptions should be made going into this, like,
+	 * for example, all open parenthesis should have a matching closing parenthesis.
+	 * logicStmt 	-> <Stmt> <join> <logicStmt> | <Stmt>
+	 * Stmt			-> "("?<helper>")"? <Join> "("?<helper>")"?
+	 * helper		-> <base> | <logicStmt>
+	 * base			-> <terminal> <op> <terminal> | "true" | "NULL";
+	 * op			-> "==" | ">=" | "<=" | ">" | "<"
+	 * join			-> "and" | "or"
+	 * terminal		-> SCONST | NUMCONST | VARIABLE //Literal string number or variable values
+	 *
+	 * TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
+	 *
+	 * @param tokens
+	 * @return true - if it is a valid logic statement,
+	 * @return NULL otherwise
+	 */
+	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> LHS = std::move(andStmt(tokens));
+		if (tokens.peek() != OR)
+			return LHS;
+		Token t = tokens.next();
+		std::unique_ptr<ExprAST> RHS = std::move(andStmt(tokens));
+		while (tokens.peek() == OR)
+		{
+			tokens.next();
+			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(andStmt(tokens)));
+		}
+		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+	}
+
+	/**
 	 * A list representation can be displayed in EBNF as:
 	 *  <OBRACKET> 	-> [ //Literal character
 	 *  <CBRACKET> 	-> ] //Literal character
@@ -490,15 +493,24 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> listRepresentation(Stack<Token> &tokens)
 	{
-		std::unique_ptr<ExprAST> LHS = std::move(logicStmt(tokens));
 		std::vector<std::unique_ptr<ExprAST>> contents;
-		while (tokens.peek() == COMMA)
+		if(tokens.peek() == OPENSQUARE) tokens.next();
+		else return std::move(logicStmt(tokens)); 
+		do
 		{
-			tokens.next();
-			contents.push_back(std::move(LHS));
-			LHS = std::move(logicStmt(tokens));
+			std::unique_ptr<ExprAST> LHS = std::move(logicStmt(tokens));
+			if(LHS != NULL) contents.push_back(std::move(LHS));
+			else {
+				logError("Error when parsing list:", tokens.currentToken()); 
+				return NULL; 
+			}
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		if(tokens.peek() != CLOSESQUARE) {
+			logError("Expected a closing square parenthesis here", tokens.currentToken()); 
+			return NULL;
 		}
-		return std::make_unique<ListExprAST>();
+		tokens.next(); 
+		return std::make_unique<ListExprAST>(contents);
 	}
 
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
@@ -571,7 +583,7 @@ namespace jimpilier
 		}
 		else if (t == EQUALS)
 		{ // It's a variable
-			return std::move(logicStmt(tokens));
+			return std::move(listRepresentation(tokens));
 		}
 		else if (t == SEMICOL)
 		{
@@ -674,6 +686,11 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> ifStmt(Stack<Token> &tokens)
 	{
+		if (tokens.next() != IF)
+		{
+			logError("Somehow we ended up looking for an if statement when there was no 'if'. Wtf.", tokens.currentToken());
+			return NULL;
+		}
 		std::unique_ptr<ExprAST> b = logicStmt(tokens);
 		if (tokens.next() != OPENCURL)
 		{
@@ -742,18 +759,18 @@ namespace jimpilier
 		case DECREMENT:
 			return std::move(jimpilier::genericStmt(tokens));
 		case SEMICOL:
-			logError("Returning null on token", tokens.currentToken());
+			logError("Returning null on token (under semicol)", tokens.peek());
 			return NULL;
 		case OPENCURL:
 		{
-			logError("Returning null on token", tokens.currentToken());
+			logError("Returning null on token (under opencurl)", tokens.peek());
 			return NULL;
 		}
 		case CLOSECURL:
-			logError("Returning null on token", tokens.currentToken());
+			logError("Returning null on token (under closecurl)", tokens.peek());
 			return NULL;
 		case RET:
-			logError("Returning null on token", tokens.currentToken());
+			logError("Returning null on token (under ret)", tokens.peek());
 			return NULL;
 		case INT:
 		case SHORT: // int i = 0; << We start at the int token, then have to move to the ident, so we go back 1 to undo that
@@ -809,7 +826,8 @@ namespace jimpilier
 		Stack<Token> s = loadTokens(fileDir);
 		while (!s.eof() && (b = std::move(getValidStmt(s))))
 		{
-			if(!b) b->codegen();
+			if (!b)
+				b->codegen();
 			// std::cout<< s.eof() <<std::endl;
 		}
 		// if (!b)

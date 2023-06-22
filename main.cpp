@@ -29,7 +29,7 @@ int main(int argc, char**args){
     //bool correct = analyzer::analyzeFile(f); 
     //if(correct){
     //   cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
-        jimpilier::analyzeFile(f)->codegen();
+        jimpilier::analyzeFile(f);
     //}else return 1;
         time_t end = time(nullptr); 
     cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
