@@ -29,10 +29,12 @@ int main(int argc, char**args){
     //bool correct = analyzer::analyzeFile(f); 
     //if(correct){
     //   cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
-        jimpilier::analyzeFile(f);
+        Stack<Token> tokens = jimpilier::loadTokens(f);
+        std::unique_ptr<jimpilier::ExprAST> x; 
+        while((x = jimpilier::getValidStmt(tokens)) != NULL && !tokens.eof()) {x->codegen(); std::cout<< endl;  }
     //}else return 1;
         time_t end = time(nullptr); 
-    cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
+    std::cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
     
     scope* s;
 

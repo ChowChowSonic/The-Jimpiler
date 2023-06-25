@@ -36,7 +36,7 @@ namespace jimpilier
 		NumberExprAST(double Val) : Val(Val) {}
 		llvm::Value *codegen()
 		{
-			cout << Val << endl;
+			std::cout << Val;
 			return llvm::ConstantFP::get(ctxt, llvm::APFloat(Val));
 		}
 	};
@@ -52,7 +52,7 @@ namespace jimpilier
 			llvm::Value *V = variables[Name];
 			if (!V)
 			{
-				cout << "Unknown variable name: " << Name << endl;
+				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
 			return V;
@@ -70,9 +70,11 @@ namespace jimpilier
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 		llvm::Value *codegen()
 		{
-			cout << Op << "( ";
-			llvm::Value *L = LHS->codegen(), *R = RHS->codegen();
-			cout << " )" << endl;
+			std::cout << Op << "( ";
+			llvm::Value *L = LHS->codegen(); 
+			std::cout << ", "; 
+			llvm::Value *R = RHS->codegen();
+			std::cout << " )";
 			switch (Op)
 			{
 			case '+':
@@ -112,13 +114,13 @@ namespace jimpilier
 			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
 			if (!CalleeF)
 			{
-				cout << "Unknown function referenced:" << Callee << endl;
+				std::cout << "Unknown function referenced:" << Callee << endl;
 				return NULL;
 			}
 			// If argument mismatch error.
 			if (CalleeF->arg_size() != Args.size())
 			{
-				cout << "Incorrect Argument count from function: " << Callee << endl;
+				std::cout << "Incorrect Argument count from function: " << Callee << endl;
 				return NULL;
 			}
 
@@ -153,10 +155,40 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			llvm::Value *ret = NULL;
+			std::cout << "[ ";
 			for (auto i = Contents.begin(); i < Contents.end(); i++)
 			{
 				ret = i->get()->codegen();
+				std::cout << ", ";
 			};
+			std::cout << " ]"<<endl; 
+			return ret;
+		}
+	};
+
+	class CodeBlockAST : public ExprAST
+	{
+	public:
+		std::vector<std::unique_ptr<ExprAST>> Contents;
+		CodeBlockAST(std::vector<std::unique_ptr<ExprAST>> &Args)
+		{
+			for (auto &x : Args)
+			{
+				Contents.push_back(std::move(x));
+			}
+		}
+		// : Contents(std::move(Args)) {}
+		CodeBlockAST() {}
+		llvm::Value *codegen()
+		{
+			std::cout << '{' <<endl; 
+			llvm::Value *ret = NULL;
+			for (auto i = Contents.begin(); i < Contents.end(); i++)
+			{
+				ret = i->get()->codegen(); 
+				std::cout <<endl; 
+			};
+			std::cout << '}' <<endl; 
 			return ret;
 		}
 	};
@@ -213,7 +245,7 @@ namespace jimpilier
 
 			if (!TheFunction->empty())
 			{
-				cout << "Function Cannot be redefined" << endl;
+				std::cout << "Function Cannot be redefined" << endl;
 				return (llvm::Function *)NULL;
 			}
 
@@ -242,7 +274,7 @@ namespace jimpilier
 
 	void logError(string s, Token t)
 	{
-		cout << s << " - Token: '" << t.lex << "' on line " << t.ln << endl;
+		std::cout << s << ' ' << t.toString() << endl;
 	}
 
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
@@ -283,7 +315,7 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
-	std::unique_ptr<ExprAST> listRepresentation(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
 
 	/**
 	 * @brief using EBNF notation, a term is roughly defined as:
@@ -301,17 +333,20 @@ namespace jimpilier
 		if (tokens.peek() == LPAREN)
 		{
 			tokens.next();
-			LHS = std::move(listRepresentation(tokens));
+			LHS = std::move(listExpr(tokens));
 			if (tokens.peek() == RPAREN)
 			{
 				tokens.next();
 				return LHS;
 			}
 		}
-		if (tokens.peek() == SCONST || tokens.peek() == NUMCONST || tokens.peek() == IDENT)
+
+		if (tokens.peek() == SCONST || tokens.peek() == IDENT)
 		{
 			tokens.next();
 			return std::make_unique<NumberExprAST>(1);
+		}else if(tokens.peek() == NUMCONST){
+			return std::make_unique<NumberExprAST>(stoi(tokens.next().lex));
 		}
 
 		logError("Invalid term:", tokens.currentToken());
@@ -491,11 +526,11 @@ namespace jimpilier
 	 * 	<ITERATOR>	-> <VAR> <FOREACHSTMT> //stolen directly from python syntax: [x+1 for x in list]
 	 *  <ListRep>	-> <OBRACKET> (<REGLIST>|<ITERATOR>) <CBRACKET>
 	 */
-	std::unique_ptr<ExprAST> listRepresentation(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens)
 	{
-		std::vector<std::unique_ptr<ExprAST>> contents;
-		if(tokens.peek() == OPENSQUARE) tokens.next();
-		else return std::move(logicStmt(tokens)); 
+		if(tokens.peek() != OPENSQUARE) return std::move(logicStmt(tokens)); 
+		tokens.next(); 
+		std::vector<std::unique_ptr<ExprAST>> contents; 
 		do
 		{
 			std::unique_ptr<ExprAST> LHS = std::move(logicStmt(tokens));
@@ -511,6 +546,43 @@ namespace jimpilier
 		}
 		tokens.next(); 
 		return std::make_unique<ListExprAST>(contents);
+	}
+	/**
+	 * @brief Parses a block of code encased by two curly braces, if possible.
+	 * If no braces are found, it just skips this step
+	 * 
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
+	std::unique_ptr<ExprAST> codeBlockExpr(Stack<Token> &tokens)
+	{
+		//return std::move(listExpr(tokens)); 
+		std::vector<std::unique_ptr<ExprAST>> contents;
+		if(tokens.peek() == OPENCURL) {
+			tokens.next();
+			if(tokens.peek() == CLOSECURL){
+				tokens.next(); 
+				return std::move(std::make_unique<ListExprAST>(contents));}
+			if(tokens.eof()) {
+				logError("Error: Unbalanced curly brace here:", tokens.currentToken()); 
+				return NULL; 
+			}
+		}else return std::move(getValidStmt(tokens)); 
+		do
+		{
+			std::unique_ptr<ExprAST> LHS = std::move(getValidStmt(tokens));
+			if(LHS != NULL) contents.push_back(std::move(LHS));
+			else if(tokens.peek() != CLOSECURL){
+				logError("Error when parsing code block:", tokens.peek()); 
+				return NULL; 
+			}
+		}while(tokens.peek() != CLOSECURL && !tokens.eof()); 
+		if(tokens.peek() != CLOSECURL || tokens.eof()) {
+			logError("Unbalanced curly brace after this token:", tokens.currentToken()); 
+			return NULL;
+		}
+		tokens.next(); 
+		return std::move(std::make_unique<ListExprAST>(contents));//*/
 	}
 
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
@@ -583,7 +655,7 @@ namespace jimpilier
 		}
 		else if (t == EQUALS)
 		{ // It's a variable
-			return std::move(listRepresentation(tokens));
+			return std::move(listExpr(tokens));
 		}
 		else if (t == SEMICOL)
 		{
@@ -669,7 +741,7 @@ namespace jimpilier
 	{
 		Token t = tokens.next();
 
-		std::unique_ptr<ExprAST> b = declareOrFunction(tokens);
+		std::unique_ptr<ExprAST> b = std::move(declareOrFunction(tokens));
 
 		b = logicStmt(tokens);
 		if (tokens.next() != SEMICOL)
@@ -678,7 +750,7 @@ namespace jimpilier
 			logError("Expecting a semicolon at this token:", t);
 			return NULL;
 		}
-		b = mathExpr(tokens); // TBI: variable checking
+		b = std::move(mathExpr(tokens)); // TBI: variable checking
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
 		return b;
@@ -691,13 +763,9 @@ namespace jimpilier
 			logError("Somehow we ended up looking for an if statement when there was no 'if'. Wtf.", tokens.currentToken());
 			return NULL;
 		}
-		std::unique_ptr<ExprAST> b = logicStmt(tokens);
-		if (tokens.next() != OPENCURL)
-		{
-			logError("Expecting an opening curly brace at this token:", tokens.peek());
-			return NULL;
-		}
-		return b;
+		std::unique_ptr<ExprAST> b = std::move(logicStmt(tokens));
+
+		return std::move(codeBlockExpr(tokens));
 	}
 	std::unique_ptr<ExprAST> caseStmt(Stack<Token> &tokens)
 	{
@@ -762,12 +830,9 @@ namespace jimpilier
 			logError("Returning null on token (under semicol)", tokens.peek());
 			return NULL;
 		case OPENCURL:
-		{
-			logError("Returning null on token (under opencurl)", tokens.peek());
-			return NULL;
-		}
+			return std::move(jimpilier::codeBlockExpr(tokens));
 		case CLOSECURL:
-			logError("Returning null on token (under closecurl)", tokens.peek());
+			logError("Unbalanced curly brackets here:", tokens.peek());
 			return NULL;
 		case RET:
 			logError("Returning null on token (under ret)", tokens.peek());
@@ -819,7 +884,13 @@ namespace jimpilier
 		Stack<Token> s(tokens);
 		return s;
 	}
-
+	/**
+	 * @brief Soon-to-be depreciated
+	 * 
+	 * @deprecated
+	 * @param fileDir 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir)
 	{
 		std::unique_ptr<ExprAST> b;

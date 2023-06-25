@@ -352,7 +352,7 @@ bool obj(Stack<Token> &tokens)
 	return true;
 }
 
-bool listRepresentation(Stack<Token> &tokens)
+bool listExpr(Stack<Token> &tokens)
 {
 	Token t = tokens.next();
 	;
@@ -372,14 +372,14 @@ bool listRepresentation(Stack<Token> &tokens)
 	t = tokens.next();
 	if (t == COMMA)
 	{
-		return listRepresentation(tokens);
+		return listExpr(tokens);
 	}
 	return t == RPAREN;
 }
 
 bool func(Stack<Token> &tokens)
 {
-	bool b = listRepresentation(tokens);
+	bool b = listExpr(tokens);
 	return b;
 }
 
