@@ -31,7 +31,10 @@ int main(int argc, char**args){
     //   cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
         Stack<Token> tokens = jimpilier::loadTokens(f);
         std::unique_ptr<jimpilier::ExprAST> x; 
-        while((x = jimpilier::getValidStmt(tokens)) != NULL && !tokens.eof()) {x->codegen(); std::cout<< endl;  }
+        while(!tokens.eof() && (x = jimpilier::getValidStmt(tokens)) != NULL) {
+            x->codegen(); 
+            std::cout<< endl;  
+            }
     //}else return 1;
         time_t end = time(nullptr); 
     std::cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 

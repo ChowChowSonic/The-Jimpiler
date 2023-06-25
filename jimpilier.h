@@ -161,7 +161,7 @@ namespace jimpilier
 				ret = i->get()->codegen();
 				std::cout << ", ";
 			};
-			std::cout << " ]"<<endl; 
+			std::cout << " ]"; 
 			return ret;
 		}
 	};
