@@ -562,7 +562,7 @@ namespace jimpilier
 			tokens.next();
 			if(tokens.peek() == CLOSECURL){
 				tokens.next(); 
-				return std::move(std::make_unique<ListExprAST>(contents));}
+				return std::move(std::make_unique<CodeBlockAST>(contents));}
 			if(tokens.eof()) {
 				logError("Error: Unbalanced curly brace here:", tokens.currentToken()); 
 				return NULL; 
@@ -582,7 +582,7 @@ namespace jimpilier
 			return NULL;
 		}
 		tokens.next(); 
-		return std::move(std::make_unique<ListExprAST>(contents));//*/
+		return std::move(std::make_unique<CodeBlockAST>(contents));//*/
 	}
 
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
