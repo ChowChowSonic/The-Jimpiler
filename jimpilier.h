@@ -667,8 +667,9 @@ namespace jimpilier
 	}
 
 	/**
-	 * @brief Called whenever the words "public", "private", "protected", or a class of object/primitive ("int", "string", "object") are seen.
-	 * Essentially we don't know from here if what's being defined is a function or a variable, so we just try to account for anything that comes up.
+	 * @brief Called whenever the words "public", "private", "protected" are seen.
+	 * Essentially we don't know from here if what's being defined is a function or a variable, 
+	 * so we just try to account for anything that comes up.
 	 * TODO: Implement function parsing too
 	 * @param tokens
 	 * @return true if a valid function
@@ -764,8 +765,10 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> forStmt(Stack<Token> &tokens)
 	{
 		Token t = tokens.next();
-
-		std::unique_ptr<ExprAST> b = std::move(declareOrFunction(tokens));
+		std::unique_ptr<ExprAST> b; 
+		do{
+		b = std::move(declareOrFunction(tokens));
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
 		if (tokens.next() != SEMICOL)
 		{
 			tokens.go_back(1);
@@ -779,7 +782,9 @@ namespace jimpilier
 			logError("Expecting a semicolon at this token:", t);
 			return NULL;
 		}
+		do{
 		b = std::move(getValidStmt(tokens)); // TBI: variable checking
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
 		return b;
@@ -883,7 +888,7 @@ namespace jimpilier
 		case CONST:
 			return declareOrFunction(tokens);
 		default:
-			logError("Unknown token:", tokens.currentToken());
+			logError("Unknown token:", tokens.peek());
 			tokens.go_back(1);
 			return NULL;
 		}
