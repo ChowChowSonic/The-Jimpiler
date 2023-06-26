@@ -1,5 +1,6 @@
 {
     "files.associations": {
+        "*.embeddedhtml": "html",
         "atomic": "cpp",
         "bit": "cpp",
         "cctype": "cpp",
@@ -67,6 +68,11 @@
         "unordered_map": "cpp",
         "memory_resource": "cpp",
         "ratio": "cpp",
-        "numbers": "cpp"
-    }
+        "numbers": "cpp",
+        "bitset": "cpp",
+        "list": "cpp",
+        "set": "cpp",
+        "cinttypes": "cpp"
+    },
+    "C_Cpp.default.compilerPath": "/usr/bin/g++"
 }

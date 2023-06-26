@@ -183,9 +183,9 @@ namespace jimpilier
 		{
 			std::cout << '{' <<endl; 
 			llvm::Value *ret = NULL;
-			for (auto i = Contents.begin(); i < Contents.end(); i++)
+			for (int i = 0; i < Contents.size(); i++)
 			{
-				ret = i->get()->codegen(); 
+				ret = Contents[i]->codegen(); 
 				std::cout <<endl; 
 			};
 			std::cout << '}' <<endl; 
@@ -233,6 +233,7 @@ namespace jimpilier
 		FunctionAST(std::unique_ptr<PrototypeAST> Proto,
 					std::unique_ptr<ExprAST> Body)
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
+
 		llvm::Value *codegen()
 		{
 			llvm::Function *TheFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
@@ -352,14 +353,31 @@ namespace jimpilier
 		logError("Invalid term:", tokens.currentToken());
 		return NULL;
 	}
+	std::unique_ptr<ExprAST> incDecExpr(Stack<Token> &tokens){
+		std::unique_ptr<ExprAST> LHS; 
+		if(tokens.peek() == INCREMENT || tokens.peek() == DECREMENT){
+			Token t = tokens.next(); 
+			LHS = std::move(term(tokens));
+			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1)); 
+		}
+		LHS = std::move(term(tokens));
+		if(LHS == NULL) {
+			return NULL; 
+		}
+		if(tokens.peek() == INCREMENT || tokens.peek() == DECREMENT){
+			Token t = tokens.next(); 
+			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1)); 
+		}
+		return LHS; 
+	}
 
 	std::unique_ptr<ExprAST> raisedToExpr(Stack<Token> &tokens)
 	{
-		std::unique_ptr<ExprAST> LHS = std::move(term(tokens));
+		std::unique_ptr<ExprAST> LHS = std::move(incDecExpr(tokens));
 		if (tokens.peek() != POWERTO && tokens.peek() != LEFTOVER)
 			return LHS;
 		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(term(tokens));
+		std::unique_ptr<ExprAST> RHS = std::move(incDecExpr(tokens));
 
 		while (tokens.peek() == POWERTO || tokens.peek() == LEFTOVER)
 		{
@@ -624,10 +642,34 @@ namespace jimpilier
 		logError("Error in func() ", t);
 		return NULL;
 	}
+	/**
+	 * @brief Takes in a name operator, an equals sign, then calls the lowest precidence operation in the AST. 
+	 * 
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
+	std::unique_ptr<ExprAST> assign(Stack<Token> &tokens){
+		Token name = tokens.peek(); 
+		if(name != IDENT){ 
+			logError("Expected identifier in place of this token:", tokens.peek());
+			return NULL; 
+		}
+		tokens.next();
+		if(tokens.peek() == EQUALS) {
+			tokens.next(); 
+			return std::move(listExpr(tokens)); 
+		}else if(tokens.peek() == SEMICOL){ 
+			return std::make_unique<NumberExprAST>(0); 
+		}
+		logError("Expected an assignment operator or a semicolon here:", tokens.peek()); 
+		tokens.go_back(); 
+		return NULL; 
+	}
 
 	/**
 	 * @brief Called whenever the words "public", "private", "protected", or a class of object/primitive ("int", "string", "object") are seen.
 	 * Essentially we don't know from here if what's being defined is a function or a variable, so we just try to account for anything that comes up.
+	 * TODO: Implement function parsing too
 	 * @param tokens
 	 * @return true if a valid function
 	 */
@@ -640,32 +682,12 @@ namespace jimpilier
 			// Operators.push_back(t) //Add this to the variable modifier memory
 			// return declareOrFunction(tokens);
 		} //*/
-		if (tokens.peek() != IDENT)
-		{
-			logError("Expected identifier in place of this token:", tokens.peek());
-			return NULL;
+		std::unique_ptr<ExprAST> retval = std::move(assign(tokens)); 
+		if(retval == NULL){
+			logError("I haven't added function parsing yet lol", tokens.currentToken()); 
+			return NULL; 
 		}
-		Token name = tokens.next();
-		t = tokens.next();
-		if (t.token == LPAREN)
-		{ // It's a function
-			logError("I haven't added function parsing functionality yet lol", t);
-			return NULL; // func(tokens); //TODO: Fix this
-						 // return function(tokens); //TBI
-		}
-		else if (t == EQUALS)
-		{ // It's a variable
-			return std::move(listExpr(tokens));
-		}
-		else if (t == SEMICOL)
-		{
-			// Also a variable
-			tokens.next();
-			return std::make_unique<NumberExprAST>(0);
-		}
-		logError("Error parsing a term in declareOrFunction()", t);
-		tokens.go_back(2);
-		return NULL;
+		return retval;
 	}
 
 	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens)
@@ -714,6 +736,7 @@ namespace jimpilier
 	 * generic	-> <inc/dec> | <assign>
 	 * inc/dec	-> <variable>["++"|"--"]";" | [++|--]<variable>";"
 	 * assign	-> <variable> "=" <someValue>;
+	 * @deprecated
 	 * @param tokens
 	 * @return true
 	 * @return NULL
@@ -727,7 +750,8 @@ namespace jimpilier
 			Token t2 = tokens.next();
 			return std::make_unique<VariableExprAST>(t2.lex);
 		}
-		t = tokens.next();
+		Token t2 = tokens.next();
+		if(t2 == IDENT) t2 = tokens.next(); 
 		if (t == INCREMENT || t == DECREMENT)
 			return std::make_unique<VariableExprAST>(t.lex);
 		if (t == EQUALS)
@@ -742,7 +766,12 @@ namespace jimpilier
 		Token t = tokens.next();
 
 		std::unique_ptr<ExprAST> b = std::move(declareOrFunction(tokens));
-
+		if (tokens.next() != SEMICOL)
+		{
+			tokens.go_back(1);
+			logError("Expecting a semicolon at this token:", t);
+			return NULL;
+		}
 		b = logicStmt(tokens);
 		if (tokens.next() != SEMICOL)
 		{
@@ -750,7 +779,7 @@ namespace jimpilier
 			logError("Expecting a semicolon at this token:", t);
 			return NULL;
 		}
-		b = std::move(mathExpr(tokens)); // TBI: variable checking
+		b = std::move(getValidStmt(tokens)); // TBI: variable checking
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
 		return b;
@@ -825,7 +854,7 @@ namespace jimpilier
 		case LPAREN:
 		case INCREMENT:
 		case DECREMENT:
-			return std::move(jimpilier::genericStmt(tokens));
+			return std::move(jimpilier::mathExpr(tokens));
 		case SEMICOL:
 			logError("Returning null on token (under semicol)", tokens.peek());
 			return NULL;
@@ -886,7 +915,7 @@ namespace jimpilier
 	}
 	/**
 	 * @brief Soon-to-be depreciated
-	 * 
+	 * TODO: Fix this whole damn function oh Lord help me
 	 * @deprecated
 	 * @param fileDir 
 	 * @return std::unique_ptr<ExprAST> 
@@ -913,6 +942,6 @@ namespace jimpilier
 		// 	std::cout << std::endl;
 		// 	return NULL;
 		// }
-		return b; // TODO: Fix this
+		return b; 
 	}
 };

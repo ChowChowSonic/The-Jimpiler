@@ -623,7 +623,7 @@ bool getValidStmt(Stack<Token> &tokens)
 		currentScope = currentScope->getParentPointer();
 		return true;
 	case RET:
-		currentScope->writeASM("ret\n"); //TODO: Turn this into a full fledged operator sooner or later
+		currentScope->writeASM("ret\n");
 		return true; 
 	case INT:
 	case SHORT: // int i = 0; << We start at the int token, then have to move to the ident, so we go back 1 to undo that
