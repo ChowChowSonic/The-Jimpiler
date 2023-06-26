@@ -71,8 +71,8 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			std::cout << Op << "( ";
-			llvm::Value *L = LHS->codegen(); 
-			std::cout << ", "; 
+			llvm::Value *L = LHS->codegen();
+			std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
 			std::cout << " )";
 			switch (Op)
@@ -161,7 +161,7 @@ namespace jimpilier
 				ret = i->get()->codegen();
 				std::cout << ", ";
 			};
-			std::cout << " ]"; 
+			std::cout << " ]";
 			return ret;
 		}
 	};
@@ -181,14 +181,14 @@ namespace jimpilier
 		CodeBlockAST() {}
 		llvm::Value *codegen()
 		{
-			std::cout << '{' <<endl; 
+			std::cout << '{' << endl;
 			llvm::Value *ret = NULL;
 			for (int i = 0; i < Contents.size(); i++)
 			{
-				ret = Contents[i]->codegen(); 
-				std::cout <<endl; 
+				ret = Contents[i]->codegen();
+				std::cout << endl;
 			};
-			std::cout << '}' <<endl; 
+			std::cout << '}' << endl;
 			return ret;
 		}
 	};
@@ -203,7 +203,13 @@ namespace jimpilier
 
 	public:
 		PrototypeAST(const std::string &name, std::vector<std::string> Args)
-			: Name(name), Args(std::move(Args)) {}
+			: Name(name)
+		{
+			for (auto &x : Args)
+			{
+				this->Args.push_back(std::move(x));
+			}
+		}
 
 		const std::string &getName() const { return Name; }
 		llvm::Function *codegen()
@@ -236,6 +242,7 @@ namespace jimpilier
 
 		llvm::Value *codegen()
 		{
+			std::cout << Proto->getName(); 
 			llvm::Function *TheFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
 
 			if (!TheFunction)
@@ -265,9 +272,9 @@ namespace jimpilier
 
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*TheFunction);
-
+				std::cout << "//end of " << Proto->getName(); 
 				return TheFunction;
-			}
+			}else std::cout << "Error in body of function:"; 
 			TheFunction->eraseFromParent();
 			return nullptr;
 		}
@@ -346,29 +353,35 @@ namespace jimpilier
 		{
 			tokens.next();
 			return std::make_unique<NumberExprAST>(1);
-		}else if(tokens.peek() == NUMCONST){
+		}
+		else if (tokens.peek() == NUMCONST)
+		{
 			return std::make_unique<NumberExprAST>(stoi(tokens.next().lex));
 		}
 
 		logError("Invalid term:", tokens.currentToken());
 		return NULL;
 	}
-	std::unique_ptr<ExprAST> incDecExpr(Stack<Token> &tokens){
-		std::unique_ptr<ExprAST> LHS; 
-		if(tokens.peek() == INCREMENT || tokens.peek() == DECREMENT){
-			Token t = tokens.next(); 
+	std::unique_ptr<ExprAST> incDecExpr(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> LHS;
+		if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)
+		{
+			Token t = tokens.next();
 			LHS = std::move(term(tokens));
-			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1)); 
+			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
 		LHS = std::move(term(tokens));
-		if(LHS == NULL) {
-			return NULL; 
+		if (LHS == NULL)
+		{
+			return NULL;
 		}
-		if(tokens.peek() == INCREMENT || tokens.peek() == DECREMENT){
-			Token t = tokens.next(); 
-			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1)); 
+		if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)
+		{
+			Token t = tokens.next();
+			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
-		return LHS; 
+		return LHS;
 	}
 
 	std::unique_ptr<ExprAST> raisedToExpr(Stack<Token> &tokens)
@@ -546,61 +559,74 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens)
 	{
-		if(tokens.peek() != OPENSQUARE) return std::move(logicStmt(tokens)); 
-		tokens.next(); 
-		std::vector<std::unique_ptr<ExprAST>> contents; 
+		if (tokens.peek() != OPENSQUARE)
+			return std::move(logicStmt(tokens));
+		tokens.next();
+		std::vector<std::unique_ptr<ExprAST>> contents;
 		do
 		{
 			std::unique_ptr<ExprAST> LHS = std::move(logicStmt(tokens));
-			if(LHS != NULL) contents.push_back(std::move(LHS));
-			else {
-				logError("Error when parsing list:", tokens.currentToken()); 
-				return NULL; 
+			if (LHS != NULL)
+				contents.push_back(std::move(LHS));
+			else
+			{
+				logError("Error when parsing list:", tokens.currentToken());
+				return NULL;
 			}
-		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
-		if(tokens.peek() != CLOSESQUARE) {
-			logError("Expected a closing square parenthesis here", tokens.currentToken()); 
+		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		if (tokens.peek() != CLOSESQUARE)
+		{
+			logError("Expected a closing square parenthesis here", tokens.currentToken());
 			return NULL;
 		}
-		tokens.next(); 
+		tokens.next();
 		return std::make_unique<ListExprAST>(contents);
 	}
 	/**
 	 * @brief Parses a block of code encased by two curly braces, if possible.
 	 * If no braces are found, it just skips this step
-	 * 
-	 * @param tokens 
-	 * @return std::unique_ptr<ExprAST> 
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
 	 */
 	std::unique_ptr<ExprAST> codeBlockExpr(Stack<Token> &tokens)
 	{
-		//return std::move(listExpr(tokens)); 
+		// return std::move(listExpr(tokens));
 		std::vector<std::unique_ptr<ExprAST>> contents;
-		if(tokens.peek() == OPENCURL) {
+		if (tokens.peek() == OPENCURL)
+		{
 			tokens.next();
-			if(tokens.peek() == CLOSECURL){
-				tokens.next(); 
-				return std::move(std::make_unique<CodeBlockAST>(contents));}
-			if(tokens.eof()) {
-				logError("Error: Unbalanced curly brace here:", tokens.currentToken()); 
-				return NULL; 
+			if (tokens.peek() == CLOSECURL)
+			{
+				tokens.next();
+				return std::move(std::make_unique<CodeBlockAST>(contents));
 			}
-		}else return std::move(getValidStmt(tokens)); 
+			if (tokens.eof())
+			{
+				logError("Error: Unbalanced curly brace here:", tokens.currentToken());
+				return NULL;
+			}
+		}
+		else
+			return std::move(getValidStmt(tokens));
 		do
 		{
 			std::unique_ptr<ExprAST> LHS = std::move(getValidStmt(tokens));
-			if(LHS != NULL) contents.push_back(std::move(LHS));
-			else if(tokens.peek() != CLOSECURL){
-				logError("Error when parsing code block:", tokens.peek()); 
-				return NULL; 
+			if (LHS != NULL)
+				contents.push_back(std::move(LHS));
+			else if (tokens.peek() != CLOSECURL)
+			{
+				logError("Error when parsing code block:", tokens.peek());
+				return NULL;
 			}
-		}while(tokens.peek() != CLOSECURL && !tokens.eof()); 
-		if(tokens.peek() != CLOSECURL || tokens.eof()) {
-			logError("Unbalanced curly brace after this token:", tokens.currentToken()); 
+		} while (tokens.peek() != CLOSECURL && !tokens.eof());
+		if (tokens.peek() != CLOSECURL || tokens.eof())
+		{
+			logError("Unbalanced curly brace after this token:", tokens.currentToken());
 			return NULL;
 		}
-		tokens.next(); 
-		return std::move(std::make_unique<CodeBlockAST>(contents));//*/
+		tokens.next();
+		return std::move(std::make_unique<CodeBlockAST>(contents)); //*/
 	}
 
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
@@ -643,34 +669,90 @@ namespace jimpilier
 		return NULL;
 	}
 	/**
-	 * @brief Takes in a name operator, an equals sign, then calls the lowest precidence operation in the AST. 
-	 * 
-	 * @param tokens 
-	 * @return std::unique_ptr<ExprAST> 
+	 * @brief Takes in a name operator, an equals sign, then calls the lowest precidence operation in the AST.
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> assign(Stack<Token> &tokens){
-		Token name = tokens.peek(); 
-		if(name != IDENT){ 
+	std::unique_ptr<ExprAST> assign(Stack<Token> &tokens)
+	{
+		Token name = tokens.peek();
+		if (name != IDENT)
+		{
 			logError("Expected identifier in place of this token:", tokens.peek());
-			return NULL; 
+			return NULL;
 		}
 		tokens.next();
-		if(tokens.peek() == EQUALS) {
-			tokens.next(); 
-			return std::move(listExpr(tokens)); 
-		}else if(tokens.peek() == SEMICOL){ 
-			return std::make_unique<NumberExprAST>(0); 
+		if (tokens.peek() == EQUALS)
+		{
+			tokens.next();
+			return std::move(listExpr(tokens));
 		}
-		logError("Expected an assignment operator or a semicolon here:", tokens.peek()); 
-		tokens.go_back(); 
-		return NULL; 
+		else if (tokens.peek() == SEMICOL)
+		{
+			return std::make_unique<NumberExprAST>(0);
+		}
+		if (tokens.peek() != LPAREN)
+			logError("Expected an assignment operator or a semicolon here:", tokens.peek());
+		tokens.go_back();
+		return NULL;
+	}
+
+	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens)
+	{
+		Token name = tokens.next();
+		std::vector<std::string> argnames;
+		if (tokens.next() != LPAREN)
+		{
+			logError("Expected parenthesis here:", tokens.currentToken());
+			return NULL;
+		}
+		if (tokens.peek() == RPAREN)
+		{
+			tokens.next();
+			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames);
+			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+			if (body == NULL)
+			{
+				logError("Error in the body of function:", name);
+				return NULL;
+			}
+			std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
+			return func;
+		}
+		do
+		{
+			if (tokens.next().token > INT)
+			{
+				logError("Expected data type here:", tokens.currentToken());
+				return NULL;
+			}
+			if (tokens.peek() == POINTER)
+				tokens.next();
+			if (tokens.peek() != IDENT)
+			{
+				logError("Expected identifier here:", tokens.currentToken());
+				return NULL;
+			}
+			argnames.push_back(tokens.next().lex);
+		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames);
+		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+		if (body == NULL)
+		{
+			logError("Error in the body of function:", name);
+			return NULL;
+		}
+		std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
+		return func;
 	}
 
 	/**
 	 * @brief Called whenever the words "public", "private", "protected" are seen.
-	 * Essentially we don't know from here if what's being defined is a function or a variable, 
+	 * Essentially we don't know from here if what's being defined is a function or a variable,
 	 * so we just try to account for anything that comes up.
 	 * TODO: Implement function parsing too
+	 * TODO: Make declareOrFunction return void, only parses "const" through "protected" with side effect.
 	 * @param tokens
 	 * @return true if a valid function
 	 */
@@ -683,10 +765,21 @@ namespace jimpilier
 			// Operators.push_back(t) //Add this to the variable modifier memory
 			// return declareOrFunction(tokens);
 		} //*/
-		std::unique_ptr<ExprAST> retval = std::move(assign(tokens)); 
-		if(retval == NULL){
-			logError("I haven't added function parsing yet lol", tokens.currentToken()); 
-			return NULL; 
+		std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
+		if (retval == NULL)
+		{
+			if (auto FnAST = functionDecl(tokens))
+			{
+				if (auto *FnIR = FnAST->codegen())
+				{
+					// fprintf(stderr, "Read top-level expression:");
+					//  FnIR->print(errs());
+					// fprintf(stderr, "\n");
+
+					// Remove the anonymous expression.
+					// FnIR->eraseFromParent();
+				}
+			}
 		}
 		return retval;
 	}
@@ -752,7 +845,8 @@ namespace jimpilier
 			return std::make_unique<VariableExprAST>(t2.lex);
 		}
 		Token t2 = tokens.next();
-		if(t2 == IDENT) t2 = tokens.next(); 
+		if (t2 == IDENT)
+			t2 = tokens.next();
 		if (t == INCREMENT || t == DECREMENT)
 			return std::make_unique<VariableExprAST>(t.lex);
 		if (t == EQUALS)
@@ -765,10 +859,11 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> forStmt(Stack<Token> &tokens)
 	{
 		Token t = tokens.next();
-		std::unique_ptr<ExprAST> b; 
-		do{
-		b = std::move(declareOrFunction(tokens));
-		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		std::unique_ptr<ExprAST> b;
+		do
+		{
+			b = std::move(declareOrFunction(tokens));
+		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.next() != SEMICOL)
 		{
 			tokens.go_back(1);
@@ -782,9 +877,10 @@ namespace jimpilier
 			logError("Expecting a semicolon at this token:", t);
 			return NULL;
 		}
-		do{
-		b = std::move(getValidStmt(tokens)); // TBI: variable checking
-		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		do
+		{
+			b = std::move(getValidStmt(tokens)); // TBI: variable checking
+		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
 		return b;
@@ -922,8 +1018,8 @@ namespace jimpilier
 	 * @brief Soon-to-be depreciated
 	 * TODO: Fix this whole damn function oh Lord help me
 	 * @deprecated
-	 * @param fileDir 
-	 * @return std::unique_ptr<ExprAST> 
+	 * @param fileDir
+	 * @return std::unique_ptr<ExprAST>
 	 */
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir)
 	{
@@ -947,6 +1043,6 @@ namespace jimpilier
 		// 	std::cout << std::endl;
 		// 	return NULL;
 		// }
-		return b; 
+		return b;
 	}
 };
