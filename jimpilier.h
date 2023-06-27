@@ -40,6 +40,18 @@ namespace jimpilier
 			return llvm::ConstantFP::get(ctxt, llvm::APFloat(Val));
 		}
 	};
+	class StringExprAST : public ExprAST
+	{
+		std::string Val;
+
+	public:
+		StringExprAST(std::string val) : Val(val) {}
+		llvm::Value *codegen()
+		{
+			std::cout << Val;
+			return NULL;//llvm::ConstantFP::get(ctxt, llvm::AP(Val));
+		}
+	};
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
 	class VariableExprAST : public ExprAST
 	{
@@ -49,6 +61,7 @@ namespace jimpilier
 		VariableExprAST(const string &Name) : Name(Name) {}
 		llvm::Value *codegen()
 		{
+			std::cout << Name; 
 			llvm::Value *V = variables[Name];
 			if (!V)
 			{
@@ -326,8 +339,8 @@ namespace jimpilier
 		return b;
 	}
 
-	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
 
 	/**
@@ -354,10 +367,13 @@ namespace jimpilier
 			}
 		}
 
-		if (tokens.peek() == SCONST || tokens.peek() == IDENT)
+		if (tokens.peek() == SCONST )
 		{
-			tokens.next();
-			return std::make_unique<NumberExprAST>(1);
+			Token s = tokens.next();
+			return std::make_unique<StringExprAST>(s.lex);
+		}else if(tokens.peek() == IDENT){
+			Token s = tokens.next();
+			return std::make_unique<VariableExprAST>(s.lex);
 		}
 		else if (tokens.peek() == NUMCONST)
 		{
@@ -525,7 +541,7 @@ namespace jimpilier
 	 * LogicStmt itself only parses OR Statements (x || y), but makes calls to functions like andStmt, compareStmt, etc. to do the rest.
 	 * EBNF isn't technically 100% accurate, but that's because a few assumptions should be made going into this, like,
 	 * for example, all open parenthesis should have a matching closing parenthesis.
-	 * logicStmt 	-> <Stmt> <join> <logicStmt> | <Stmt>
+	 * logicStmt	-> <Stmt> <join> <logicStmt> | <Stmt>
 	 * Stmt			-> "("?<helper>")"? <Join> "("?<helper>")"?
 	 * helper		-> <base> | <logicStmt>
 	 * base			-> <terminal> <op> <terminal> | "true" | "NULL";
@@ -556,11 +572,11 @@ namespace jimpilier
 
 	/**
 	 * A list representation can be displayed in EBNF as:
-	 *  <OBRACKET> 	-> [ //Literal character
-	 *  <CBRACKET> 	-> ] //Literal character
-	 * 	<REGLIST>	-> <BoolStmt>{, <BoolStmt>} //Regular list: [1, 2, 3, 4, 5]
-	 * 	<ITERATOR>	-> <VAR> <FOREACHSTMT> //stolen directly from python syntax: [x+1 for x in list]
-	 *  <ListRep>	-> <OBRACKET> (<REGLIST>|<ITERATOR>) <CBRACKET>
+	 *  OBRACKET-> [ //Literal character
+	 *  CBRACKET-> ] //Literal character
+	 * 	REGLIST	-> <BoolStmt>{, <BoolStmt>} //Regular list: [1, 2, 3, 4, 5]
+	 * 	ITERATOR-> <VAR> <FOREACHSTMT> //stolen directly from python syntax: [x+1 for x in list]
+	 *  ListRep	-> <OBRACKET> (<REGLIST>|<ITERATOR>) <CBRACKET>
 	 */
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens)
 	{
@@ -589,7 +605,10 @@ namespace jimpilier
 	}
 	/**
 	 * @brief Parses a block of code encased by two curly braces, if possible.
-	 * If no braces are found, it just skips this step
+	 * If no braces are found, it just parses a single expression. EBNF is approximately: 
+	 * <BLOCK>	-> '{' <EXPR>* '}' | <EXPR>
+	 * <EXPR>	-> I'm not writing out the EBNF for every possible expression, you get the idea.
+	 * 
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -634,6 +653,13 @@ namespace jimpilier
 		return std::move(std::make_unique<CodeBlockAST>(contents)); //*/
 	}
 
+/**
+ * @brief Parses an object/class blueprint
+ * TODO: Get this function off the ground
+ * 
+ * @param tokens 
+ * @return std::unique_ptr<ExprAST> 
+ */
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
 	{
 		if (tokens.next().token != IDENT)
@@ -645,36 +671,9 @@ namespace jimpilier
 		return NULL; // TODO: Fix this
 	}
 
-	std::unique_ptr<FunctionAST> func(Stack<Token> &tokens)
-	{
-		Token t;
-		std::string name = t.lex;
-		t = tokens.next();
-		if (t != RPAREN)
-		{
-			logError("Expecting a right parenthesis at this token:", t);
-			return NULL;
-		}
-		std::vector<std::string> argnames;
-		while (tokens.peek().token >= INT)
-		{
-			tokens.next();
-			argnames.push_back(tokens.next().lex);
-			tokens.next();
-		}
-		if (tokens.peek() != LPAREN)
-		{
-			logError("Expecting a left parenthesis at this token:", t);
-			return NULL;
-		}
-		std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, std::move(argnames));
-		if (auto E = getValidStmt(tokens))
-			return std::make_unique<FunctionAST>(std::move(proto), std::move(E));
-		logError("Error in func() ", t);
-		return NULL;
-	}
 	/**
-	 * @brief Takes in a name operator, an equals sign, then calls the lowest precidence operation in the AST.
+	 * @brief Takes in a name as an identifier, an equals sign, 
+	 * then calls the lowest precidence operation in the AST.
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -697,6 +696,13 @@ namespace jimpilier
 		return std::move(listExpr(tokens));
 	}
 
+/**
+ * @brief Parses the declaration for a function, from a stack of tokens, 
+ * including the header prototype and argument list. 
+ * 
+ * @param tokens 
+ * @return std::unique_ptr<FunctionAST> 
+ */
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens)
 	{
 		Token name = tokens.next();
@@ -765,6 +771,13 @@ namespace jimpilier
 		//std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
 	}
 
+	/**
+	 * @brief Parses a constructor for this class
+	 * TODO: Get this function off the ground
+	 * 
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
 	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens)
 	{
 		Token t = tokens.next();
@@ -785,7 +798,13 @@ namespace jimpilier
 		return NULL;
 		// Need to handle closing curly bracket
 	}
-
+	/**
+	 * @brief Parses a destructor for a class
+	 * TODO: Get this fuction off the ground
+	 * 
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
 	std::unique_ptr<ExprAST> destruct(Stack<Token> &tokens)
 	{
 		Token t = tokens.next();
@@ -806,11 +825,12 @@ namespace jimpilier
 		return NULL; // TODO: Fix this
 					 // Need to handle closing curly bracket
 	}
-	
+
 	/**
 	 * @brief Parses a for statement header, followed by a body statement/block
 	 * TODO: Don't just return the body code, actually get the for stmt code generating properly
-	 * 
+	 * TODO: Add support for do-while stmts
+	 * TODO: Add support for while stmts
 	 * @param tokens 
 	 * @return std::unique_ptr<ExprAST> 
 	 */
@@ -844,6 +864,14 @@ namespace jimpilier
 		return b;
 	}
 
+	/**
+	 * @brief Parses an if/else statement header and it's associated body
+	 * TODO: Add support for else statement chains
+	 * TODO: Get IfStmt code generation working
+	 * TODO: Don't just return the body code, actually get the for stmt code generating properly
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
 	std::unique_ptr<ExprAST> ifStmt(Stack<Token> &tokens)
 	{
 		if (tokens.next() != IF)
@@ -867,6 +895,13 @@ namespace jimpilier
 		return NULL; // Leaving this for now because I have to figure the specifics out later...
 	}
 
+/**
+ * @brief parses a switch stmt, alongside it's associated case stmts.
+ *  TODO: Get this function off the ground
+ * 
+ * @param tokens 
+ * @return std::unique_ptr<ExprAST> 
+ */
 	std::unique_ptr<ExprAST> caseSwitchStmt(Stack<Token> &tokens)
 	{
 		Token variable = tokens.next();
@@ -876,7 +911,7 @@ namespace jimpilier
 			logError("Expecting a variable at this token:", variable);
 			return NULL;
 		}
-		return NULL; // TODO: Fix this
+		return NULL; 
 	}
 
 	/**
@@ -925,7 +960,7 @@ namespace jimpilier
 			logError("Returning null on token (under ret)", tokens.peek());
 			return NULL;
 		case INT:
-		case SHORT: // int i = 0; << We start at the int token, then have to move to the ident, so we go back 1 to undo that
+		case SHORT:
 		case POINTER:
 		case LONG:
 		case FLOAT:
@@ -962,6 +997,12 @@ namespace jimpilier
 		logError("Returning null on error?", tokens.currentToken());
 		return NULL;
 	}
+	/**
+	 * @brief Takes a file name, opens the file, tokenizes it, and loads those into a custom Stack<Token> object
+	 *  TODO: Move this function into driver code maybe ???
+	 * @param fileDir 
+	 * @return Stack<Token> 
+	 */
 	Stack<Token> loadTokens(string fileDir)
 	{
 		vector<Token> tokens;
