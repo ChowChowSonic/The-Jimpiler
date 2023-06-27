@@ -17,7 +17,7 @@ namespace jimpilier
 	llvm::IRBuilder<> builder(ctxt);
 	static std::unique_ptr<llvm::Module> GlobalVarsAndFunctions = std::make_unique<llvm::Module>("default", ctxt);
 	std::map<std::string, llvm::Value *> variables;
-	vector<string> importedFiles;
+	std::vector<std::string> importedFiles;
 
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
@@ -89,6 +89,7 @@ namespace jimpilier
 				return builder.CreateUIToFP(L, llvm::Type::getDoubleTy(ctxt),
 											"booltmp");
 			default:
+				std::cout << "Error: Unknown operator" << Op; 
 				return NULL;
 			}
 		}
@@ -129,7 +130,10 @@ namespace jimpilier
 			{
 				ArgsV.push_back(Args[i]->codegen());
 				if (!ArgsV.back())
-					return nullptr;
+					{
+						std::cout << "Error saving function args"; 
+						return nullptr;
+					}
 			}
 
 			return builder.CreateCall(CalleeF, ArgsV, "calltmp");
@@ -159,7 +163,7 @@ namespace jimpilier
 			for (auto i = Contents.begin(); i < Contents.end(); i++)
 			{
 				ret = i->get()->codegen();
-				std::cout << ", ";
+				if(i != Contents.end()-1)std::cout << ", ";
 			};
 			std::cout << " ]";
 			return ret;
@@ -248,8 +252,9 @@ namespace jimpilier
 			if (!TheFunction)
 				TheFunction = Proto->codegen();
 
-			if (!TheFunction)
+			if (!TheFunction){
 				return nullptr;
+			}
 
 			if (!TheFunction->empty())
 			{
@@ -272,9 +277,9 @@ namespace jimpilier
 
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*TheFunction);
-				std::cout << "//end of " << Proto->getName(); 
+				std::cout << "//end of " << Proto->getName() <<endl; 
 				return TheFunction;
-			}else std::cout << "Error in body of function:"; 
+			}else std::cout << "Error in body of function"<< endl; 
 			TheFunction->eraseFromParent();
 			return nullptr;
 		}
@@ -683,19 +688,13 @@ namespace jimpilier
 			return NULL;
 		}
 		tokens.next();
-		if (tokens.peek() == EQUALS)
-		{
-			tokens.next();
-			return std::move(listExpr(tokens));
+		if (tokens.peek() == EQUALS) tokens.next();
+		else if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT) tokens.go_back(); 
+		else if (tokens.peek() == LPAREN){ 
+			tokens.go_back();  
+			return NULL; 
 		}
-		else if (tokens.peek() == SEMICOL)
-		{
-			return std::make_unique<NumberExprAST>(0);
-		}
-		if (tokens.peek() != LPAREN)
-			logError("Expected an assignment operator or a semicolon here:", tokens.peek());
-		tokens.go_back();
-		return NULL;
+		return std::move(listExpr(tokens));
 	}
 
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens)
@@ -751,12 +750,10 @@ namespace jimpilier
 	 * @brief Called whenever the words "public", "private", "protected" are seen.
 	 * Essentially we don't know from here if what's being defined is a function or a variable,
 	 * so we just try to account for anything that comes up.
-	 * TODO: Implement function parsing too
-	 * TODO: Make declareOrFunction return void, only parses "const" through "protected" with side effect.
 	 * @param tokens
 	 * @return true if a valid function
 	 */
-	std::unique_ptr<ExprAST> declareOrFunction(Stack<Token> &tokens)
+	void declareOrFunction(Stack<Token> &tokens)
 	{
 		Token t;
 		while (((t = tokens.peek()).token >= CONST && t.token <= PROTECTED) || t.token >= INT)
@@ -765,23 +762,7 @@ namespace jimpilier
 			// Operators.push_back(t) //Add this to the variable modifier memory
 			// return declareOrFunction(tokens);
 		} //*/
-		std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
-		if (retval == NULL)
-		{
-			if (auto FnAST = functionDecl(tokens))
-			{
-				if (auto *FnIR = FnAST->codegen())
-				{
-					// fprintf(stderr, "Read top-level expression:");
-					//  FnIR->print(errs());
-					// fprintf(stderr, "\n");
-
-					// Remove the anonymous expression.
-					// FnIR->eraseFromParent();
-				}
-			}
-		}
-		return retval;
+		//std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
 	}
 
 	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens)
@@ -825,44 +806,21 @@ namespace jimpilier
 		return NULL; // TODO: Fix this
 					 // Need to handle closing curly bracket
 	}
+	
 	/**
-	 * @brief Described in short using EBNF, generic statements consist of: \n
-	 * generic	-> <inc/dec> | <assign>
-	 * inc/dec	-> <variable>["++"|"--"]";" | [++|--]<variable>";"
-	 * assign	-> <variable> "=" <someValue>;
-	 * @deprecated
-	 * @param tokens
-	 * @return true
-	 * @return NULL
+	 * @brief Parses a for statement header, followed by a body statement/block
+	 * TODO: Don't just return the body code, actually get the for stmt code generating properly
+	 * 
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
 	 */
-	std::unique_ptr<ExprAST> genericStmt(Stack<Token> &tokens)
-	{
-		VariableExprAST *retval = NULL;
-		Token t = tokens.next();
-		if (t == INCREMENT || t == DECREMENT)
-		{
-			Token t2 = tokens.next();
-			return std::make_unique<VariableExprAST>(t2.lex);
-		}
-		Token t2 = tokens.next();
-		if (t2 == IDENT)
-			t2 = tokens.next();
-		if (t == INCREMENT || t == DECREMENT)
-			return std::make_unique<VariableExprAST>(t.lex);
-		if (t == EQUALS)
-		{
-			return mathExpr(tokens);
-		}
-		return std::make_unique<VariableExprAST>(t.lex);
-	}
-
 	std::unique_ptr<ExprAST> forStmt(Stack<Token> &tokens)
 	{
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> b;
 		do
 		{
-			b = std::move(declareOrFunction(tokens));
+			b = std::move(assign(tokens));
 		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.next() != SEMICOL)
 		{
@@ -950,12 +908,11 @@ namespace jimpilier
 			return std::move(jimpilier::construct(tokens));
 		case DESTRUCTOR:
 			return std::move(jimpilier::destruct(tokens));
-		case IDENT:
 		case RPAREN:
 		case LPAREN:
 		case INCREMENT:
 		case DECREMENT:
-			return std::move(jimpilier::mathExpr(tokens));
+			return std::move(jimpilier::incDecExpr(tokens));
 		case SEMICOL:
 			logError("Returning null on token (under semicol)", tokens.peek());
 			return NULL;
@@ -982,7 +939,21 @@ namespace jimpilier
 		case PROTECTED:
 		case SINGULAR:
 		case CONST:
-			return declareOrFunction(tokens);
+			declareOrFunction(tokens);
+		case IDENT:
+			{
+				std::unique_ptr<ExprAST> retval = std::move(assign(tokens)); 
+				if(retval == NULL) {
+					std::unique_ptr<FunctionAST> funcval = std::move(functionDecl(tokens)); 
+					if(funcval == NULL){
+						logError("Error parsing identifier here:", tokens.currentToken()); 
+						return NULL; 
+					}
+					funcval->codegen(); 
+					return NULL;
+				}
+				return retval; 
+			}
 		default:
 			logError("Unknown token:", tokens.peek());
 			tokens.go_back(1);
