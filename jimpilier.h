@@ -49,7 +49,7 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			std::cout << Val;
-			return NULL;//llvm::ConstantFP::get(ctxt, llvm::AP(Val));
+			return NULL; // llvm::ConstantFP::get(ctxt, llvm::AP(Val));
 		}
 	};
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -61,7 +61,7 @@ namespace jimpilier
 		VariableExprAST(const string &Name) : Name(Name) {}
 		llvm::Value *codegen()
 		{
-			std::cout << Name; 
+			std::cout << Name;
 			llvm::Value *V = variables[Name];
 			if (!V)
 			{
@@ -102,7 +102,7 @@ namespace jimpilier
 				return builder.CreateUIToFP(L, llvm::Type::getDoubleTy(ctxt),
 											"booltmp");
 			default:
-				std::cout << "Error: Unknown operator" << Op; 
+				std::cout << "Error: Unknown operator" << Op;
 				return NULL;
 			}
 		}
@@ -143,10 +143,10 @@ namespace jimpilier
 			{
 				ArgsV.push_back(Args[i]->codegen());
 				if (!ArgsV.back())
-					{
-						std::cout << "Error saving function args"; 
-						return nullptr;
-					}
+				{
+					std::cout << "Error saving function args";
+					return nullptr;
+				}
 			}
 
 			return builder.CreateCall(CalleeF, ArgsV, "calltmp");
@@ -176,7 +176,8 @@ namespace jimpilier
 			for (auto i = Contents.begin(); i < Contents.end(); i++)
 			{
 				ret = i->get()->codegen();
-				if(i != Contents.end()-1)std::cout << ", ";
+				if (i != Contents.end() - 1)
+					std::cout << ", ";
 			};
 			std::cout << " ]";
 			return ret;
@@ -259,13 +260,14 @@ namespace jimpilier
 
 		llvm::Value *codegen()
 		{
-			std::cout << Proto->getName(); 
+			std::cout << Proto->getName();
 			llvm::Function *TheFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
 
 			if (!TheFunction)
 				TheFunction = Proto->codegen();
 
-			if (!TheFunction){
+			if (!TheFunction)
+			{
 				return nullptr;
 			}
 
@@ -290,9 +292,11 @@ namespace jimpilier
 
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*TheFunction);
-				std::cout << "//end of " << Proto->getName() <<endl; 
+				std::cout << "//end of " << Proto->getName() << endl;
 				return TheFunction;
-			}else std::cout << "Error in body of function"<< endl; 
+			}
+			else
+				std::cout << "Error in body of function" << endl;
 			TheFunction->eraseFromParent();
 			return nullptr;
 		}
@@ -367,11 +371,13 @@ namespace jimpilier
 			}
 		}
 
-		if (tokens.peek() == SCONST )
+		if (tokens.peek() == SCONST)
 		{
 			Token s = tokens.next();
 			return std::make_unique<StringExprAST>(s.lex);
-		}else if(tokens.peek() == IDENT){
+		}
+		else if (tokens.peek() == IDENT)
+		{
 			Token s = tokens.next();
 			return std::make_unique<VariableExprAST>(s.lex);
 		}
@@ -605,10 +611,10 @@ namespace jimpilier
 	}
 	/**
 	 * @brief Parses a block of code encased by two curly braces, if possible.
-	 * If no braces are found, it just parses a single expression. EBNF is approximately: 
+	 * If no braces are found, it just parses a single expression. EBNF is approximately:
 	 * <BLOCK>	-> '{' <EXPR>* '}' | <EXPR>
 	 * <EXPR>	-> I'm not writing out the EBNF for every possible expression, you get the idea.
-	 * 
+	 *
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -653,13 +659,13 @@ namespace jimpilier
 		return std::move(std::make_unique<CodeBlockAST>(contents)); //*/
 	}
 
-/**
- * @brief Parses an object/class blueprint
- * TODO: Get this function off the ground
- * 
- * @param tokens 
- * @return std::unique_ptr<ExprAST> 
- */
+	/**
+	 * @brief Parses an object/class blueprint
+	 * TODO: Get this function off the ground
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
+	 */
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
 	{
 		if (tokens.next().token != IDENT)
@@ -672,9 +678,9 @@ namespace jimpilier
 	}
 
 	/**
-	 * @brief Takes in a name as an identifier, an equals sign, 
+	 * @brief Takes in a name as an identifier, an equals sign,
 	 * then calls the lowest precidence operation in the AST.
-	 *
+	 * TODO: Make variable declarations functional
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
@@ -687,22 +693,39 @@ namespace jimpilier
 			return NULL;
 		}
 		tokens.next();
-		if (tokens.peek() == EQUALS) tokens.next();
-		else if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT) tokens.go_back(); 
-		else if (tokens.peek() == LPAREN){ 
-			tokens.go_back();  
-			return NULL; 
+		std::unique_ptr<ExprAST> value;
+		std::unique_ptr<ExprAST> varName = std::make_unique<VariableExprAST>(name.lex); 
+		switch (tokens.peek().token)
+		{
+		case (EQUALS):
+			tokens.next();
+			value = std::move(listExpr(tokens));
+			variables[name.lex] = value->codegen();
+			break;
+		case INCREMENT:
+		case DECREMENT:
+			tokens.go_back();
+			value = std::move(incDecExpr(tokens));
+			variables[name.lex] = value->codegen();
+			break;
+		case LPAREN:
+			tokens.go_back();
+			return NULL;
+		default:
+			tokens.next();
+			value = std::make_unique<NumberExprAST>(0);
+			variables[name.lex] = value->codegen();
 		}
-		return std::move(listExpr(tokens));
+		return varName;
 	}
 
-/**
- * @brief Parses the declaration for a function, from a stack of tokens, 
- * including the header prototype and argument list. 
- * 
- * @param tokens 
- * @return std::unique_ptr<FunctionAST> 
- */
+	/**
+	 * @brief Parses the declaration for a function, from a stack of tokens,
+	 * including the header prototype and argument list.
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<FunctionAST>
+	 */
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens)
 	{
 		Token name = tokens.next();
@@ -768,15 +791,15 @@ namespace jimpilier
 			// Operators.push_back(t) //Add this to the variable modifier memory
 			// return declareOrFunction(tokens);
 		} //*/
-		//std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
+		  // std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
 	}
 
 	/**
 	 * @brief Parses a constructor for this class
 	 * TODO: Get this function off the ground
-	 * 
-	 * @param tokens 
-	 * @return std::unique_ptr<ExprAST> 
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
 	 */
 	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens)
 	{
@@ -801,9 +824,9 @@ namespace jimpilier
 	/**
 	 * @brief Parses a destructor for a class
 	 * TODO: Get this fuction off the ground
-	 * 
-	 * @param tokens 
-	 * @return std::unique_ptr<ExprAST> 
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
 	 */
 	std::unique_ptr<ExprAST> destruct(Stack<Token> &tokens)
 	{
@@ -831,8 +854,8 @@ namespace jimpilier
 	 * TODO: Don't just return the body code, actually get the for stmt code generating properly
 	 * TODO: Add support for do-while stmts
 	 * TODO: Add support for while stmts
-	 * @param tokens 
-	 * @return std::unique_ptr<ExprAST> 
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
 	 */
 	std::unique_ptr<ExprAST> forStmt(Stack<Token> &tokens)
 	{
@@ -869,8 +892,8 @@ namespace jimpilier
 	 * TODO: Add support for else statement chains
 	 * TODO: Get IfStmt code generation working
 	 * TODO: Don't just return the body code, actually get the for stmt code generating properly
-	 * @param tokens 
-	 * @return std::unique_ptr<ExprAST> 
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
 	 */
 	std::unique_ptr<ExprAST> ifStmt(Stack<Token> &tokens)
 	{
@@ -895,13 +918,13 @@ namespace jimpilier
 		return NULL; // Leaving this for now because I have to figure the specifics out later...
 	}
 
-/**
- * @brief parses a switch stmt, alongside it's associated case stmts.
- *  TODO: Get this function off the ground
- * 
- * @param tokens 
- * @return std::unique_ptr<ExprAST> 
- */
+	/**
+	 * @brief parses a switch stmt, alongside it's associated case stmts.
+	 *  TODO: Get this function off the ground
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
+	 */
 	std::unique_ptr<ExprAST> caseSwitchStmt(Stack<Token> &tokens)
 	{
 		Token variable = tokens.next();
@@ -911,7 +934,7 @@ namespace jimpilier
 			logError("Expecting a variable at this token:", variable);
 			return NULL;
 		}
-		return NULL; 
+		return NULL;
 	}
 
 	/**
@@ -976,19 +999,21 @@ namespace jimpilier
 		case CONST:
 			declareOrFunction(tokens);
 		case IDENT:
+		{
+			std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
+			if (retval == NULL)
 			{
-				std::unique_ptr<ExprAST> retval = std::move(assign(tokens)); 
-				if(retval == NULL) {
-					std::unique_ptr<FunctionAST> funcval = std::move(functionDecl(tokens)); 
-					if(funcval == NULL){
-						logError("Error parsing identifier here:", tokens.currentToken()); 
-						return NULL; 
-					}
-					funcval->codegen(); 
+				std::unique_ptr<FunctionAST> funcval = std::move(functionDecl(tokens));
+				if (funcval == NULL)
+				{
+					logError("Error parsing identifier here:", tokens.currentToken());
 					return NULL;
 				}
-				return retval; 
+				funcval->codegen();
+				return NULL;
 			}
+			return retval;
+		}
 		default:
 			logError("Unknown token:", tokens.peek());
 			tokens.go_back(1);
@@ -1000,8 +1025,8 @@ namespace jimpilier
 	/**
 	 * @brief Takes a file name, opens the file, tokenizes it, and loads those into a custom Stack<Token> object
 	 *  TODO: Move this function into driver code maybe ???
-	 * @param fileDir 
-	 * @return Stack<Token> 
+	 * @param fileDir
+	 * @return Stack<Token>
 	 */
 	Stack<Token> loadTokens(string fileDir)
 	{
