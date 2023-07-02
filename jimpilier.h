@@ -13,9 +13,9 @@
 #include "llvm/FileCheck/FileCheck.h"
 namespace jimpilier
 {
-	llvm::LLVMContext ctxt;
-	llvm::IRBuilder<> builder(ctxt);
-	static std::unique_ptr<llvm::Module> GlobalVarsAndFunctions = std::make_unique<llvm::Module>("default", ctxt);
+	std::unique_ptr<llvm::LLVMContext> ctxt;
+	std::unique_ptr<llvm::IRBuilder<>> builder;
+	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
 	std::vector<std::string> importedFiles;
 
@@ -37,7 +37,7 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			std::cout << Val;
-			return llvm::ConstantFP::get(ctxt, llvm::APFloat(Val));
+			return llvm::ConstantFP::get(*ctxt, llvm::APFloat(Val));
 		}
 	};
 	class StringExprAST : public ExprAST
@@ -71,7 +71,16 @@ namespace jimpilier
 			return V;
 		}
 	};
-
+	class RetExprAST : public ExprAST{
+		unique_ptr<ExprAST> ret; 
+		public:
+		RetExprAST(unique_ptr<ExprAST>& val) : ret(std::move(val)){}
+		llvm::Value *codegen()
+		{
+			llvm::Value* retval = ret->codegen(); 
+			return builder->CreateRet(retval);
+		}
+	}; 
 	/// BinaryExprAST - Expression class for a binary operator.
 	class BinaryExprAST : public ExprAST
 	{
@@ -91,15 +100,17 @@ namespace jimpilier
 			switch (Op)
 			{
 			case '+':
-				return builder.CreateFAdd(L, R, "addtmp");
+				return builder->CreateFAdd(L, R, "addtmp");
 			case '-':
-				return builder.CreateFSub(L, R, "subtmp");
+				return builder->CreateFSub(L, R, "subtmp");
 			case '*':
-				return builder.CreateFMul(L, R, "multmp");
+				return builder->CreateFMul(L, R, "multmp");
+			case '^': // x^y == 2^(y*log2(x)) //Find out how to do this in LLVM
+				return builder->CreateFMul(L, R, "multmp");
 			case '<':
-				L = builder.CreateFCmpULT(L, R, "cmptmp");
+				L = builder->CreateFCmpULT(L, R, "cmptmp");
 				// Convert bool 0/1 to double 0.0 or 1.0
-				return builder.CreateUIToFP(L, llvm::Type::getDoubleTy(ctxt),
+				return builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*ctxt),
 											"booltmp");
 			default:
 				std::cout << "Error: Unknown operator" << Op;
@@ -149,7 +160,7 @@ namespace jimpilier
 				}
 			}
 
-			return builder.CreateCall(CalleeF, ArgsV, "calltmp");
+			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
 		}
 	};
 
@@ -199,14 +210,12 @@ namespace jimpilier
 		CodeBlockAST() {}
 		llvm::Value *codegen()
 		{
-			std::cout << '{' << endl;
 			llvm::Value *ret = NULL;
 			for (int i = 0; i < Contents.size(); i++)
 			{
 				ret = Contents[i]->codegen();
 				std::cout << endl;
 			};
-			std::cout << '}' << endl;
 			return ret;
 		}
 	};
@@ -233,9 +242,9 @@ namespace jimpilier
 		llvm::Function *codegen()
 		{
 			std::vector<llvm::Type *> Doubles(Args.size(),
-											  llvm::Type::getDoubleTy(ctxt));
+											  llvm::Type::getDoubleTy(*ctxt));
 			llvm::FunctionType *FT =
-				llvm::FunctionType::get(llvm::Type::getDoubleTy(ctxt), Doubles, false);
+				llvm::FunctionType::get(llvm::Type::getDoubleTy(*ctxt), Doubles, false);
 
 			llvm::Function *F =
 				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, GlobalVarsAndFunctions.get());
@@ -277,22 +286,20 @@ namespace jimpilier
 				return (llvm::Function *)NULL;
 			}
 
-			llvm::BasicBlock *BB = llvm::BasicBlock::Create(ctxt, "entry", TheFunction);
-			builder.SetInsertPoint(BB);
+			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", TheFunction);
+			builder->SetInsertPoint(BB);
 
 			// Record the function arguments in the NamedValues map.
-			variables.clear();
 			for (auto &Arg : TheFunction->args())
 				variables[std::string(Arg.getName())] = &Arg;
 
 			if (llvm::Value *RetVal = Body->codegen())
 			{
-				// Finish off the function.
-				builder.CreateRet(RetVal);
-
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*TheFunction);
 				std::cout << "//end of " << Proto->getName() << endl;
+				for (auto &Arg : TheFunction->args())
+				variables[std::string(Arg.getName())] = NULL;
 				return TheFunction;
 			}
 			else
@@ -730,13 +737,25 @@ namespace jimpilier
 	{
 		Token name = tokens.next();
 		std::vector<std::string> argnames;
-		if (tokens.next() != LPAREN)
-		{
+		if (tokens.next() != LPAREN){
 			logError("Expected parenthesis here:", tokens.currentToken());
 			return NULL;
 		}
-		if (tokens.peek() == RPAREN)
-		{
+	if(tokens.peek().token >= INT) do{
+		if (tokens.next().token > INT)
+			{
+				logError("Expected data type here:", tokens.currentToken());
+				return NULL;
+			}
+			if (tokens.peek() == POINTER)
+				tokens.next();
+			if (tokens.peek() != IDENT){
+				logError("Expected identifier here:", tokens.currentToken());
+				return NULL;
+			}
+			argnames.push_back(tokens.next().lex);
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		if (tokens.peek() == RPAREN){
 			tokens.next();
 			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
@@ -748,31 +767,8 @@ namespace jimpilier
 			std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
 			return func;
 		}
-		do
-		{
-			if (tokens.next().token > INT)
-			{
-				logError("Expected data type here:", tokens.currentToken());
-				return NULL;
-			}
-			if (tokens.peek() == POINTER)
-				tokens.next();
-			if (tokens.peek() != IDENT)
-			{
-				logError("Expected identifier here:", tokens.currentToken());
-				return NULL;
-			}
-			argnames.push_back(tokens.next().lex);
-		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
-		std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames);
-		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
-		if (body == NULL)
-		{
-			logError("Error in the body of function:", name);
-			return NULL;
-		}
-		std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
-		return func;
+		logError("Expected a closing parenthesis here:", tokens.currentToken()); 
+		return NULL;
 	}
 
 	/**
@@ -887,6 +883,8 @@ namespace jimpilier
 		return b;
 	}
 
+
+
 	/**
 	 * @brief Parses an if/else statement header and it's associated body
 	 * TODO: Add support for else statement chains
@@ -936,6 +934,17 @@ namespace jimpilier
 		}
 		return NULL;
 	}
+	std::unique_ptr<ExprAST> retStmt(Stack<Token>& tokens){
+		if(tokens.next() != RET){
+			logError("Somehow was looking for a return statement when there was no return. Wtf.", tokens.currentToken()); 
+			return NULL; 
+		}
+		std::unique_ptr<ExprAST> val = std::move(jimpilier::listExpr(tokens)); 
+		if(val == NULL){
+			return NULL; 
+		}
+		return std::make_unique<RetExprAST>(val); 
+	}
 
 	/**
 	 * @brief Get the next Valid Stmt in the code file provided.
@@ -980,8 +989,7 @@ namespace jimpilier
 			logError("Unbalanced curly brackets here:", tokens.peek());
 			return NULL;
 		case RET:
-			logError("Returning null on token (under ret)", tokens.peek());
-			return NULL;
+			return std::move(jimpilier::retStmt(tokens));
 		case INT:
 		case SHORT:
 		case POINTER:

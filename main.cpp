@@ -26,21 +26,19 @@ int main(int argc, char**args){
     if (argc == 1) f = "test.txt";
     else f = args[1]; 
     time_t now = time(nullptr);
-    //bool correct = analyzer::analyzeFile(f); 
-    //if(correct){
-    //   cout << "Successful analysis of provided code - no syntax errors found"<<endl; 
-        Stack<Token> tokens = jimpilier::loadTokens(f);
-        std::unique_ptr<jimpilier::ExprAST> x; 
-        while(!tokens.eof() && (x = jimpilier::getValidStmt(tokens)) != NULL) {
-            x->codegen(); 
-            std::cout<< endl;  
-            }
-    //}else return 1;
-        time_t end = time(nullptr); 
-    std::cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
-    
-    scope* s;
 
+    jimpilier::ctxt = std::make_unique<llvm::LLVMContext>();
+    jimpilier::GlobalVarsAndFunctions = std::make_unique<llvm::Module>("Jimbo jit", *jimpilier::ctxt);
+    jimpilier::builder = std::make_unique<llvm::IRBuilder<>>(*jimpilier::ctxt);
+    Stack<Token> tokens = jimpilier::loadTokens(f);
+    std::unique_ptr<jimpilier::ExprAST> x; 
+    while(!tokens.eof() && (x = jimpilier::getValidStmt(tokens)) != NULL) {
+        x->codegen(); 
+        std::cout<< endl;  
+    }
+    time_t end = time(nullptr); 
+    std::cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
+    jimpilier::GlobalVarsAndFunctions->dump();
 /*  fstream outputfile; 
     outputfile.open("out.s", std::fstream::out); 
     SLL<scope> reversed; 
