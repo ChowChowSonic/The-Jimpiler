@@ -18,7 +18,7 @@ namespace jimpilier
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
 	std::vector<std::string> importedFiles;
-
+	const bool DEBUGGING = false; 
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
 	{
@@ -36,6 +36,7 @@ namespace jimpilier
 		NumberExprAST(double Val) : Val(Val) {}
 		llvm::Value *codegen()
 		{
+			if(DEBUGGING)
 			std::cout << Val;
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat(Val));
 		}
@@ -48,6 +49,7 @@ namespace jimpilier
 		StringExprAST(std::string val) : Val(val) {}
 		llvm::Value *codegen()
 		{
+			if(DEBUGGING)
 			std::cout << Val;
 			return NULL; // llvm::ConstantFP::get(ctxt, llvm::AP(Val));
 		}
@@ -61,7 +63,7 @@ namespace jimpilier
 		VariableExprAST(const string &Name) : Name(Name) {}
 		llvm::Value *codegen()
 		{
-			std::cout << Name;
+			if(DEBUGGING)std::cout << Name;
 			llvm::Value *V = variables[Name];
 			if (!V)
 			{
@@ -79,6 +81,7 @@ namespace jimpilier
 		RetExprAST(unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
 		llvm::Value *codegen()
 		{
+			if(DEBUGGING) std::cout << "return ";
 			llvm::Value *retval = ret->codegen();
 			if(retval == NULL) return NULL; 
 			return builder->CreateRet(retval);
@@ -111,11 +114,11 @@ namespace jimpilier
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 		llvm::Value *codegen()
 		{
-			std::cout << Op << "( ";
+			if(DEBUGGING)std::cout << Op << "( ";
 			llvm::Value *L = LHS->codegen();
-			std::cout << ", ";
+			if(DEBUGGING)std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
-			std::cout << " )";
+			if(DEBUGGING)std::cout << " )";
 			switch (Op)
 			{
 			case '+':
@@ -202,14 +205,14 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			llvm::Value *ret = NULL;
-			std::cout << "[ ";
+			if(DEBUGGING)std::cout << "[ ";
 			for (auto i = Contents.begin(); i < Contents.end(); i++)
 			{
 				ret = i->get()->codegen();
-				if (i != Contents.end() - 1)
+				if (i != Contents.end() - 1 && DEBUGGING)
 					std::cout << ", ";
 			};
-			std::cout << " ]";
+			if(DEBUGGING)std::cout << " ]";
 			return ret;
 		}
 	};
@@ -233,7 +236,7 @@ namespace jimpilier
 			for (int i = 0; i < Contents.size(); i++)
 			{
 				ret = Contents[i]->codegen();
-				std::cout << endl;
+				if(DEBUGGING)std::cout << endl;
 			};
 			return ret;
 		}
@@ -288,7 +291,7 @@ namespace jimpilier
 
 		llvm::Value *codegen()
 		{
-			std::cout << Proto->getName();
+			if(DEBUGGING)std::cout << Proto->getName();
 			llvm::Function *TheFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
 
 			if (!TheFunction)
@@ -312,17 +315,20 @@ namespace jimpilier
 			for (auto &Arg : TheFunction->args())
 				variables[std::string(Arg.getName())] = &Arg;
 
-			if (llvm::Value *RetVal = Body->codegen())
+			if (
+				llvm::Value *RetVal = Body->codegen()
+				)
 			{
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*TheFunction);
-				std::cout << "//end of " << Proto->getName() << endl;
+				if(DEBUGGING)std::cout << "//end of " << Proto->getName() << endl;
+				//remove the arguments now that they're out of scope
 				for (auto &Arg : TheFunction->args())
 					variables[std::string(Arg.getName())] = NULL;
 				return TheFunction;
 			}
 			else
-				std::cout << "Error in body of function" << endl;
+				std::cout << "Error in body of function " << Proto->getName() << endl;
 			TheFunction->eraseFromParent();
 			return nullptr;
 		}
@@ -704,6 +710,29 @@ namespace jimpilier
 	}
 
 	/**
+	 * @brief Called whenever a modifier keyword are seen.
+	 * TODO: Parses modifier keywords and changes the modifiers set while advancing through 
+	 * the tokens list. After this function is called a variable or function is expected 
+	 * to be created, at which point you should use the modifiers list that was 
+	 * edited by this to determine the modifiers of that variable. Clear that lists after use. 
+	 * @param tokens
+	 * @return true if a valid function
+	 */
+	void declareOrFunction(Stack<Token> &tokens)
+	{
+		//clear variable modifier memory if possible
+		//TBI
+		Token t;
+		while (((t = tokens.peek()).token >= CONST && t.token <= PROTECTED) || t.token >= INT)
+		{
+			t = tokens.next();
+			// Operators.push_back(t) //Add this to the variable modifier memory
+			// return declareOrFunction(tokens);
+		} //*/
+		  // std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
+	}
+
+	/**
 	 * @brief Takes in a name as an identifier, an equals sign,
 	 * then calls the lowest precidence operation in the AST.
 	 * TODO: Make variable declarations functional
@@ -748,7 +777,7 @@ namespace jimpilier
 	/**
 	 * @brief Parses the declaration for a function, from a stack of tokens,
 	 * including the header prototype and argument list.
-	 *
+	 * TODO: Get arguments working outside of just a single return statement
 	 * @param tokens
 	 * @return std::unique_ptr<FunctionAST>
 	 */
@@ -761,25 +790,16 @@ namespace jimpilier
 			logError("Expected parenthesis here:", tokens.currentToken());
 			return NULL;
 		}
-		if (tokens.peek().token >= INT)
-			do
-			{
-				if (tokens.next().token > INT)
-				{
-					logError("Expected data type here:", tokens.currentToken());
-					return NULL;
-				}
-				if (tokens.peek() == POINTER)
-					tokens.next();
-				if (tokens.peek() != IDENT)
-				{
-					logError("Expected identifier here:", tokens.currentToken());
-					return NULL;
-				}
-				argnames.push_back(tokens.next().lex);
-			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
-		if (tokens.peek() == RPAREN)
-		{
+	if(tokens.peek().token >= INT) do{
+			jimpilier::declareOrFunction(tokens); 
+			if (tokens.peek() != IDENT){
+				logError("Expected identifier here:", tokens.currentToken());
+				return NULL;
+			}
+			Token t = tokens.next();
+			argnames.push_back(t.lex);
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		if (tokens.peek() == RPAREN){
 			tokens.next();
 			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
@@ -793,25 +813,6 @@ namespace jimpilier
 		}
 		logError("Expected a closing parenthesis here:", tokens.currentToken());
 		return NULL;
-	}
-
-	/**
-	 * @brief Called whenever the words "public", "private", "protected" are seen.
-	 * Essentially we don't know from here if what's being defined is a function or a variable,
-	 * so we just try to account for anything that comes up.
-	 * @param tokens
-	 * @return true if a valid function
-	 */
-	void declareOrFunction(Stack<Token> &tokens)
-	{
-		Token t;
-		while (((t = tokens.peek()).token >= CONST && t.token <= PROTECTED) || t.token >= INT)
-		{
-			t = tokens.next();
-			// Operators.push_back(t) //Add this to the variable modifier memory
-			// return declareOrFunction(tokens);
-		} //*/
-		  // std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
 	}
 
 	/**

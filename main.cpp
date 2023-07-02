@@ -34,7 +34,7 @@ int main(int argc, char**args){
     std::unique_ptr<jimpilier::ExprAST> x; 
     while(!tokens.eof() && (x = jimpilier::getValidStmt(tokens)) != NULL) {
         x->codegen(); 
-        std::cout<< endl;  
+        if(jimpilier::DEBUGGING) std::cout<< endl;  
     }
     time_t end = time(nullptr); 
     std::cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
