@@ -71,16 +71,35 @@ namespace jimpilier
 			return V;
 		}
 	};
-	class RetExprAST : public ExprAST{
-		unique_ptr<ExprAST> ret; 
-		public:
-		RetExprAST(unique_ptr<ExprAST>& val) : ret(std::move(val)){}
+	class RetExprAST : public ExprAST
+	{
+		unique_ptr<ExprAST> ret;
+
+	public:
+		RetExprAST(unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
 		llvm::Value *codegen()
 		{
-			llvm::Value* retval = ret->codegen(); 
+			llvm::Value *retval = ret->codegen();
+			if(retval == NULL) return NULL; 
 			return builder->CreateRet(retval);
 		}
-	}; 
+	};
+
+	class AssignStmtAST : public ExprAST
+	{
+		std::string variable;
+		std::unique_ptr<ExprAST> val;
+
+	public:
+		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value) : variable(var), val(std::move(value)) {}
+
+		llvm::Value *codegen()
+		{
+			variables[variable] = val->codegen();
+			return variables[variable];
+		}
+	};
+
 	/// BinaryExprAST - Expression class for a binary operator.
 	class BinaryExprAST : public ExprAST
 	{
@@ -111,7 +130,7 @@ namespace jimpilier
 				L = builder->CreateFCmpULT(L, R, "cmptmp");
 				// Convert bool 0/1 to double 0.0 or 1.0
 				return builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*ctxt),
-											"booltmp");
+											 "booltmp");
 			default:
 				std::cout << "Error: Unknown operator" << Op;
 				return NULL;
@@ -299,7 +318,7 @@ namespace jimpilier
 				verifyFunction(*TheFunction);
 				std::cout << "//end of " << Proto->getName() << endl;
 				for (auto &Arg : TheFunction->args())
-				variables[std::string(Arg.getName())] = NULL;
+					variables[std::string(Arg.getName())] = NULL;
 				return TheFunction;
 			}
 			else
@@ -701,19 +720,16 @@ namespace jimpilier
 		}
 		tokens.next();
 		std::unique_ptr<ExprAST> value;
-		std::unique_ptr<ExprAST> varName = std::make_unique<VariableExprAST>(name.lex); 
 		switch (tokens.peek().token)
 		{
 		case (EQUALS):
 			tokens.next();
 			value = std::move(listExpr(tokens));
-			variables[name.lex] = value->codegen();
 			break;
 		case INCREMENT:
 		case DECREMENT:
 			tokens.go_back();
 			value = std::move(incDecExpr(tokens));
-			variables[name.lex] = value->codegen();
 			break;
 		case LPAREN:
 			tokens.go_back();
@@ -721,9 +737,12 @@ namespace jimpilier
 		default:
 			tokens.next();
 			value = std::make_unique<NumberExprAST>(0);
-			variables[name.lex] = value->codegen();
 		}
-		return varName;
+		if (value == NULL)
+		{
+			return NULL;
+		}
+		return std::make_unique<AssignStmtAST>(name.lex, value);
 	}
 
 	/**
@@ -737,25 +756,30 @@ namespace jimpilier
 	{
 		Token name = tokens.next();
 		std::vector<std::string> argnames;
-		if (tokens.next() != LPAREN){
+		if (tokens.next() != LPAREN)
+		{
 			logError("Expected parenthesis here:", tokens.currentToken());
 			return NULL;
 		}
-	if(tokens.peek().token >= INT) do{
-		if (tokens.next().token > INT)
+		if (tokens.peek().token >= INT)
+			do
 			{
-				logError("Expected data type here:", tokens.currentToken());
-				return NULL;
-			}
-			if (tokens.peek() == POINTER)
-				tokens.next();
-			if (tokens.peek() != IDENT){
-				logError("Expected identifier here:", tokens.currentToken());
-				return NULL;
-			}
-			argnames.push_back(tokens.next().lex);
-		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
-		if (tokens.peek() == RPAREN){
+				if (tokens.next().token > INT)
+				{
+					logError("Expected data type here:", tokens.currentToken());
+					return NULL;
+				}
+				if (tokens.peek() == POINTER)
+					tokens.next();
+				if (tokens.peek() != IDENT)
+				{
+					logError("Expected identifier here:", tokens.currentToken());
+					return NULL;
+				}
+				argnames.push_back(tokens.next().lex);
+			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		if (tokens.peek() == RPAREN)
+		{
 			tokens.next();
 			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
@@ -767,7 +791,7 @@ namespace jimpilier
 			std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
 			return func;
 		}
-		logError("Expected a closing parenthesis here:", tokens.currentToken()); 
+		logError("Expected a closing parenthesis here:", tokens.currentToken());
 		return NULL;
 	}
 
@@ -883,8 +907,6 @@ namespace jimpilier
 		return b;
 	}
 
-
-
 	/**
 	 * @brief Parses an if/else statement header and it's associated body
 	 * TODO: Add support for else statement chains
@@ -934,16 +956,19 @@ namespace jimpilier
 		}
 		return NULL;
 	}
-	std::unique_ptr<ExprAST> retStmt(Stack<Token>& tokens){
-		if(tokens.next() != RET){
-			logError("Somehow was looking for a return statement when there was no return. Wtf.", tokens.currentToken()); 
-			return NULL; 
+	std::unique_ptr<ExprAST> retStmt(Stack<Token> &tokens)
+	{
+		if (tokens.next() != RET)
+		{
+			logError("Somehow was looking for a return statement when there was no return. Wtf.", tokens.currentToken());
+			return NULL;
 		}
-		std::unique_ptr<ExprAST> val = std::move(jimpilier::listExpr(tokens)); 
-		if(val == NULL){
-			return NULL; 
+		std::unique_ptr<ExprAST> val = std::move(jimpilier::listExpr(tokens));
+		if (val == NULL)
+		{
+			return NULL;
 		}
-		return std::make_unique<RetExprAST>(val); 
+		return std::make_unique<RetExprAST>(val);
 	}
 
 	/**
