@@ -72,7 +72,7 @@ namespace jimpilier
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
-			return V;
+			return builder->CreateLoad(llvm::Type::getDoubleTy(*ctxt), V, Name);
 		}
 	};
 	class RetExprAST : public ExprAST
@@ -94,16 +94,17 @@ namespace jimpilier
 
 	class AssignStmtAST : public ExprAST
 	{
+		public:
 		std::string variable;
 		std::unique_ptr<ExprAST> val;
 
-	public:
 		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value) : variable(var), val(std::move(value)) {}
 
 		llvm::Value *codegen()
 		{
-			variables[variable] = val->codegen();
-			return variables[variable];
+			if(variables[variable] == NULL)
+				variables[variable] = builder->CreateAlloca( llvm::Type::getDoubleTy(*ctxt)); 
+			return builder->CreateStore(val->codegen(), variables[variable]);
 		}
 	};
 
@@ -117,17 +118,27 @@ namespace jimpilier
 				   std::unique_ptr<ExprAST> cond,
 				   std::unique_ptr<ExprAST> bod,
 				   std::vector<std::unique_ptr<ExprAST>> &edit) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)) {}
+		
+		//I have a feeling this function needs to be revamped. 
 		llvm::Value *codegen()
 		{
+			std::map<std::string, llvm::Value*> ptrs; 
 			llvm::Value* retval; 
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
 			for (int i = 0; i < prefix.size(); i++)
-				prefix[i]->codegen();
+				{
+					llvm::Value* startval = prefix[i]->codegen();
+					if(DEBUGGING)
+					std::cout << startval->getName().str() <<endl; 
+				}
 			builder->CreateCondBr(condition->codegen(), start, end);
 			builder->SetInsertPoint(start); 
 			body->codegen(); 
-			for (int i = 0; i < postfix.size(); i++)
+			for (int i = 0; i < postfix.size(); i++){
 				retval = postfix[i]->codegen();
+				if(DEBUGGING)
+				std::cout << retval->getName().str() <<endl; 
+			}
 			builder->CreateCondBr(condition->codegen(), start, end);
 			builder->SetInsertPoint(end); 
 			return retval; 
