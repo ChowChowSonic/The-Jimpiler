@@ -18,7 +18,8 @@ namespace jimpilier
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
 	std::vector<std::string> importedFiles;
-	const bool DEBUGGING = false; 
+	llvm::Function* currentFunction; 
+	const bool DEBUGGING = false;
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
 	{
@@ -36,8 +37,8 @@ namespace jimpilier
 		NumberExprAST(double Val) : Val(Val) {}
 		llvm::Value *codegen()
 		{
-			if(DEBUGGING)
-			std::cout << Val;
+			if (DEBUGGING)
+				std::cout << Val;
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat(Val));
 		}
 	};
@@ -49,8 +50,8 @@ namespace jimpilier
 		StringExprAST(std::string val) : Val(val) {}
 		llvm::Value *codegen()
 		{
-			if(DEBUGGING)
-			std::cout << Val;
+			if (DEBUGGING)
+				std::cout << Val;
 			return NULL; // llvm::ConstantFP::get(ctxt, llvm::AP(Val));
 		}
 	};
@@ -63,7 +64,8 @@ namespace jimpilier
 		VariableExprAST(const string &Name) : Name(Name) {}
 		llvm::Value *codegen()
 		{
-			if(DEBUGGING)std::cout << Name;
+			if (DEBUGGING)
+				std::cout << Name;
 			llvm::Value *V = variables[Name];
 			if (!V)
 			{
@@ -81,9 +83,11 @@ namespace jimpilier
 		RetExprAST(unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
 		llvm::Value *codegen()
 		{
-			if(DEBUGGING) std::cout << "return ";
+			if (DEBUGGING)
+				std::cout << "return ";
 			llvm::Value *retval = ret->codegen();
-			if(retval == NULL) return NULL; 
+			if (retval == NULL)
+				return NULL;
 			return builder->CreateRet(retval);
 		}
 	};
@@ -103,6 +107,33 @@ namespace jimpilier
 		}
 	};
 
+	class ForStmtAST : public ExprAST
+	{
+		public:
+		std::vector<std::unique_ptr<ExprAST>> prefix, postfix;
+		std::unique_ptr<ExprAST> condition, body;
+		
+		ForStmtAST(std::vector<std::unique_ptr<ExprAST>> &init,
+				   std::unique_ptr<ExprAST> cond,
+				   std::unique_ptr<ExprAST> bod,
+				   std::vector<std::unique_ptr<ExprAST>> &edit) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)) {}
+		llvm::Value *codegen()
+		{
+			llvm::Value* retval; 
+			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
+			for (int i = 0; i < prefix.size(); i++)
+				prefix[i]->codegen();
+			builder->CreateCondBr(condition->codegen(), start, end);
+			builder->SetInsertPoint(start); 
+			body->codegen(); 
+			for (int i = 0; i < postfix.size(); i++)
+				retval = postfix[i]->codegen();
+			builder->CreateCondBr(condition->codegen(), start, end);
+			builder->SetInsertPoint(end); 
+			return retval; 
+		}
+	};
+
 	/// BinaryExprAST - Expression class for a binary operator.
 	class BinaryExprAST : public ExprAST
 	{
@@ -114,11 +145,14 @@ namespace jimpilier
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 		llvm::Value *codegen()
 		{
-			if(DEBUGGING)std::cout << Op << "( ";
+			if (DEBUGGING)
+				std::cout << Op << "( ";
 			llvm::Value *L = LHS->codegen();
-			if(DEBUGGING)std::cout << ", ";
+			if (DEBUGGING)
+				std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
-			if(DEBUGGING)std::cout << " )";
+			if (DEBUGGING)
+				std::cout << " )";
 			switch (Op)
 			{
 			case '+':
@@ -129,11 +163,10 @@ namespace jimpilier
 				return builder->CreateFMul(L, R, "multmp");
 			case '^': // x^y == 2^(y*log2(x)) //Find out how to do this in LLVM
 				return builder->CreateFMul(L, R, "multmp");
+			case '=':
+			case '>':
 			case '<':
-				L = builder->CreateFCmpULT(L, R, "cmptmp");
-				// Convert bool 0/1 to double 0.0 or 1.0
-				return builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*ctxt),
-											 "booltmp");
+				return builder->CreateFCmpULT(L, R, "cmptmp");
 			default:
 				std::cout << "Error: Unknown operator" << Op;
 				return NULL;
@@ -205,14 +238,16 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			llvm::Value *ret = NULL;
-			if(DEBUGGING)std::cout << "[ ";
+			if (DEBUGGING)
+				std::cout << "[ ";
 			for (auto i = Contents.begin(); i < Contents.end(); i++)
 			{
 				ret = i->get()->codegen();
 				if (i != Contents.end() - 1 && DEBUGGING)
 					std::cout << ", ";
 			};
-			if(DEBUGGING)std::cout << " ]";
+			if (DEBUGGING)
+				std::cout << " ]";
 			return ret;
 		}
 	};
@@ -236,7 +271,8 @@ namespace jimpilier
 			for (int i = 0; i < Contents.size(); i++)
 			{
 				ret = Contents[i]->codegen();
-				if(DEBUGGING)std::cout << endl;
+				if (DEBUGGING)
+					std::cout << endl;
 			};
 			return ret;
 		}
@@ -291,45 +327,51 @@ namespace jimpilier
 
 		llvm::Value *codegen()
 		{
-			if(DEBUGGING)std::cout << Proto->getName();
-			llvm::Function *TheFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
+			if (DEBUGGING)
+				std::cout << Proto->getName();
+			llvm::Function* prevFunction = currentFunction; 
+			currentFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
 
-			if (!TheFunction)
-				TheFunction = Proto->codegen();
+			if (!currentFunction)
+				currentFunction = Proto->codegen();
 
-			if (!TheFunction)
+			if (!currentFunction)
 			{
+				currentFunction = prevFunction; 
 				return nullptr;
 			}
 
-			if (!TheFunction->empty())
+			if (!currentFunction->empty())
 			{
 				std::cout << "Function Cannot be redefined" << endl;
+				currentFunction = prevFunction;
 				return (llvm::Function *)NULL;
 			}
 
-			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", TheFunction);
+			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
 			builder->SetInsertPoint(BB);
 
 			// Record the function arguments in the NamedValues map.
-			for (auto &Arg : TheFunction->args())
+			for (auto &Arg : currentFunction->args())
 				variables[std::string(Arg.getName())] = &Arg;
 
 			if (
-				llvm::Value *RetVal = Body->codegen()
-				)
+				llvm::Value *RetVal = Body->codegen())
 			{
 				// Validate the generated code, checking for consistency.
-				verifyFunction(*TheFunction);
-				if(DEBUGGING)std::cout << "//end of " << Proto->getName() << endl;
-				//remove the arguments now that they're out of scope
-				for (auto &Arg : TheFunction->args())
+				verifyFunction(*currentFunction);
+				if (DEBUGGING)
+					std::cout << "//end of " << Proto->getName() << endl;
+				// remove the arguments now that they're out of scope
+				for (auto &Arg : currentFunction->args())
 					variables[std::string(Arg.getName())] = NULL;
-				return TheFunction;
+				currentFunction = prevFunction;
+				return currentFunction;
 			}
 			else
 				std::cout << "Error in body of function " << Proto->getName() << endl;
-			TheFunction->eraseFromParent();
+			currentFunction->eraseFromParent();
+			currentFunction = prevFunction; 
 			return nullptr;
 		}
 	};
@@ -711,17 +753,17 @@ namespace jimpilier
 
 	/**
 	 * @brief Called whenever a modifier keyword are seen.
-	 * TODO: Parses modifier keywords and changes the modifiers set while advancing through 
-	 * the tokens list. After this function is called a variable or function is expected 
-	 * to be created, at which point you should use the modifiers list that was 
-	 * edited by this to determine the modifiers of that variable. Clear that lists after use. 
+	 * TODO: Parses modifier keywords and changes the modifiers set while advancing through
+	 * the tokens list. After this function is called a variable or function is expected
+	 * to be created, at which point you should use the modifiers list that was
+	 * edited by this to determine the modifiers of that variable. Clear that lists after use.
 	 * @param tokens
 	 * @return true if a valid function
 	 */
 	void declareOrFunction(Stack<Token> &tokens)
 	{
-		//clear variable modifier memory if possible
-		//TBI
+		// clear variable modifier memory if possible
+		// TBI
 		Token t;
 		while (((t = tokens.peek()).token >= CONST && t.token <= PROTECTED) || t.token >= INT)
 		{
@@ -790,16 +832,20 @@ namespace jimpilier
 			logError("Expected parenthesis here:", tokens.currentToken());
 			return NULL;
 		}
-	if(tokens.peek().token >= INT) do{
-			jimpilier::declareOrFunction(tokens); 
-			if (tokens.peek() != IDENT){
-				logError("Expected identifier here:", tokens.currentToken());
-				return NULL;
-			}
-			Token t = tokens.next();
-			argnames.push_back(t.lex);
-		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
-		if (tokens.peek() == RPAREN){
+		if (tokens.peek().token >= INT)
+			do
+			{
+				jimpilier::declareOrFunction(tokens);
+				if (tokens.peek() != IDENT)
+				{
+					logError("Expected identifier here:", tokens.currentToken());
+					return NULL;
+				}
+				Token t = tokens.next();
+				argnames.push_back(t.lex);
+			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		if (tokens.peek() == RPAREN)
+		{
 			tokens.next();
 			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
@@ -880,32 +926,36 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> forStmt(Stack<Token> &tokens)
 	{
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> b;
+		std::vector<std::unique_ptr<ExprAST>> beginStmts, endStmts;
+		std::unique_ptr<ExprAST> condition, body; 
+		if(tokens.next() != FOR){ 
+			logError("Somehow we ended up looking for a 'for' statement where there is none. wtf.", tokens.currentToken()); 
+			return NULL; }
 		do
 		{
-			b = std::move(assign(tokens));
+			beginStmts.push_back(std::move(assign(tokens)));
 		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.next() != SEMICOL)
 		{
 			tokens.go_back(1);
-			logError("Expecting a semicolon at this token:", t);
+			logError("Expecting a semicolon at this token:", tokens.currentToken());
 			return NULL;
 		}
-		b = logicStmt(tokens);
+		condition = std::move(jimpilier::logicStmt(tokens)); 
 		if (tokens.next() != SEMICOL)
 		{
 			tokens.go_back(1);
-			logError("Expecting a semicolon at this token:", t);
+			logError("Expecting a semicolon at this token:", tokens.currentToken());
 			return NULL;
 		}
 		do
 		{
-			b = std::move(getValidStmt(tokens)); // TBI: variable checking
+			endStmts.push_back(std::move(getValidStmt(tokens))); // TBI: variable checking
 		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
-		return b;
+		body = std::move(jimpilier::codeBlockExpr(tokens)); 
+		return std::make_unique<ForStmtAST>(beginStmts, std::move(condition), std::move(body), endStmts);
 	}
 
 	/**

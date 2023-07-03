@@ -1,17 +1,16 @@
 import test;
 
-//private const int alpha = 6+5 //equivalent of Java's Final modifier
-//public singular int x = 0 //equivalent of Java's Static modifier
+private const int alpha = 6+5 //equivalent of Java's Final modifier
+public singular int x = 0 //equivalent of Java's Static modifier
 
-//int main(string args){
-    int z = [ 4, 5 ]
-    z = 3 +5
-    if x != z{
-        int n = 5 
-    }
+int main(int args){
     
-    if x == x {
-        return
+    if args == 0 {
+        x = 5
     }
-    return
-//}
+
+    for x=x++; args < 10; args=args*2 {
+        args++
+    }
+    return args
+}
