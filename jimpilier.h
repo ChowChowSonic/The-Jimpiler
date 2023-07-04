@@ -108,13 +108,42 @@ namespace jimpilier
 		}
 	};
 
-	class ForStmtAST : public ExprAST
+	class IfExprAST : public ExprAST{
+		public:
+		std::vector<std::unique_ptr<ExprAST>> condition, body;
+		IfExprAST(std::vector<std::unique_ptr<ExprAST>> cond,std::vector<std::unique_ptr<ExprAST>> bod) : condition(std::move(cond)), body(std::move(bod)) {}
+		llvm::Value *codegen()
+		{
+			llvm::BasicBlock *start, *end; 
+			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction); 
+			int i = 0;
+			for(i = 0; i < min(condition.size(), body.size()); i++){
+			start = llvm::BasicBlock::Create(*ctxt, "ifstart", currentFunction, glblend); 
+			end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
+			builder->CreateCondBr(condition[i]->codegen(), start, end);
+			builder->SetInsertPoint(start); 
+			body[i]->codegen(); 
+			builder->CreateBr(glblend); 
+			builder->SetInsertPoint(end); 
+			}
+			
+			while(i < body.size()) {
+				body[i]->codegen(); 
+				i++;
+			}
+			builder->CreateBr(glblend); 
+			builder->SetInsertPoint(glblend); 
+			return glblend; 
+		}
+	};
+
+	class ForExprAST : public ExprAST
 	{
 		public:
 		std::vector<std::unique_ptr<ExprAST>> prefix, postfix;
 		std::unique_ptr<ExprAST> condition, body;
 		
-		ForStmtAST(std::vector<std::unique_ptr<ExprAST>> &init,
+		ForExprAST(std::vector<std::unique_ptr<ExprAST>> &init,
 				   std::unique_ptr<ExprAST> cond,
 				   std::unique_ptr<ExprAST> bod,
 				   std::vector<std::unique_ptr<ExprAST>> &edit) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)) {}
@@ -122,22 +151,17 @@ namespace jimpilier
 		//I have a feeling this function needs to be revamped. 
 		llvm::Value *codegen()
 		{
-			std::map<std::string, llvm::Value*> ptrs; 
 			llvm::Value* retval; 
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
 			for (int i = 0; i < prefix.size(); i++)
 				{
 					llvm::Value* startval = prefix[i]->codegen();
-					if(DEBUGGING)
-					std::cout << startval->getName().str() <<endl; 
 				}
 			builder->CreateCondBr(condition->codegen(), start, end);
 			builder->SetInsertPoint(start); 
 			body->codegen(); 
 			for (int i = 0; i < postfix.size(); i++){
 				retval = postfix[i]->codegen();
-				if(DEBUGGING)
-				std::cout << retval->getName().str() <<endl; 
 			}
 			builder->CreateCondBr(condition->codegen(), start, end);
 			builder->SetInsertPoint(end); 
@@ -817,7 +841,6 @@ namespace jimpilier
 			tokens.go_back();
 			return NULL;
 		default:
-			tokens.next();
 			value = std::make_unique<NumberExprAST>(0);
 		}
 		if (value == NULL)
@@ -966,7 +989,7 @@ namespace jimpilier
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
 		body = std::move(jimpilier::codeBlockExpr(tokens)); 
-		return std::make_unique<ForStmtAST>(beginStmts, std::move(condition), std::move(body), endStmts);
+		return std::make_unique<ForExprAST>(beginStmts, std::move(condition), std::move(body), endStmts);
 	}
 
 	/**
@@ -984,10 +1007,26 @@ namespace jimpilier
 			logError("Somehow we ended up looking for an if statement when there was no 'if'. Wtf.", tokens.currentToken());
 			return NULL;
 		}
-		std::unique_ptr<ExprAST> b = std::move(logicStmt(tokens));
+		std::unique_ptr<ExprAST> b = std::move(logicStmt(tokens)); 
+		std::vector<std::unique_ptr<ExprAST>> conds, bodies; 
+		do{
+		if (tokens.peek() == IF){ 
+			tokens.next(); 
+			b = std::move(logicStmt(tokens));
+		}
+		if(b != NULL)
+			conds.push_back(std::move(b)); 
+		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+		if(body == NULL) 
+			return NULL; 
+		bodies.push_back(std::move(body));
+		
+		 
+		}while(tokens.peek() == ELSE && tokens.next() == ELSE); 
 
-		return std::move(codeBlockExpr(tokens));
+		return std::make_unique<IfExprAST>(std::move(conds), std::move(bodies));
 	}
+
 	std::unique_ptr<ExprAST> caseStmt(Stack<Token> &tokens)
 	{
 		Token variable = tokens.next();
