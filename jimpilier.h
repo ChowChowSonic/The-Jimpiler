@@ -208,51 +208,6 @@ namespace jimpilier
 			}
 		}
 	};
-	/// CallExprAST - Expression class for function calls.
-	class CallExprAST : public ExprAST
-	{
-		string Callee;
-		vector<std::unique_ptr<ExprAST>> Args;
-
-	public:
-		CallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> Arg)
-		{
-			for (auto &x : Arg)
-			{
-				Args.push_back(std::move(x));
-			}
-		}
-		// : Callee(callee), Args(Arg) {}
-		llvm::Value *codegen()
-		{
-			// Look up the name in the global module table.
-			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
-			if (!CalleeF)
-			{
-				std::cout << "Unknown function referenced:" << Callee << endl;
-				return NULL;
-			}
-			// If argument mismatch error.
-			if (CalleeF->arg_size() != Args.size())
-			{
-				std::cout << "Incorrect Argument count from function: " << Callee << endl;
-				return NULL;
-			}
-
-			std::vector<llvm::Value *> ArgsV;
-			for (unsigned i = 0, e = Args.size(); i != e; ++i)
-			{
-				ArgsV.push_back(Args[i]->codegen());
-				if (!ArgsV.back())
-				{
-					std::cout << "Error saving function args";
-					return nullptr;
-				}
-			}
-
-			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
-		}
-	};
 
 	/**
 	 * Represents a list of items in code, usually represented by a string such as : [1, 2, 3, 4, 5]
@@ -310,6 +265,47 @@ namespace jimpilier
 					std::cout << endl;
 			};
 			return ret;
+		}
+	};
+
+	/// CallExprAST - Expression class for function calls.
+	class CallExprAST : public ExprAST
+	{
+		string Callee;
+		vector<std::unique_ptr<ExprAST>> Args;
+
+	public:
+		CallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
+		{}
+		// : Callee(callee), Args(Arg) {}
+		llvm::Value *codegen()
+		{
+			// Look up the name in the global module table.
+			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
+			if (!CalleeF)
+			{
+				std::cout << "Unknown function referenced:" << Callee << endl;
+				return NULL;
+			}
+			// If argument mismatch error.
+			if (CalleeF->arg_size() != Args.size())
+			{
+				std::cout << "Incorrect Argument count from function: " << Callee << endl;
+				return NULL;
+			}
+
+			std::vector<llvm::Value *> ArgsV;
+			for (unsigned i = 0, e = Args.size(); i != e; ++i)
+			{
+				ArgsV.push_back(Args[i]->codegen());
+				if (!ArgsV.back())
+				{
+					std::cout << "Error saving function args";
+					return nullptr;
+				}
+			}
+
+			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
 		}
 	};
 
@@ -1071,6 +1067,24 @@ namespace jimpilier
 		}
 		return std::make_unique<RetExprAST>(val);
 	}
+	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens){
+		Token t = tokens.next(); 
+		std::vector<std::unique_ptr<ExprAST>> params; 
+		if(tokens.next() != LPAREN){
+			logError("Expected an opening parethesis '(' here:", tokens.currentToken()); 
+			return NULL; 
+		}
+		if(tokens.peek() != RPAREN)do{
+			std::unique_ptr<ExprAST> param = std::move(jimpilier::listExpr(tokens)); 
+			if(param == NULL) return NULL; 
+			params.push_back(std::move(param)); 
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		if(tokens.next() != RPAREN){
+			logError("Expected a closing parethesis '(' here:", tokens.currentToken()); 
+			return NULL; 
+		}
+		return std::make_unique<CallExprAST>(t.lex, params); 
+	}
 
 	/**
 	 * @brief Get the next Valid Stmt in the code file provided.
@@ -1137,6 +1151,8 @@ namespace jimpilier
 			std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
 			if (retval == NULL)
 			{
+				llvm::Function* functionExists = GlobalVarsAndFunctions->getFunction(tokens.peek().lex);
+				if(!functionExists){
 				std::unique_ptr<FunctionAST> funcval = std::move(functionDecl(tokens));
 				if (funcval == NULL)
 				{
@@ -1144,6 +1160,9 @@ namespace jimpilier
 					return NULL;
 				}
 				funcval->codegen();
+				}else{
+					return std::move(functionCallExpr(tokens)); 
+				}
 				return NULL;
 			}
 			return retval;
