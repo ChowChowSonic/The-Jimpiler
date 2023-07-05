@@ -383,9 +383,11 @@ namespace jimpilier
 			builder->SetInsertPoint(BB);
 
 			// Record the function arguments in the NamedValues map.
-			for (auto &Arg : currentFunction->args())
-				variables[std::string(Arg.getName())] = &Arg;
-
+			for (auto &Arg : currentFunction->args()){
+				llvm::Value* storedvar = builder->CreateAlloca(llvm::Type::getFloatTy(*ctxt), NULL, Arg.getName()); 
+				builder->CreateStore(&Arg, storedvar); 
+				variables[std::string(Arg.getName())] = storedvar;
+			}
 			if (
 				llvm::Value *RetVal = Body->codegen())
 			{
