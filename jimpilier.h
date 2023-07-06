@@ -17,8 +17,10 @@ namespace jimpilier
 	std::unique_ptr<llvm::IRBuilder<>> builder;
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
+	std::map<std::string, llvm::Type *> dtypes;
 	std::vector<std::string> importedFiles;
 	llvm::Function* currentFunction; 
+	llvm::Type* dtype = NULL; 
 	const bool DEBUGGING = false;
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
@@ -103,7 +105,7 @@ namespace jimpilier
 		llvm::Value *codegen()
 		{
 			if(variables[variable] == NULL)
-				variables[variable] = builder->CreateAlloca( llvm::Type::getDoubleTy(*ctxt)); 
+				variables[variable] = builder->CreateAlloca( llvm::Type::getDoubleTy(*ctxt), nullptr, variable); 
 			return builder->CreateStore(val->codegen(), variables[variable]);
 		}
 	};
@@ -172,11 +174,11 @@ namespace jimpilier
 	/// BinaryExprAST - Expression class for a binary operator.
 	class BinaryExprAST : public ExprAST
 	{
-		char Op;
+		string Op;
 		unique_ptr<ExprAST> LHS, RHS;
 
 	public:
-		BinaryExprAST(char op, unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
+		BinaryExprAST(string op, unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 		llvm::Value *codegen()
 		{
@@ -188,7 +190,7 @@ namespace jimpilier
 			llvm::Value *R = RHS->codegen();
 			if (DEBUGGING)
 				std::cout << " )";
-			switch (Op)
+			switch (Op[0])
 			{
 			case '+':
 				return builder->CreateFAdd(L, R, "addtmp");
@@ -199,8 +201,12 @@ namespace jimpilier
 			case '^': // x^y == 2^(y*log2(x)) //Find out how to do this in LLVM
 				return builder->CreateFMul(L, R, "multmp");
 			case '=':
+				return builder->CreateFCmpOEQ(L, R, "cmptmp");
 			case '>':
+				if(Op.size() >= 2 && Op[1] == '=') return builder->CreateFCmpUGE(L, R, "cmptmp");
+				return builder->CreateFCmpUGT(L, R, "cmptmp");
 			case '<':
+				if(Op.size() >= 2 && Op[1] == '=') return builder->CreateFCmpULE(L, R, "cmptmp");
 				return builder->CreateFCmpULT(L, R, "cmptmp");
 			default:
 				std::cout << "Error: Unknown operator" << Op;
@@ -502,8 +508,9 @@ namespace jimpilier
 		if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)
 		{
 			Token t = tokens.next();
+			std::string op = &t.lex[0]; 
 			LHS = std::move(term(tokens));
-			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1));
+			return std::make_unique<BinaryExprAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
 		LHS = std::move(term(tokens));
 		if (LHS == NULL)
@@ -513,7 +520,8 @@ namespace jimpilier
 		if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)
 		{
 			Token t = tokens.next();
-			return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::make_unique<NumberExprAST>(1));
+			std::string op = &t.lex[0]; 
+			return std::make_unique<BinaryExprAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
 		return LHS;
 	}
@@ -529,14 +537,14 @@ namespace jimpilier
 		while (tokens.peek() == POWERTO || tokens.peek() == LEFTOVER)
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(term(tokens)));
+			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(term(tokens)));
 			if (!LHS)
 			{
 				logError("Error parsing a term in raisedToExpr ", t);
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> multAndDivExpr(Stack<Token> &tokens)
@@ -550,14 +558,14 @@ namespace jimpilier
 		while (tokens.peek() == MULT || tokens.peek() == DIV)
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(raisedToExpr(tokens)));
+			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(raisedToExpr(tokens)));
 			if (!LHS)
 			{
 				logError("Error parsing a term in multDivExpr ", t);
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -583,14 +591,14 @@ namespace jimpilier
 		while (tokens.peek() == PLUS || tokens.peek() == MINUS)
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(multAndDivExpr(tokens)));
+			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(multAndDivExpr(tokens)));
 			if (!LHS)
 			{
 				logError("Error parsing a term in mathExpr", t);
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> greaterLessStmt(Stack<Token> &tokens)
@@ -603,9 +611,9 @@ namespace jimpilier
 		while (tokens.peek() == GREATER || tokens.peek() == LESS)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(mathExpr(tokens)));
+			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(mathExpr(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -629,9 +637,9 @@ namespace jimpilier
 		while (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(greaterLessStmt(tokens)));
+			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(greaterLessStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
@@ -644,9 +652,9 @@ namespace jimpilier
 		while (tokens.peek() == AND)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(compareStmt(tokens)));
+			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(compareStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -678,9 +686,9 @@ namespace jimpilier
 		while (tokens.peek() == OR)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex[0], std::move(RHS), std::move(andStmt(tokens)));
+			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(andStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex[0], std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -801,6 +809,59 @@ namespace jimpilier
 		while (((t = tokens.peek()).token >= CONST && t.token <= PROTECTED) || t.token >= INT)
 		{
 			t = tokens.next();
+			if(t.token >= INT){
+				switch(t.token){
+				case INT: 
+					if(tokens.peek() == POINTER){
+						dtype = llvm::Type::getInt64PtrTy(*ctxt); 
+						break; 
+					}
+					dtype = llvm::Type::getInt64Ty(*ctxt); 
+					break; 
+				case SHORT:
+					if(tokens.peek() == POINTER){
+						dtype = llvm::Type::getInt32PtrTy(*ctxt); 
+						break; 
+					}
+					dtype = llvm::Type::getInt32Ty(*ctxt); 
+					break;  
+				case LONG: 
+					if(tokens.peek() == POINTER){
+					}
+					dtype = llvm::Type::getInt128Ty(*ctxt); 
+					break; 
+				case FLOAT: 
+					if(tokens.peek() == POINTER){
+						dtype = llvm::Type::getFloatPtrTy(*ctxt); 
+						break; 
+					}
+					dtype = llvm::Type::getFloatTy(*ctxt); 
+					break; 
+				case DOUBLE: 
+					if(tokens.peek() == POINTER){
+						dtype = llvm::Type::getDoublePtrTy(*ctxt); 
+						break; 
+					}
+					dtype = llvm::Type::getDoubleTy(*ctxt); 
+					break; 
+				case STRING: 
+				case BOOL: 
+					if(tokens.peek() == POINTER){
+						dtype = llvm::Type::getInt1PtrTy(*ctxt); 
+						break; 
+					}
+					dtype = llvm::Type::getInt1Ty(*ctxt); 
+					break; 
+				case CHAR: 
+				case BYTE:
+					if(tokens.peek() == POINTER){
+						dtype = llvm::Type::getInt8PtrTy(*ctxt); 
+						break; 
+					}
+					dtype = llvm::Type::getInt8Ty(*ctxt); 
+					break; 
+				}
+			}
 			// Operators.push_back(t) //Add this to the variable modifier memory
 			// return declareOrFunction(tokens);
 		} //*/
@@ -839,6 +900,9 @@ namespace jimpilier
 			tokens.go_back();
 			return NULL;
 		default:
+			if(dtype == NULL) return NULL;
+			llvm::Type* t = dtype; 
+			dtype = NULL;  
 			value = std::make_unique<NumberExprAST>(0);
 		}
 		if (value == NULL)
@@ -857,11 +921,15 @@ namespace jimpilier
 	 */
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens)
 	{
+		if(dtype == NULL) return NULL; 
 		Token name = tokens.next();
+		dtypes[name.lex] = dtype; 
+		dtype = NULL;
 		std::vector<std::string> argnames;
 		if (tokens.next() != LPAREN)
 		{
 			logError("Expected parenthesis here:", tokens.currentToken());
+			dtypes[name.lex] = NULL; 
 			return NULL;
 		}
 		if (tokens.peek().token >= INT)
@@ -871,6 +939,7 @@ namespace jimpilier
 				if (tokens.peek() != IDENT)
 				{
 					logError("Expected identifier here:", tokens.currentToken());
+					dtypes[name.lex] = NULL; 
 					return NULL;
 				}
 				Token t = tokens.next();
@@ -884,12 +953,14 @@ namespace jimpilier
 			if (body == NULL)
 			{
 				logError("Error in the body of function:", name);
+				dtypes[name.lex] = NULL; 
 				return NULL;
 			}
 			std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
 			return func;
 		}
 		logError("Expected a closing parenthesis here:", tokens.currentToken());
+		dtypes[name.lex] = NULL; 
 		return NULL;
 	}
 
@@ -1071,6 +1142,10 @@ namespace jimpilier
 	}
 	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens){
 		Token t = tokens.next(); 
+		if(GlobalVarsAndFunctions->getFunction(t.lex) == NULL){
+			logError("Unknown function refrenced:", t);
+			return NULL; 
+		}
 		std::vector<std::unique_ptr<ExprAST>> params; 
 		if(tokens.next() != LPAREN){
 			logError("Expected an opening parethesis '(' here:", tokens.currentToken()); 
@@ -1151,16 +1226,16 @@ namespace jimpilier
 		case IDENT:
 		{
 			std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
-			if (retval == NULL)
-			{
+			if (retval == NULL){
 				llvm::Function* functionExists = GlobalVarsAndFunctions->getFunction(tokens.peek().lex);
-				if(!functionExists){
+				if(!functionExists && dtype != NULL){
 				std::unique_ptr<FunctionAST> funcval = std::move(functionDecl(tokens));
 				if (funcval == NULL)
 				{
 					logError("Error parsing identifier here:", tokens.currentToken());
 					return NULL;
 				}
+				// return funcval; 
 				funcval->codegen();
 				}else{
 					return std::move(functionCallExpr(tokens)); 

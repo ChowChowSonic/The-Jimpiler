@@ -32,8 +32,9 @@ int main(int argc, char**args){
     jimpilier::builder = std::make_unique<llvm::IRBuilder<>>(*jimpilier::ctxt);
     Stack<Token> tokens = jimpilier::loadTokens(f);
     std::unique_ptr<jimpilier::ExprAST> x; 
-    while(!tokens.eof() && (x = jimpilier::getValidStmt(tokens)) != NULL) {
-        x->codegen(); 
+    while(!tokens.eof()) {
+        x = jimpilier::getValidStmt(tokens); 
+        if(x != NULL)x->codegen(); 
         if(jimpilier::DEBUGGING) std::cout<< endl;  
     }
     time_t end = time(nullptr); 
