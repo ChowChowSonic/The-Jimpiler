@@ -34,6 +34,7 @@ int main(int argc, char**args){
     std::unique_ptr<jimpilier::ExprAST> x; 
     while(!tokens.eof()) {
         x = jimpilier::getValidStmt(tokens); 
+        if(jimpilier::errored) break; 
         if(x != NULL)x->codegen(); 
         if(jimpilier::DEBUGGING) std::cout<< endl;  
     }
