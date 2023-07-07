@@ -25,7 +25,7 @@ namespace jimpilier
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
 	{
-	public: // TODO: Implement types here
+	public:
 		virtual ~ExprAST(){};
 		virtual llvm::Value *codegen() = 0;
 	};
@@ -69,14 +69,18 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Name;
 			llvm::Value *V = variables[Name];
-			if (!V)
+			if (!V || !dtypes[Name])
 			{
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
-			return builder->CreateLoad(llvm::Type::getDoubleTy(*ctxt), V, Name);
+			return builder->CreateLoad(dtypes[Name], V, Name);
 		}
 	};
+	/**
+	 * @brief Represents a return statement for a function
+	 * TODO: Add type casting here
+	 */
 	class RetExprAST : public ExprAST
 	{
 		unique_ptr<ExprAST> ret;
@@ -88,6 +92,9 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << "return ";
 			llvm::Value *retval = ret->codegen();
+			if(retval->getType() != currentFunction->getReturnType()){
+				// builder->CreateCast() //Add type casting here
+			}
 			if (retval == NULL)
 				return NULL;
 			return builder->CreateRet(retval);
@@ -99,13 +106,23 @@ namespace jimpilier
 	public:
 		std::string variable;
 		std::unique_ptr<ExprAST> val;
+		llvm::Type* dtype; 
 
-		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value) : variable(var), val(std::move(value)) {}
+		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value, llvm::Type* dtype = NULL) : variable(var), val(std::move(value)), dtype(dtype) {
+			if(dtype == NULL) dtype = dtypes[variable]; 
+		}
 
 		llvm::Value *codegen()
 		{
 			if (variables[variable] == NULL)
-				variables[variable] = builder->CreateAlloca(llvm::Type::getDoubleTy(*ctxt), nullptr, variable);
+				{
+					if(dtype == NULL){
+						std::cout << "Data type for this variable is not defined yet!" <<endl; 
+						return NULL;
+					}
+					variables[variable] = builder->CreateAlloca(dtype, nullptr, variable);
+					dtypes[variable] = dtype; 
+				}
 			return builder->CreateStore(val->codegen(), variables[variable]);
 		}
 	};
@@ -175,23 +192,32 @@ namespace jimpilier
 		}
 	};
 
-	/// BinaryExprAST - Expression class for a binary operator.
+	/** BinaryExprAST - Expression class for a binary operator.
+	 * TODO: Add type casting here
+	*/
 	class BinaryExprAST : public ExprAST
 	{
 		string Op;
+		llvm::Type* retType; 
 		unique_ptr<ExprAST> LHS, RHS;
 
 	public:
-		BinaryExprAST(string op, unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
+		BinaryExprAST(string op, /* llvm::Type* type,*/ unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 		llvm::Value *codegen()
 		{
 			if (DEBUGGING)
 				std::cout << Op << "( ";
 			llvm::Value *L = LHS->codegen();
+			if(L->getType() != retType){
+				//add cast to correct dtype here
+			}
 			if (DEBUGGING)
 				std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
+			if(R->getType() != retType){
+				//add cast to correct dtype here
+			}
 			if (DEBUGGING)
 				std::cout << " )";
 			switch (Op[0])
@@ -330,17 +356,16 @@ namespace jimpilier
 		string Name;
 		llvm::Type* retType; 
 		vector<std::string> Args;
+		vector<llvm::Type*> Argt;
 	public:
-		PrototypeAST(const std::string &name, std::vector<std::string> &args, llvm::Type* ret)
-			: Name(name), Args(std::move(args)), retType(ret) {}
+		PrototypeAST(const std::string &name, std::vector<std::string> &args, std::vector<llvm::Type*> &argtypes, llvm::Type* ret)
+			: Name(name), Args(std::move(args)),Argt(std::move(argtypes)), retType(ret) {}
 
 		const std::string &getName() const { return Name; }
 		llvm::Function *codegen()
 		{
-			std::vector<llvm::Type *> Doubles(Args.size(),
-											  llvm::Type::getDoubleTy(*ctxt));
 			llvm::FunctionType *FT =
-				llvm::FunctionType::get(retType, Doubles, false);
+				llvm::FunctionType::get(retType, Argt, false);
 
 			llvm::Function *F =
 				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, GlobalVarsAndFunctions.get());
@@ -392,9 +417,11 @@ namespace jimpilier
 			// Record the function arguments in the NamedValues map.
 			for (auto &Arg : currentFunction->args())
 			{
-				llvm::Value *storedvar = builder->CreateAlloca(llvm::Type::getFloatTy(*ctxt), NULL, Arg.getName());
+				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
-				variables[std::string(Arg.getName())] = storedvar;
+				std::string name = std::string(Arg.getName()); 
+				variables[name] = storedvar;
+				dtypes[name] = Arg.getType(); 
 			}
 			if (
 				llvm::Value *RetVal = Body->codegen())
@@ -405,7 +432,10 @@ namespace jimpilier
 					std::cout << "//end of " << Proto->getName() << endl;
 				// remove the arguments now that they're out of scope
 				for (auto &Arg : currentFunction->args())
-					variables[std::string(Arg.getName())] = NULL;
+					{
+						variables[std::string(Arg.getName())] = NULL;
+						dtypes[std::string(Arg.getName())] = NULL; 
+					}
 				currentFunction = prevFunction;
 				return currentFunction;
 			}
@@ -793,12 +823,12 @@ namespace jimpilier
 			return NULL;
 		}
 		logError("Error parsing a term in obj", tokens.peek());
-		return NULL; // TODO: Fix this
+		return NULL;
 	}
 
 	/**
 	 * @brief Called whenever a modifier keyword are seen.
-	 * TODO: Parses modifier keywords and changes the modifiers set while advancing through
+	 * Parses modifier keywords and changes the modifiers set while advancing through
 	 * the tokens list. After this function is called a variable or function is expected
 	 * to be created, at which point you should use the modifiers list that was
 	 * edited by this to determine the modifiers of that variable. Clear that lists after use.
@@ -886,7 +916,6 @@ namespace jimpilier
 	/**
 	 * @brief Takes in a name as an identifier, an equals sign,
 	 * then calls the lowest precidence operation in the AST.
-	 * TODO: Make variable declarations functional
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
@@ -922,7 +951,7 @@ namespace jimpilier
 		{
 			return NULL;
 		}
-		return std::make_unique<AssignStmtAST>(name.lex, value);
+		return std::make_unique<AssignStmtAST>(name.lex, value, dtypes[name.lex]);
 	}
 
 	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
@@ -967,13 +996,12 @@ namespace jimpilier
 		{
 			return NULL;
 		}
-		return std::make_unique<AssignStmtAST>(name.lex, value);
+		return std::make_unique<AssignStmtAST>(name.lex, value, dtype);
 	}
 
 	/**
 	 * @brief Parses the declaration for a function, from a stack of tokens,
 	 * including the header prototype and argument list.
-	 * TODO: Get arguments working outside of just a single return statement
 	 * @param tokens
 	 * @return std::unique_ptr<FunctionAST>
 	 */
@@ -986,6 +1014,7 @@ namespace jimpilier
 		Token name = tokens.next();
 		dtypes[name.lex] = dtype;
 		std::vector<std::string> argnames;
+		std::vector<llvm::Type*> argtypes;
 		if (tokens.next() != LPAREN)
 		{
 			logError("Expected parenthesis here:", tokens.currentToken());
@@ -995,7 +1024,7 @@ namespace jimpilier
 		if (tokens.peek().token >= INT)
 			do
 			{
-				jimpilier::declareOrFunction(tokens);
+				llvm::Type* dtype = jimpilier::declareOrFunction(tokens);
 				if (tokens.peek() != IDENT)
 				{
 					logError("Expected identifier here:", tokens.currentToken());
@@ -1004,11 +1033,12 @@ namespace jimpilier
 				}
 				Token t = tokens.next();
 				argnames.push_back(t.lex);
+				argtypes.push_back(dtype);
 			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.peek() == RPAREN)
 		{
 			tokens.next();
-			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames, dtype);
+			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames, argtypes, dtype);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
 			if (body == NULL)
 			{
@@ -1075,13 +1105,11 @@ namespace jimpilier
 			return NULL;
 		}
 		logError("Error in destruct()", t);
-		return NULL; // TODO: Fix this
-					 // Need to handle closing curly bracket
+		return NULL; 
 	}
 
 	/**
 	 * @brief Parses a for statement header, followed by a body statement/block
-	 * TODO: Don't just return the body code, actually get the for stmt code generating properly
 	 * TODO: Add support for do-while stmts
 	 * TODO: Add support for while stmts
 	 * @param tokens
@@ -1125,9 +1153,6 @@ namespace jimpilier
 
 	/**
 	 * @brief Parses an if/else statement header and it's associated body
-	 * TODO: Add support for else statement chains
-	 * TODO: Get IfStmt code generation working
-	 * TODO: Don't just return the body code, actually get the for stmt code generating properly
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
