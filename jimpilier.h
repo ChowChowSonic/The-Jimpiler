@@ -117,7 +117,8 @@ namespace jimpilier
 			if (variables[variable] == NULL)
 				{
 					if(dtype == NULL){
-						std::cout << "Data type for this variable is not defined yet!" <<endl; 
+						std::cout << "Data type for variable " << variable << " is not defined yet!" <<endl; 
+						errored = true; 
 						return NULL;
 					}
 					variables[variable] = builder->CreateAlloca(dtype, nullptr, variable);
@@ -764,7 +765,6 @@ namespace jimpilier
 	 * <BLOCK>	-> '{' <EXPR>* '}' | <EXPR>
 	 * <EXPR>	-> I'm not writing out the EBNF for every possible expression, you get the idea.
 	 *
-	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
@@ -791,6 +791,7 @@ namespace jimpilier
 		do
 		{
 			std::unique_ptr<ExprAST> LHS = std::move(getValidStmt(tokens));
+			if(errored) return NULL;
 			if (LHS != NULL)
 				contents.push_back(std::move(LHS));
 			else if (tokens.peek() != CLOSECURL)
@@ -835,7 +836,7 @@ namespace jimpilier
 	 * @param tokens
 	 * @return true if a valid function
 	 */
-	llvm::Type *declareOrFunction(Stack<Token> &tokens)
+	llvm::Type *variableModStmt(Stack<Token> &tokens)
 	{
 		// clear variable modifier memory if possible
 		// TBI
@@ -906,9 +907,9 @@ namespace jimpilier
 				}
 			}
 			// Operators.push_back(t) //Add this to the variable modifier memory
-			// return declareOrFunction(tokens);
+			// return variableModStmt(tokens);
 		} //*/
-		// std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
+		// std::unique_ptr<ExprAST> retval = std::move(assignStmt(tokens));
 		logError("Error when parsing variable/function modifiers & return types", tokens.currentToken());
 		return NULL;
 	}
@@ -919,12 +920,15 @@ namespace jimpilier
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> assign(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens)
 	{
 		Token name = tokens.peek();
 		if (name != IDENT)
 		{
 			logError("Expected identifier in place of this token:", tokens.peek());
+			return NULL;
+		}else if(dtypes[name.lex] == NULL){
+			logError("Unknown variable name:", tokens.peek());
 			return NULL;
 		}
 		tokens.next();
@@ -956,7 +960,7 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
 	{
-		llvm::Type *dtype = declareOrFunction(tokens);
+		llvm::Type *dtype = variableModStmt(tokens);
 		if (dtype == NULL)
 		{
 			return NULL;
@@ -996,7 +1000,13 @@ namespace jimpilier
 		{
 			return NULL;
 		}
+		dtypes[name.lex] = dtype; 
 		return std::make_unique<AssignStmtAST>(name.lex, value, dtype);
+	}
+
+	std::unique_ptr<ExprAST> declareOrAssign(Stack<Token>&tokens){
+		if(tokens.peek() == IDENT) return std::move(assignStmt(tokens)); 
+		return std::move(declareStmt(tokens)); 
 	}
 
 	/**
@@ -1007,9 +1017,9 @@ namespace jimpilier
 	 */
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype = NULL)
 	{
-		if (dtype == NULL)
-			dtype = declareOrFunction(tokens);
-		if (dtype == NULL)
+		if (dtype == NULL) //try parsing dtypes, assuming the optional variable was simply not provided
+			dtype = variableModStmt(tokens);
+		if (dtype == NULL) //if it fails a second time assume it's invalid
 			return NULL;
 		Token name = tokens.next();
 		dtypes[name.lex] = dtype;
@@ -1024,22 +1034,27 @@ namespace jimpilier
 		if (tokens.peek().token >= INT)
 			do
 			{
-				llvm::Type* dtype = jimpilier::declareOrFunction(tokens);
+				llvm::Type* dtype = jimpilier::variableModStmt(tokens);
 				if (tokens.peek() != IDENT)
 				{
 					logError("Expected identifier here:", tokens.currentToken());
 					dtypes[name.lex] = NULL;
 					return NULL;
+				}else if(dtype == NULL){
+					logError("Invalid identifier modifiers here:", tokens.currentToken());
+					return NULL; 
 				}
 				Token t = tokens.next();
 				argnames.push_back(t.lex);
 				argtypes.push_back(dtype);
+				dtypes[t.lex] = dtype; 
 			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.peek() == RPAREN)
 		{
 			tokens.next();
 			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames, argtypes, dtype);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+			for(auto arg : argnames) dtypes[arg]=NULL; 
 			if (body == NULL)
 			{
 				logError("Error in the body of function:", name);
@@ -1126,8 +1141,11 @@ namespace jimpilier
 		}
 		do
 		{
-			beginStmts.push_back(std::move(assign(tokens)));
-		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+			std::unique_ptr<ExprAST> x = std::move(declareOrAssign(tokens)); 
+			if(x != NULL)
+				beginStmts.push_back(std::move(x));
+		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
+		if(errored) return NULL; 
 		if (tokens.next() != SEMICOL)
 		{
 			tokens.go_back(1);
@@ -1143,8 +1161,11 @@ namespace jimpilier
 		}
 		do
 		{
-			endStmts.push_back(std::move(getValidStmt(tokens))); // TBI: variable checking
-		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+			std::unique_ptr<ExprAST> x = std::move(getValidStmt(tokens)); 
+			if(x != NULL)
+				endStmts.push_back(std::move(x)); // TBI: variable checking
+		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
+		if(errored) return NULL; 
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
 		body = std::move(jimpilier::codeBlockExpr(tokens));
@@ -1320,7 +1341,7 @@ namespace jimpilier
 			return std::move(declareStmt(tokens));
 		case IDENT:
 		{
-			std::unique_ptr<ExprAST> retval = std::move(assign(tokens));
+			std::unique_ptr<ExprAST> retval = std::move(assignStmt(tokens));
 			if (retval == NULL)
 			{
 				llvm::Function *functionExists = GlobalVarsAndFunctions->getFunction(tokens.peek().lex);

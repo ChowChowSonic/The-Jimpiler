@@ -40,6 +40,7 @@ int main(int argc, char**args){
     }
     time_t end = time(nullptr); 
     std::cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
+    if(!jimpilier::errored)
     jimpilier::GlobalVarsAndFunctions->dump();
 /*  fstream outputfile; 
     outputfile.open("out.s", std::fstream::out); 
