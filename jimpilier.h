@@ -34,13 +34,17 @@ namespace jimpilier
 	class NumberExprAST : public ExprAST
 	{
 		double Val;
+		bool isInt = false; 
 
 	public:
 		NumberExprAST(double Val) : Val(Val) {}
+		NumberExprAST(int Val) : Val(Val) { isInt = true; }
 		llvm::Value *codegen()
 		{
 			if (DEBUGGING)
 				std::cout << Val;
+			if(isInt)
+				return llvm::ConstantInt::get(*ctxt, llvm::APInt(64, static_cast<long>(Val), true));
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat(Val));
 		}
 	};
@@ -194,12 +198,13 @@ namespace jimpilier
 	};
 
 	/** BinaryExprAST - Expression class for a binary operator.
-	 * TODO: Add type casting here
+	 * TODO: Add type casting here through the 'AS' operator; I.E.
+	 * "x AS string"
+	 * TODO: Fix type management with the codegen() function
 	*/
 	class BinaryExprAST : public ExprAST
 	{
 		string Op;
-		llvm::Type* retType; 
 		unique_ptr<ExprAST> LHS, RHS;
 
 	public:
@@ -210,37 +215,51 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Op << "( ";
 			llvm::Value *L = LHS->codegen();
-			if(L->getType() != retType){
-				//add cast to correct dtype here
-			}
 			if (DEBUGGING)
 				std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
-			if(R->getType() != retType){
-				//add cast to correct dtype here
-			}
 			if (DEBUGGING)
 				std::cout << " )";
 			switch (Op[0])
 			{
 			case '+':
+			if(L->getType() == llvm::Type::getFloatTy(*ctxt)||R->getType() == llvm::Type::getFloatTy(*ctxt))
 				return builder->CreateFAdd(L, R, "addtmp");
+			if(L->getType() == llvm::Type::getInt32Ty(*ctxt)||R->getType() == llvm::Type::getInt32Ty(*ctxt))
+				return builder->CreateAdd(L, R, "addtmp");
+				return builder->CreateAdd(L, R, "addtmp");
 			case '-':
+			if(L->getType() == llvm::Type::getFloatTy(*ctxt)||R->getType() == llvm::Type::getFloatTy(*ctxt))
+				return builder->CreateFSub(L, R, "addtmp");
+			if(L->getType() == llvm::Type::getInt32Ty(*ctxt)||R->getType() == llvm::Type::getInt32Ty(*ctxt))
+				return builder->CreateSub(L, R, "addtmp");
 				return builder->CreateFSub(L, R, "subtmp");
 			case '*':
+			if(L->getType() == llvm::Type::getFloatTy(*ctxt)||R->getType() == llvm::Type::getFloatTy(*ctxt))
+				return builder->CreateFMul(L, R, "addtmp");
+			if(L->getType() == llvm::Type::getInt32Ty(*ctxt)||R->getType() == llvm::Type::getInt32Ty(*ctxt))
+				return builder->CreateMul(L, R, "addtmp");
 				return builder->CreateFMul(L, R, "multmp");
 			case '^': // x^y == 2^(y*log2(x)) //Find out how to do this in LLVM
 				return builder->CreateFMul(L, R, "multmp");
 			case '=':
+				if(L->getType() == llvm::Type::getFloatTy(*ctxt)||R->getType() == llvm::Type::getFloatTy(*ctxt))
+					return builder->CreateFCmpOEQ(L, R, "cmptmp");
+				if(L->getType() == llvm::Type::getInt32Ty(*ctxt)||R->getType() == llvm::Type::getInt32Ty(*ctxt))
+					return builder->CreateICmpEQ(L, R, "cmptmp");
 				return builder->CreateFCmpOEQ(L, R, "cmptmp");
 			case '>':
-				if (Op.size() >= 2 && Op[1] == '=')
-					return builder->CreateFCmpUGE(L, R, "cmptmp");
-				return builder->CreateFCmpUGT(L, R, "cmptmp");
+				if(L->getType() == llvm::Type::getFloatTy(*ctxt)||R->getType() == llvm::Type::getFloatTy(*ctxt))
+					return builder->CreateFCmpOGT(L, R, "cmptmp");
+				if(L->getType() == llvm::Type::getInt32Ty(*ctxt)||R->getType() == llvm::Type::getInt32Ty(*ctxt))
+					return builder->CreateICmpSGT(L, R, "cmptmp");
+				return builder->CreateFCmpOGT(L, R, "cmptmp");
 			case '<':
-				if (Op.size() >= 2 && Op[1] == '=')
-					return builder->CreateFCmpULE(L, R, "cmptmp");
-				return builder->CreateFCmpULT(L, R, "cmptmp");
+				if(L->getType() == llvm::Type::getFloatTy(*ctxt)||R->getType() == llvm::Type::getFloatTy(*ctxt))
+					return builder->CreateFCmpOLT(L, R, "cmptmp");
+				if(L->getType() == llvm::Type::getInt32Ty(*ctxt)||R->getType() == llvm::Type::getInt32Ty(*ctxt))
+					return builder->CreateICmpSLT(L, R, "cmptmp");
+				return builder->CreateFCmpOLT(L, R, "cmptmp");
 			default:
 				std::cout << "Error: Unknown operator" << Op;
 				return NULL;
@@ -531,7 +550,11 @@ namespace jimpilier
 		}
 		else if (tokens.peek() == NUMCONST)
 		{
+			string x = tokens.peek().lex; 
+			if(std::find(x.begin(), x.end(), '.') == x.end()){
 			return std::make_unique<NumberExprAST>(stoi(tokens.next().lex));
+			}
+			return std::make_unique<NumberExprAST>(stod(tokens.next().lex));
 		}
 
 		logError("Invalid term:", tokens.currentToken());
@@ -1314,7 +1337,7 @@ namespace jimpilier
 		case DECREMENT:
 			return std::move(jimpilier::incDecExpr(tokens));
 		case SEMICOL:
-			logError("Returning null on token (under semicol)", tokens.peek());
+			tokens.next(); 
 			return NULL;
 		case OPENCURL:
 			return std::move(jimpilier::codeBlockExpr(tokens));
