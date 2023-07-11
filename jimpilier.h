@@ -264,6 +264,12 @@ namespace jimpilier
 				if (L->getType() == llvm::Type::getInt32Ty(*ctxt) || R->getType() == llvm::Type::getInt32Ty(*ctxt))
 					return builder->CreateICmpSLT(L, R, "cmptmp");
 				return builder->CreateFCmpOLT(L, R, "cmptmp");
+			case '&':
+			case 'a':
+				return builder->CreateLogicalAnd(L,R, "andtmp");
+			case '|':
+			case 'o':
+				return builder->CreateLogicalOr(L,R, "ortmp"); 
 			default:
 				std::cout << "Error: Unknown operator" << Op;
 				return NULL;
@@ -566,6 +572,44 @@ namespace jimpilier
 		logError("Invalid term:", tokens.currentToken());
 		return NULL;
 	}
+
+/**
+	 * @brief Parses a function call statement, returns std::move(term(tokens)) if it does not find one
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
+	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens)
+	{
+		Token t = tokens.next();
+		if (t != IDENT || GlobalVarsAndFunctions->getFunction(t.lex) == NULL)
+		{
+			tokens.go_back();
+			return std::move(term(tokens)); 
+		}
+		std::vector<std::unique_ptr<ExprAST>> params;
+		if (tokens.next() != LPAREN)
+		{
+			logError("Expected an opening parethesis '(' here:", tokens.currentToken());
+			return NULL;
+		}
+		if (tokens.peek() != RPAREN)
+			do
+			{
+				std::unique_ptr<ExprAST> param = std::move(jimpilier::listExpr(tokens));
+				if (param == NULL){
+					logError("Invalid parameter passed to function", t); 
+					return NULL;
+				}
+				params.push_back(std::move(param));
+			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		if (tokens.next() != RPAREN)
+		{
+			logError("Expected a closing parethesis '(' here:", tokens.currentToken());
+			return NULL;
+		}
+		return std::make_unique<CallExprAST>(t.lex, params);
+	}
+
 	std::unique_ptr<ExprAST> incDecExpr(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> LHS;
@@ -573,10 +617,10 @@ namespace jimpilier
 		{
 			Token t = tokens.next();
 			std::string op = &t.lex[0];
-			LHS = std::move(term(tokens));
+			LHS = std::move(functionCallExpr(tokens));
 			return std::make_unique<BinaryExprAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
-		LHS = std::move(term(tokens));
+		LHS = std::move(functionCallExpr(tokens));
 		if (LHS == NULL)
 		{
 			return NULL;
@@ -686,7 +730,7 @@ namespace jimpilier
 	 * No other programming languages that I know of include this, and I have a
 	 * feeling it's for good reason... But at the same time, I want to add it as I
 	 * feel that is extremely convienent in the situations it comes up in.
-	 *
+	 * TODO: Fix and/or statements
 	 * @param tokens
 	 * @return true - if it is a valid statement,
 	 * @return NULL otherwise
@@ -865,6 +909,7 @@ namespace jimpilier
 	 * the tokens list. After this function is called a variable or function is expected
 	 * to be created, at which point you should use the modifiers list that was
 	 * edited by this to determine the modifiers of that variable. Clear that lists after use.
+	 * @see variable modifiers (TBI)
 	 * @param tokens
 	 * @return true if a valid function
 	 */
@@ -1289,35 +1334,6 @@ namespace jimpilier
 			return NULL;
 		}
 		return std::make_unique<RetExprAST>(val);
-	}
-	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens)
-	{
-		Token t = tokens.next();
-		if (GlobalVarsAndFunctions->getFunction(t.lex) == NULL)
-		{
-			logError("Unknown function refrenced:", t);
-			return NULL;
-		}
-		std::vector<std::unique_ptr<ExprAST>> params;
-		if (tokens.next() != LPAREN)
-		{
-			logError("Expected an opening parethesis '(' here:", tokens.currentToken());
-			return NULL;
-		}
-		if (tokens.peek() != RPAREN)
-			do
-			{
-				std::unique_ptr<ExprAST> param = std::move(jimpilier::listExpr(tokens));
-				if (param == NULL)
-					return NULL;
-				params.push_back(std::move(param));
-			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
-		if (tokens.next() != RPAREN)
-		{
-			logError("Expected a closing parethesis '(' here:", tokens.currentToken());
-			return NULL;
-		}
-		return std::make_unique<CallExprAST>(t.lex, params);
 	}
 
 	/**
