@@ -39,17 +39,9 @@ int main(int argc, char**args){
         if(jimpilier::DEBUGGING) std::cout<< endl;  
     }
     time_t end = time(nullptr); 
-    std::cout << "Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
-    if(!jimpilier::errored)
+    
+    if(!jimpilier::errored){
+        std::cout << "; Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
         jimpilier::GlobalVarsAndFunctions->dump();
-/*  fstream outputfile; 
-    outputfile.open("out.s", std::fstream::out); 
-    SLL<scope> reversed; 
-    while((s = scopes.pop()) != NULL){
-        reversed.emplace_back(*s); 
     }
-    while((s = reversed.pop()) != NULL){
-       s->dumpASM(outputfile); 
-    }
-    outputfile.close();//*/
 }

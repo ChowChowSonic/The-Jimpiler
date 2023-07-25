@@ -196,8 +196,10 @@ Token getNextToken(istream & s, int & line){
                 }else {
                     lexeme = ch; 
                     return Token(NUMCONST,lexeme, line); }
-            }else if (ch == '"') {
+            }else if (ch == '"' || ch == '\'') {
                 state = INSTRING; 
+                lexeme="";
+                continue;
             }
             if(!isswapped)lexeme+=ch;
             break;
@@ -217,8 +219,7 @@ Token getNextToken(istream & s, int & line){
             break;
             }
             case INSTRING:
-            {if(ch == '"'){
-                lexeme+=ch; 
+            {if(ch == '"' || ch == '\''){
                 return Token(SCONST, lexeme, line);
             }
             lexeme+=ch; 

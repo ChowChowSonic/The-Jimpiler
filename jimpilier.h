@@ -58,7 +58,7 @@ namespace jimpilier
 		{
 			if (DEBUGGING)
 				std::cout << Val;
-			return NULL; // llvm::ConstantFP::get(ctxt, llvm::AP(Val));
+			return builder->CreateGlobalStringPtr(Val, "Sconst"); 
 		}
 	};
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
@@ -324,7 +324,11 @@ namespace jimpilier
 					if (data != NULL){
 						vals.push_back(data); 
 					}
-					placeholder+="%d ";
+					if(data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
+						placeholder+="%s ";
+					else
+						placeholder+="%d ";
+					
 				}
 			//Create global string constant(s) for newline characters and the placeholder constant where needed. 
 			if(isLine){
@@ -337,7 +341,7 @@ namespace jimpilier
 			//Initialize a function with no body to refrence C std libraries
 			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
                                                    llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), 
-												   llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), 0), true) 
+												   llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true) 
                                                    );
 			return builder->CreateCall(printfunc, vals, "printftemp"); 
 		}
