@@ -284,15 +284,9 @@ namespace jimpilier
 	{
 	public:
 		std::vector<std::unique_ptr<ExprAST>> Contents;
-		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args)
-		{
-			for (auto &x : Args)
-			{
-				Contents.push_back(std::move(x));
-			}
-		}
-		// : Contents(std::move(Args)) {}
+		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args) : Contents(std::move(Args)){}
 		ListExprAST() {}
+
 		llvm::Value *codegen()
 		{
 			llvm::Value *ret = NULL;
@@ -307,6 +301,41 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << " ]";
 			return ret;
+		}
+	};
+/**
+ * Class representing a print statement in the Abstract Syntax Tree (AST)
+ * Inherits from ExprAST base class
+ */
+	class PrintStmtAST : public ExprAST{
+		public:
+		std::vector<std::unique_ptr<ExprAST>> Contents;
+		bool isLine = false; 
+		PrintStmtAST(std::vector<std::unique_ptr<ExprAST>> &Args, bool isLn) 
+		: Contents(std::move(Args)), isLine(isLn) {}
+		
+		llvm::Value* codegen(){
+			//Initialize values for the arguments and the types for the arguments
+			std::vector<llvm::Value*> vals; 
+			std::string placeholder = ""; 
+			for(auto& x : Contents)
+				{
+					llvm::Value* data = x->codegen(); 
+					if (data != NULL){
+						vals.push_back(data); 
+					}
+					placeholder+="%d ";
+				}
+			//Create a global string constant 
+			llvm::Constant* globalString = builder->CreateGlobalStringPtr(placeholder); 
+			vals.insert(vals.begin(), globalString);
+			//Initialize a function with no body to refrence C std libraries
+			llvm::FunctionType* printfType = llvm::FunctionType::get(
+				llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt),
+				llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), 0), 0),
+                                                         true);
+			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf", printfType);
+			return builder->CreateCall(printfunc, vals, "printftemp"); 
 		}
 	};
 
@@ -1336,6 +1365,21 @@ namespace jimpilier
 		return std::make_unique<RetExprAST>(val);
 	}
 
+	std::unique_ptr<ExprAST> printStmt(Stack<Token> &tokens){
+		bool isline = tokens.peek() == PRINTLN; 
+		if(tokens.next() != PRINT && tokens.next() != PRINTLN){
+			logError("Somehow was looking for a print statement when there was no print. Wtf.", tokens.currentToken());
+			return NULL;
+		}
+		std::vector<std::unique_ptr<ExprAST>> args; 
+		do{
+			std::unique_ptr<ExprAST> x = std::move(jimpilier::listExpr(tokens)); 
+			if(x != NULL)
+				args.push_back(std::move(x)); 
+		}while(!errored && tokens.peek() == COMMA && tokens.next() == COMMA); 
+		return std::make_unique<PrintStmtAST>(args, isline); 
+	}
+
 	/**
 	 * @brief Get the next Valid Stmt in the code file provided.
 	 *
@@ -1380,6 +1424,9 @@ namespace jimpilier
 			return NULL;
 		case RET:
 			return std::move(jimpilier::retStmt(tokens));
+		case PRINTLN: 
+		case PRINT:
+			return std::move(jimpilier::printStmt(tokens)); 
 		case INT:
 		case SHORT:
 		case POINTER:
