@@ -326,11 +326,14 @@ namespace jimpilier
 					}
 					placeholder+="%d ";
 				}
-			//Create a global string constant 
+			//Create global string constant(s) for newline characters and the placeholder constant where needed. 
+			if(isLine){
+				llvm::Constant* newline = builder->CreateGlobalStringPtr("\n", "newlineStr"); 
+				vals.push_back(newline); 
+				placeholder+="%s";
+			}
 			llvm::Constant* globalString = builder->CreateGlobalStringPtr(placeholder);
-			llvm::Constant* newline = builder->CreateGlobalStringPtr("\n", "newlineStr"); 
 			vals.insert(vals.begin(), globalString);
-			if(isLine) vals.push_back(newline); 
 			//Initialize a function with no body to refrence C std libraries
 			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
                                                    llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), 
@@ -1273,7 +1276,7 @@ namespace jimpilier
 			tokens.go_back(1);
 			logError("Expecting a semicolon after this token:", tokens.currentToken());
 			return NULL;
-		}
+		}tokens.next(); 
 		do
 		{
 			std::unique_ptr<ExprAST> x = std::move(getValidStmt(tokens));
