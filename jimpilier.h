@@ -1001,6 +1001,13 @@ namespace jimpilier
 					return llvm::Type::getDoubleTy(*ctxt);
 					break;
 				case STRING:
+					if (tokens.peek() == POINTER)
+					{
+						return llvm::Type::getInt64PtrTy(*ctxt);
+						break;
+					}
+					return llvm::Type::getInt8PtrTy(*ctxt);
+					break;
 				case BOOL:
 					if (tokens.peek() == POINTER)
 					{
@@ -1110,6 +1117,9 @@ namespace jimpilier
 			func->codegen();
 			return NULL;
 		default:
+		if(dtype == llvm::Type::getInt8PtrTy(*ctxt))
+			value = std::make_unique<StringExprAST>(""); 
+		else
 			value = std::make_unique<NumberExprAST>(0);
 		}
 		if (value == NULL || dtype == NULL)
