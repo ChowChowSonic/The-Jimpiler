@@ -133,7 +133,9 @@ namespace jimpilier
 				variables[variable] = builder->CreateAlloca(dtype, nullptr, variable);
 				dtypes[variable] = dtype;
 			}
-			return builder->CreateStore(val->codegen(), variables[variable]);
+			llvm::Value* endres = val->codegen(); 
+			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
+			return builder->CreateStore(endres, variables[variable]);
 		}
 	};
 
@@ -348,20 +350,22 @@ namespace jimpilier
 			for (auto &x : Contents)
 			{
 				llvm::Value *data = x->codegen();
-				if (data != NULL)
-				{
-					vals.push_back(data);
-				}
+				
 				switch (data->getType()->getTypeID())
 				{
 				case (llvm::PointerType::PointerTyID):
 					placeholder += "%s ";
 					break;
 				case (llvm::Type::TypeID::FloatTyID):
+					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt)); 
 					placeholder += "%f ";
 					break;
 				default:
 					placeholder += "%d ";
+				}
+				if (data != NULL)
+				{
+					vals.push_back(data);
 				}
 			}
 			// Create global string constant(s) for newline characters and the placeholder constant where needed.
