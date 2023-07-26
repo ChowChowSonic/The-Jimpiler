@@ -352,10 +352,17 @@ namespace jimpilier
 				{
 					vals.push_back(data);
 				}
-				if (data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
+				switch (data->getType()->getTypeID())
+				{
+				case (llvm::PointerType::PointerTyID):
 					placeholder += "%s ";
-				else
+					break;
+				case (llvm::Type::TypeID::FloatTyID):
+					placeholder += "%f ";
+					break;
+				default:
 					placeholder += "%d ";
+				}
 			}
 			// Create global string constant(s) for newline characters and the placeholder constant where needed.
 			if (isLine)
@@ -368,8 +375,8 @@ namespace jimpilier
 			vals.insert(vals.begin(), globalString);
 			// Initialize a function with no body to refrence C std libraries
 			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
-																						 llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt),
-																												 llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
+								llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), 
+								llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
 			return builder->CreateCall(printfunc, vals, "printftemp");
 		}
 	};

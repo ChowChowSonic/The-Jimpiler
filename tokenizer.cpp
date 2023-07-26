@@ -191,11 +191,10 @@ Token getNextToken(istream & s, int & line){
                     return Token(IDENT, lexeme, line); }
                 }
             else if (isdigit(ch)) {
-                if(isdigit(nextchar)){
                 state = INNUM; 
-                }else {
-                    lexeme = ch; 
-                    return Token(NUMCONST,lexeme, line); }
+                lexeme = ch; 
+                if(!isValidInt(nextchar)) return Token(NUMCONST, lexeme, line); 
+                continue;
             }else if (ch == '"' || ch == '\'') {
                 state = INSTRING; 
                 lexeme="";
@@ -212,10 +211,8 @@ Token getNextToken(istream & s, int & line){
             break;
             }
             case INNUM:{
-            //cout << ch << nextchar; 
-            bool isvalidchar = isValidInt(ch) && isValidInt(nextchar);
             if(isValidInt(ch))lexeme+=ch; 
-            if(!isvalidchar) return Token(NUMCONST, lexeme, line); 
+            if(!isValidInt(nextchar)) return Token(NUMCONST, lexeme, line); 
             break;
             }
             case INSTRING:
