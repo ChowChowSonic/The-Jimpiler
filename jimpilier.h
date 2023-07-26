@@ -226,6 +226,29 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << " )";
 
+			if (L->getType()->getTypeID() != R->getType()->getTypeID())
+			{
+				llvm::Instruction::CastOps castop;
+				llvm::Type *dest = NULL;
+				if (L->getType()->getTypeID() == llvm::Type::FloatTyID || R->getType()->getTypeID() == llvm::Type::FloatTyID)
+				{
+					castop = llvm::Instruction::SIToFP;
+					dest = llvm::Type::getFloatTy(*ctxt);
+				}
+				if (dest != NULL)
+				{
+					llvm::Value *v = (L->getType()->getTypeID() == dest->getTypeID()) ? R : L;
+					if (L->getType()->getTypeID() == dest->getTypeID())
+					{
+						R = builder->CreateCast(castop, v, dest, "typeCastTmp");
+					}
+					else
+					{
+						L = builder->CreateCast(castop, v, dest, "typeCastTmp");
+					}
+				}
+			}
+
 			switch (Op[0])
 			{
 			case '+':
