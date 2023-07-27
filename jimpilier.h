@@ -271,6 +271,8 @@ namespace jimpilier
 				if (L->getType() == llvm::Type::getInt32Ty(*ctxt) || R->getType() == llvm::Type::getInt32Ty(*ctxt))
 					return builder->CreateMul(L, R, "addtmp");
 				return builder->CreateFMul(L, R, "multmp");
+			case '/':
+					return builder->CreateFDiv(L, R, "divtmp");
 			case '^': // x^y == 2^(y*log2(x)) //Find out how to do this in LLVM
 				return builder->CreateFMul(L, R, "multmp");
 			case '=':
