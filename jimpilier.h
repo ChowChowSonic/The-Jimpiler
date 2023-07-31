@@ -108,10 +108,6 @@ namespace jimpilier
 		}
 	};
 
-	/**
-	 * @brief TODO: Implement other variable modifiers, such as const, singular, etc. 
-	 * 
-	 */
 	class AssignStmtAST : public ExprAST
 	{
 	public:
@@ -142,7 +138,9 @@ namespace jimpilier
 			if(endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID()){//&& !isConst //TBI
 				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen", llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), false));
 				llvm::FunctionCallee strcpyfunc = GlobalVarsAndFunctions->getOrInsertFunction("strcpy", llvm::FunctionType::get(llvm::PointerType::getInt8PtrTy(*ctxt), {llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false),  llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false)}, false));
-				llvm::Value* args[] = {builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt), builder->CreateCall(strlenfunc, endres, "strconstlen"), "strconstcpy"), endres};
+				llvm::Value* strlen =  builder->CreateCall(strlenfunc, endres, "strconstlen");
+				strlen = builder->CreateAdd(strlen, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), 1), "addtmp"); 
+				llvm::Value* args[] = {builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt),strlen, "strconstcpy") , endres};
 				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp"); 
 			}
 			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
