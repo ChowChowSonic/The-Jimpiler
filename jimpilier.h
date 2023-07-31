@@ -62,6 +62,7 @@ namespace jimpilier
 			return builder->CreateGlobalStringPtr(Val, "Sconst");
 		}
 	};
+
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
 	class VariableExprAST : public ExprAST
 	{
@@ -1065,6 +1066,14 @@ namespace jimpilier
 					return llvm::Type::getInt1Ty(*ctxt);
 					break;
 				case CHAR:
+					if (tokens.peek() == POINTER)
+					{
+						tokens.next();
+						return llvm::Type::getInt8PtrTy(*ctxt);
+						break;
+					}
+					return llvm::Type::getInt8Ty(*ctxt);
+					break;
 				case BYTE:
 					if (tokens.peek() == POINTER)
 					{
