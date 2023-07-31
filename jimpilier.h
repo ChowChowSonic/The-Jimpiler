@@ -108,6 +108,10 @@ namespace jimpilier
 		}
 	};
 
+	/**
+	 * @brief TODO: Implement other variable modifiers, such as const, singular, etc. 
+	 * 
+	 */
 	class AssignStmtAST : public ExprAST
 	{
 	public:
@@ -135,6 +139,12 @@ namespace jimpilier
 				dtypes[variable] = dtype;
 			}
 			llvm::Value* endres = val->codegen(); 
+			if(endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID()){//&& !isConst //TBI
+				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen", llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), false));
+				llvm::FunctionCallee strcpyfunc = GlobalVarsAndFunctions->getOrInsertFunction("strcpy", llvm::FunctionType::get(llvm::PointerType::getInt8PtrTy(*ctxt), {llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false),  llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false)}, false));
+				llvm::Value* args[] = {builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt), builder->CreateCall(strlenfunc, endres, "strconstlen"), "strconstcpy"), endres};
+				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp"); 
+			}
 			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
 			return builder->CreateStore(endres, variables[variable]);
 		}
@@ -382,8 +392,7 @@ namespace jimpilier
 			vals.insert(vals.begin(), globalString);
 			// Initialize a function with no body to refrence C std libraries
 			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
-								llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), 
-								llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
+				llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
 			return builder->CreateCall(printfunc, vals, "printftemp");
 		}
 	};
