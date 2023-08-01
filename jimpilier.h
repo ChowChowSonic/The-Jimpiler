@@ -18,10 +18,16 @@ namespace jimpilier
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
 	std::map<std::string, llvm::Type *> dtypes;
+	std::map<KeyToken, bool> modifiers = 
+	{
+		{CONST, false}, {SINGULAR, false}, {VOLATILE, false}, 
+		{PUBLIC, false}, {PRIVATE, false}, {PROTECTED, false},
+	};
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
+	bool keepMods = false; 
 	bool errored = false;
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
@@ -134,14 +140,21 @@ namespace jimpilier
 				variables[variable] = builder->CreateAlloca(dtype, nullptr, variable);
 				dtypes[variable] = dtype;
 			}
-			llvm::Value* endres = val->codegen(); 
-			if(endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID()){//&& !isConst //TBI
-				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen", llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), false));
-				llvm::FunctionCallee strcpyfunc = GlobalVarsAndFunctions->getOrInsertFunction("strcpy", llvm::FunctionType::get(llvm::PointerType::getInt8PtrTy(*ctxt), {llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false),  llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false)}, false));
-				llvm::Value* strlen =  builder->CreateCall(strlenfunc, endres, "strconstlen");
-				strlen = builder->CreateAdd(strlen, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), 1), "addtmp"); 
-				llvm::Value* args[] = {builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt),strlen, "strconstcpy") , endres};
-				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp"); 
+			llvm::Value *endres = val->codegen();
+			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && !modifiers[CONST])
+			{ 
+				llvm::Type *strtype = llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false);
+				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen",
+																							  llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), false));
+				llvm::FunctionCallee strcpyfunc = GlobalVarsAndFunctions->getOrInsertFunction("strcpy",
+																							  llvm::FunctionType::get(llvm::PointerType::getInt8PtrTy(*ctxt), {strtype, strtype}, false));
+				llvm::Value *strlen = builder->CreateCall(strlenfunc, endres, "strconstlen");
+				strlen = builder->CreateAdd(strlen, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), 1), "addtmp");
+				llvm::Value *args[] =
+					{
+						builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt), strlen, "strconstcpy"),
+						endres};
+				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp");
 			}
 			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
 			return builder->CreateStore(endres, variables[variable]);
@@ -281,7 +294,7 @@ namespace jimpilier
 					return builder->CreateMul(L, R, "addtmp");
 				return builder->CreateFMul(L, R, "multmp");
 			case '/':
-					return builder->CreateFDiv(L, R, "divtmp");
+				return builder->CreateFDiv(L, R, "divtmp");
 			case '^': // x^y == 2^(y*log2(x)) //Find out how to do this in LLVM
 				return builder->CreateFMul(L, R, "multmp");
 			case '=':
@@ -361,14 +374,14 @@ namespace jimpilier
 			for (auto &x : Contents)
 			{
 				llvm::Value *data = x->codegen();
-				
+
 				switch (data->getType()->getTypeID())
 				{
 				case (llvm::PointerType::PointerTyID):
 					placeholder += "%s ";
 					break;
 				case (llvm::Type::TypeID::FloatTyID):
-					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt)); 
+					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
 					placeholder += "%f ";
 					break;
 				default:
@@ -390,7 +403,7 @@ namespace jimpilier
 			vals.insert(vals.begin(), globalString);
 			// Initialize a function with no body to refrence C std libraries
 			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
-				llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
+																						 llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
 			return builder->CreateCall(printfunc, vals, "printftemp");
 		}
 	};
@@ -567,6 +580,11 @@ namespace jimpilier
 	{
 		errored = true;
 		std::cout << s << ' ' << t.toString() << endl;
+	}
+	void clearModifiers(){
+		for(auto x : modifiers){
+				x.second = false; 
+		}
 	}
 
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
@@ -988,23 +1006,13 @@ namespace jimpilier
 		logError("Error parsing a term in obj", tokens.peek());
 		return NULL;
 	}
-
-	/**
-	 * @brief Called whenever a modifier keyword are seen.
-	 * Parses modifier keywords and changes the modifiers set while advancing through
-	 * the tokens list. After this function is called a variable or function is expected
-	 * to be created, at which point you should use the modifiers list that was
-	 * edited by this to determine the modifiers of that variable. Clear that lists after use.
-	 * @see variable modifiers (TBI)
-	 * @param tokens
-	 * @return true if a valid function
-	 */
-	llvm::Type *variableModStmt(Stack<Token> &tokens)
-	{
-		// clear variable modifier memory if possible
-		// TBI
-		Token t;
-		while (((t = tokens.peek()).token >= CONST && t.token <= PROTECTED) || t.token >= INT)
+	llvm::Type* variableTypeStmt(Stack<Token>& tokens){
+		Token t = tokens.peek();
+		if(t.token < INT){
+			logError("We don't recognise this data type; if it's an obj it may not be declared properly:", t); 
+			return NULL; 
+		}
+		while (t.token >= INT)
 		{
 			t = tokens.next();
 			if (t.token >= INT)
@@ -1095,9 +1103,38 @@ namespace jimpilier
 			// Operators.push_back(t) //Add this to the variable modifier memory
 			// return variableModStmt(tokens);
 		} //*/
-		// std::unique_ptr<ExprAST> retval = std::move(assignStmt(tokens));
-		logError("Error when parsing variable/function modifiers & return types", tokens.currentToken());
+		logError("We don't recognise this data type; if it's an obj it may not be declared properly:", t);
 		return NULL;
+	}
+	/**
+	 * @brief Called whenever a modifier keyword are seen.
+	 * Parses modifier keywords and changes the modifiers set while advancing through
+	 * the tokens list. After this function is called a variable or function is expected
+	 * to be created, at which point you should use the modifiers list that was
+	 * edited by this to determine the modifiers of that variable. Clear that lists after use.
+	 * @see variable modifiers (TBI)
+	 * @param tokens
+	 * @return true if a valid function
+	 */
+	llvm::Type *variableModStmt(Stack<Token> &tokens)
+	{
+		// clear variable modifier memory if possible
+		// TBI
+		Token t = tokens.peek(); 
+		if(t.token <= PROTECTED && t.token >= CONST){
+			clearModifiers();
+		}
+		while((t = tokens.peek()).token <= PROTECTED && t.token >= CONST){
+			modifiers[t.token] = true; 
+			t = tokens.next();
+		}
+		if(tokens.peek() == COLON){ 
+			tokens.next(); 
+			keepMods = true;
+		}else{ 
+			keepMods = false;
+		}
+		return variableTypeStmt(tokens);
 	}
 
 	/**
@@ -1149,6 +1186,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
 	{
 		llvm::Type *dtype = variableModStmt(tokens);
+		if(!keepMods) clearModifiers();
 		if (dtype == NULL)
 		{
 			return NULL;
@@ -1213,7 +1251,7 @@ namespace jimpilier
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype = NULL)
 	{
 		if (dtype == NULL) // try parsing dtypes, assuming the optional variable was simply not provided
-			dtype = variableModStmt(tokens);
+			{dtype = variableModStmt(tokens); if(!keepMods) clearModifiers();}
 		if (dtype == NULL) // if it fails a second time assume it's invalid
 			return NULL;
 		Token name = tokens.next();
@@ -1230,6 +1268,7 @@ namespace jimpilier
 			do
 			{
 				llvm::Type *dtype = jimpilier::variableModStmt(tokens);
+				if(!keepMods) clearModifiers(); 
 				if (tokens.peek() != IDENT)
 				{
 					logError("Expected identifier here:", tokens.currentToken());

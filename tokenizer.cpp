@@ -10,7 +10,7 @@ enum KeyToken{
     OPENCURL, CLOSECURL, OPENSQUARE, CLOSESQUARE, LPAREN, RPAREN, COMMA, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, //Done
     IF, ELSE, FOR, WHILE, CASE, SWITCH, RET, PRINT, PRINTLN,//Done
-    OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, PERIOD,//Done
+    OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, COLON, PERIOD,//Done
     CONST, SINGULAR, VOLATILE, PUBLIC, PRIVATE, PROTECTED, //Done
     SCONST, NUMCONST, //Done
     INT, SHORT, LONG, POINTER, FLOAT, DOUBLE, STRING, BOOL, CHAR, BYTE, //Done 
@@ -30,7 +30,7 @@ string keytokens[] {
     "OPENCURL","CLOSECURL", "OPENSQUARE", "CLOSESQUARE", "LPAREN","RPAREN", "COMMA",
     "PLUS","MINUS","MULT","DIV","LEFTOVER","POWERTO","POINTERTO","REFRENCETO",
     "IF","ELSE","FOR","WHILE","CASE","SWITCH", "RET", "PRINT", "PRINTLN",
-    "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL", "PERIOD",
+    "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL", "COLON", "PERIOD",
     "CONST","SINGULAR", "VOLATILE", "PUBLIC","PRIVATE","PROTECTED",
     "SCONST", "NUMCONST",
     "INT","SHORT","LONG","POINTER","FLOAT","DOUBLE","STRING","BOOL","CHAR","BYTE"
@@ -138,6 +138,7 @@ Token getNextToken(istream & s, int & line){
             else if (ch == '^') return Token(POWERTO, "^", line); 
             else if (ch == '%') return Token(LEFTOVER, "%", line); 
             else if (ch == ',') return Token(COMMA, ",", line); 
+            else if (ch == ':') return Token(COLON, ":", line); 
             else if (ch == '!') {
                 if(nextchar == '=') {s.get(); return Token(NOTEQUAL, "!=", line); }
                 return Token(NOT, "!", line);
