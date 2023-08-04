@@ -18,16 +18,10 @@ namespace jimpilier
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
 	std::map<std::string, llvm::Type *> dtypes;
-	std::map<KeyToken, bool> modifiers = 
-	{
-		{CONST, false}, {SINGULAR, false}, {VOLATILE, false}, 
-		{PUBLIC, false}, {PRIVATE, false}, {PROTECTED, false},
-	};
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
-	bool keepMods = false; 
 	bool errored = false;
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
@@ -120,8 +114,11 @@ namespace jimpilier
 		std::string variable;
 		std::unique_ptr<ExprAST> val;
 		llvm::Type *dtype;
+		bool isconst = false, isglbl = false; 
 
-		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value, llvm::Type *dtype = NULL) : variable(var), val(std::move(value)), dtype(dtype)
+		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value, 
+		llvm::Type *dtype = NULL, bool isConst = false, bool isGlobal= false) : 
+		variable(var), val(std::move(value)), dtype(dtype), isconst(isConst), isglbl(isGlobal)
 		{
 			if (dtype == NULL)
 				dtype = dtypes[variable];
@@ -141,7 +138,7 @@ namespace jimpilier
 				dtypes[variable] = dtype;
 			}
 			llvm::Value *endres = val->codegen();
-			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && !modifiers[CONST])
+			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && (!isconst))
 			{ 
 				llvm::Type *strtype = llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false);
 				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen",
@@ -153,7 +150,8 @@ namespace jimpilier
 				llvm::Value *args[] =
 					{
 						builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt), strlen, "strconstcpy"),
-						endres};
+						endres
+					};
 				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp");
 			}
 			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
@@ -576,17 +574,13 @@ namespace jimpilier
 		}
 	};
 
+	// <-- BEGINNING OF UTILITY FUNCTIONS -->
+
 	void logError(string s, Token t)
 	{
 		errored = true;
 		std::cout << s << ' ' << t.toString() << endl;
 	}
-	void clearModifiers(){
-		for(auto x : modifiers){
-				x.second = false; 
-		}
-	}
-
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
 
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
@@ -1101,7 +1095,6 @@ namespace jimpilier
 				}
 			}
 			// Operators.push_back(t) //Add this to the variable modifier memory
-			// return variableModStmt(tokens);
 		} //*/
 		logError("We don't recognise this data type; if it's an obj it may not be declared properly:", t);
 		return NULL;
@@ -1116,25 +1109,27 @@ namespace jimpilier
 	 * @param tokens
 	 * @return true if a valid function
 	 */
-	llvm::Type *variableModStmt(Stack<Token> &tokens)
+	std::map<KeyToken, bool> variableModStmt(Stack<Token> &tokens)
 	{
 		// clear variable modifier memory if possible
 		// TBI
 		Token t = tokens.peek(); 
-		if(t.token <= PROTECTED && t.token >= CONST){
-			clearModifiers();
-		}
+		std::map<KeyToken, bool> modifiers = 
+		{
+		{CONST, false}, {SINGULAR, false}, {VOLATILE, false}, 
+		{PUBLIC, false}, {PRIVATE, false}, {PROTECTED, false},
+		};
 		while((t = tokens.peek()).token <= PROTECTED && t.token >= CONST){
 			modifiers[t.token] = true; 
 			t = tokens.next();
 		}
-		if(tokens.peek() == COLON){ 
-			tokens.next(); 
-			keepMods = true;
-		}else{ 
-			keepMods = false;
-		}
-		return variableTypeStmt(tokens);
+		// if(tokens.peek() == COLON){ 
+			// tokens.next(); 
+			// keepMods = true;
+		// }else{ 
+			// keepMods = false;
+		// } 
+		return modifiers;
 	}
 
 	/**
@@ -1185,8 +1180,8 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
 	{
-		llvm::Type *dtype = variableModStmt(tokens);
-		if(!keepMods) clearModifiers();
+		std::map<KeyToken, bool> mods = variableModStmt(tokens);
+		llvm::Type *dtype = variableTypeStmt(tokens);
 		if (dtype == NULL)
 		{
 			return NULL;
@@ -1232,7 +1227,7 @@ namespace jimpilier
 			return NULL;
 		}
 		dtypes[name.lex] = dtype;
-		return std::make_unique<AssignStmtAST>(name.lex, value, dtype);
+		return std::make_unique<AssignStmtAST>(name.lex, value, dtype, mods[CONST], mods[SINGULAR]);
 	}
 
 	std::unique_ptr<ExprAST> declareOrAssign(Stack<Token> &tokens)
@@ -1251,7 +1246,7 @@ namespace jimpilier
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype = NULL)
 	{
 		if (dtype == NULL) // try parsing dtypes, assuming the optional variable was simply not provided
-			{dtype = variableModStmt(tokens); if(!keepMods) clearModifiers();}
+			{dtype = variableTypeStmt(tokens);}
 		if (dtype == NULL) // if it fails a second time assume it's invalid
 			return NULL;
 		Token name = tokens.next();
@@ -1267,8 +1262,7 @@ namespace jimpilier
 		if (tokens.peek().token >= INT)
 			do
 			{
-				llvm::Type *dtype = jimpilier::variableModStmt(tokens);
-				if(!keepMods) clearModifiers(); 
+				llvm::Type *dtype = jimpilier::variableTypeStmt(tokens);
 				if (tokens.peek() != IDENT)
 				{
 					logError("Expected identifier here:", tokens.currentToken());
