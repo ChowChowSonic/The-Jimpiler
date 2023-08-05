@@ -13,6 +13,11 @@
 #include "llvm/FileCheck/FileCheck.h"
 namespace jimpilier
 {
+	/*
+	 * General Naming rule: 
+	 * "___Stmt" = anything that does more than it may appear on the back end 
+	 * "___Expr" = Anything that does what it can in a relatively straightforward way
+	 */
 	std::unique_ptr<llvm::LLVMContext> ctxt;
 	std::unique_ptr<llvm::IRBuilder<>> builder;
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
@@ -83,81 +88,6 @@ namespace jimpilier
 			return builder->CreateLoad(dtypes[Name], V, Name);
 		}
 	};
-	/**
-	 * @brief Represents a return statement for a function
-	 * TODO: Add type casting here
-	 */
-	class RetExprAST : public ExprAST
-	{
-		unique_ptr<ExprAST> ret;
-
-	public:
-		RetExprAST(unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
-		llvm::Value *codegen()
-		{
-			if (DEBUGGING)
-				std::cout << "return ";
-			llvm::Value *retval = ret->codegen();
-			if (retval->getType() != currentFunction->getReturnType())
-			{
-				// builder->CreateCast() //Add type casting here
-			}
-			if (retval == NULL)
-				return NULL;
-			return builder->CreateRet(retval);
-		}
-	};
-
-	class AssignStmtAST : public ExprAST
-	{
-	public:
-		std::string variable;
-		std::unique_ptr<ExprAST> val;
-		llvm::Type *dtype;
-		bool isconst = false, isglbl = false; 
-
-		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value, 
-		llvm::Type *dtype = NULL, bool isConst = false, bool isGlobal= false) : 
-		variable(var), val(std::move(value)), dtype(dtype), isconst(isConst), isglbl(isGlobal)
-		{
-			if (dtype == NULL)
-				dtype = dtypes[variable];
-		}
-
-		llvm::Value *codegen()
-		{
-			if (variables[variable] == NULL)
-			{
-				if (dtype == NULL)
-				{
-					std::cout << "Data type for variable " << variable << " is not defined yet!" << endl;
-					errored = true;
-					return NULL;
-				}
-				variables[variable] = builder->CreateAlloca(dtype, nullptr, variable);
-				dtypes[variable] = dtype;
-			}
-			llvm::Value *endres = val->codegen();
-			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && (!isconst))
-			{ 
-				llvm::Type *strtype = llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false);
-				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen",
-																							  llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), false));
-				llvm::FunctionCallee strcpyfunc = GlobalVarsAndFunctions->getOrInsertFunction("strcpy",
-																							  llvm::FunctionType::get(llvm::PointerType::getInt8PtrTy(*ctxt), {strtype, strtype}, false));
-				llvm::Value *strlen = builder->CreateCall(strlenfunc, endres, "strconstlen");
-				strlen = builder->CreateAdd(strlen, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), 1), "addtmp");
-				llvm::Value *args[] =
-					{
-						builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt), strlen, "strconstcpy"),
-						endres
-					};
-				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp");
-			}
-			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
-			return builder->CreateStore(endres, variables[variable]);
-		}
-	};
 
 	class IfExprAST : public ExprAST
 	{
@@ -224,18 +154,118 @@ namespace jimpilier
 		}
 	};
 
-	/** BinaryExprAST - Expression class for a binary operator.
+	class ListExprAST : public ExprAST
+	{
+	public:
+		std::vector<std::unique_ptr<ExprAST>> Contents;
+		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args) : Contents(std::move(Args)) {}
+		ListExprAST() {}
+
+		llvm::Value *codegen()
+		{
+			llvm::Value *ret = NULL;
+			if (DEBUGGING)
+				std::cout << "[ ";
+			for (auto i = Contents.begin(); i < Contents.end(); i++)
+			{
+				ret = i->get()->codegen();
+				if (i != Contents.end() - 1 && DEBUGGING)
+					std::cout << ", ";
+			};
+			if (DEBUGGING)
+				std::cout << " ]";
+			return ret;
+		}
+	};
+
+	/**
+	 * @brief Represents a return statement for a function
+	 * TODO: Add type casting here
+	 */
+	class RetStmtAST : public ExprAST
+	{
+		unique_ptr<ExprAST> ret;
+
+	public:
+		RetStmtAST(unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
+		llvm::Value *codegen()
+		{
+			if (DEBUGGING)
+				std::cout << "return ";
+			llvm::Value *retval = ret->codegen();
+			if (retval->getType() != currentFunction->getReturnType())
+			{
+				// builder->CreateCast() //Add type casting here
+			}
+			if (retval == NULL)
+				return NULL;
+			return builder->CreateRet(retval);
+		}
+	};
+
+	class AssignStmtAST : public ExprAST
+	{
+	public:
+		std::string variable;
+		std::unique_ptr<ExprAST> val;
+		llvm::Type *dtype;
+		bool isconst = false, isglbl = false; 
+
+		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value, 
+		llvm::Type *dtype = NULL, bool isConst = false, bool isGlobal= false) : 
+		variable(var), val(std::move(value)), dtype(dtype), isconst(isConst), isglbl(isGlobal)
+		{
+			if (dtype == NULL)
+				dtype = dtypes[variable];
+		}
+
+		llvm::Value *codegen()
+		{
+			if (variables[variable] == NULL)
+			{
+				if (dtype == NULL)
+				{
+					std::cout << "Data type for variable " << variable << " is not defined yet!" << endl;
+					errored = true;
+					return NULL;
+				}
+				variables[variable] = builder->CreateAlloca(dtype, nullptr, variable);
+				dtypes[variable] = dtype;
+			}
+			llvm::Value *endres = val->codegen();
+			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && (!isconst))
+			{ 
+				llvm::Type *strtype = llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false);
+				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen",
+																							  llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), false));
+				llvm::FunctionCallee strcpyfunc = GlobalVarsAndFunctions->getOrInsertFunction("strcpy",
+																							  llvm::FunctionType::get(llvm::PointerType::getInt8PtrTy(*ctxt), {strtype, strtype}, false));
+				llvm::Value *strlen = builder->CreateCall(strlenfunc, endres, "strconstlen");
+				strlen = builder->CreateAdd(strlen, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), 1), "addtmp");
+				llvm::Value *args[] =
+					{
+						builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt), strlen, "strconstcpy"),
+						endres
+					};
+				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp");
+			}
+			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
+			return builder->CreateStore(endres, variables[variable]);
+		}
+	};
+
+	/** BinaryStmtAST - Expression class for a binary operator.
 	 * TODO: Add type casting here through the 'AS' operator; I.E.
 	 * "x AS string"
 	 * TODO: Fix type management with the codegen() function
 	 */
-	class BinaryExprAST : public ExprAST
+	class BinaryStmtAST : public ExprAST
 	{
 		string Op;
 		unique_ptr<ExprAST> LHS, RHS;
 
 	public:
-		BinaryExprAST(string op, /* llvm::Type* type,*/ unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
+		BinaryStmtAST(string op, /* llvm::Type* type,*/ unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 		llvm::Value *codegen()
 		{
@@ -329,29 +359,7 @@ namespace jimpilier
 	/**
 	 * Represents a list of items in code, usually represented by a string such as "[1, 2, 3, 4, 5]" alongside an optional semicolon on the end
 	 */
-	class ListExprAST : public ExprAST
-	{
-	public:
-		std::vector<std::unique_ptr<ExprAST>> Contents;
-		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args) : Contents(std::move(Args)) {}
-		ListExprAST() {}
-
-		llvm::Value *codegen()
-		{
-			llvm::Value *ret = NULL;
-			if (DEBUGGING)
-				std::cout << "[ ";
-			for (auto i = Contents.begin(); i < Contents.end(); i++)
-			{
-				ret = i->get()->codegen();
-				if (i != Contents.end() - 1 && DEBUGGING)
-					std::cout << ", ";
-			};
-			if (DEBUGGING)
-				std::cout << " ]";
-			return ret;
-		}
-	};
+	
 	/**
 	 * Class representing a print statement in the Abstract Syntax Tree (AST)
 	 * Inherits from ExprAST base class
@@ -592,7 +600,7 @@ namespace jimpilier
 			return NULL;
 		Token t;
 		std::unique_ptr<ExprAST> b = std::make_unique<NumberExprAST>(1);
-		while ((t = tokens.next()).token != SEMICOL && (t.token == IDENT || t.token == COMMA) && b)
+		while (!errored && (t = tokens.next()).token != SEMICOL && (t.token == IDENT || t.token == COMMA) && b)
 		{
 			if (t == IDENT)
 			{
@@ -654,6 +662,10 @@ namespace jimpilier
 		else if (tokens.peek() == IDENT)
 		{
 			Token s = tokens.next();
+			if(dtypes[s.lex] == NULL){
+				logError("You tried to use a variable before you declare it! Variable causing this error:",s);
+				return NULL; 
+			}
 			return std::make_unique<VariableExprAST>(s.lex);
 		}
 		else if (tokens.peek() == NUMCONST)
@@ -699,7 +711,7 @@ namespace jimpilier
 					return NULL;
 				}
 				params.push_back(std::move(param));
-			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+			} while (!errored && (tokens.peek() == COMMA && tokens.next() == COMMA));
 		if (tokens.next() != RPAREN)
 		{
 			logError("Expected a closing parethesis '(' here:", tokens.currentToken());
@@ -716,7 +728,7 @@ namespace jimpilier
 			Token t = tokens.next();
 			std::string op = &t.lex[0];
 			LHS = std::move(functionCallExpr(tokens));
-			return std::make_unique<BinaryExprAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
+			return std::make_unique<BinaryStmtAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
 		LHS = std::move(functionCallExpr(tokens));
 		if (LHS == NULL)
@@ -727,7 +739,7 @@ namespace jimpilier
 		{
 			Token t = tokens.next();
 			std::string op = &t.lex[0];
-			return std::make_unique<BinaryExprAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
+			return std::make_unique<BinaryStmtAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
 		return LHS;
 	}
@@ -740,17 +752,17 @@ namespace jimpilier
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> RHS = std::move(incDecExpr(tokens));
 
-		while (tokens.peek() == POWERTO || tokens.peek() == LEFTOVER)
+		while (!errored && (tokens.peek() == POWERTO || tokens.peek() == LEFTOVER))
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(term(tokens)));
+			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(term(tokens)));
 			if (!LHS)
 			{
 				logError("Error parsing a term in raisedToExpr ", t);
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> multAndDivExpr(Stack<Token> &tokens)
@@ -761,17 +773,17 @@ namespace jimpilier
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> RHS = std::move(raisedToExpr(tokens));
 
-		while (tokens.peek() == MULT || tokens.peek() == DIV)
+		while (!errored && (tokens.peek() == MULT || tokens.peek() == DIV))
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(raisedToExpr(tokens)));
+			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(raisedToExpr(tokens)));
 			if (!LHS)
 			{
 				logError("Error parsing a term in multDivExpr ", t);
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -781,7 +793,7 @@ namespace jimpilier
 	 *
 	 * expr		-> <TERM> <join> <expr> | <TERM>
 	 * join		-> "+" | "-" | "*" | "/" | "^"
-	 * term is denfined in the function of the same name -> "std::unique_ptr<ExprAST> term(Stack<Token> tokens)"
+	 * term is denfined in the function of the same name -> "std::unique_ptr<ExprAST> term(Stack<Token> &tokens)"
 	 * @param tokens
 	 * @return true - if it is a valid statement,
 	 * @return NULL otherwise
@@ -794,17 +806,17 @@ namespace jimpilier
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> RHS = std::move(multAndDivExpr(tokens));
 
-		while (tokens.peek() == PLUS || tokens.peek() == MINUS)
+		while (!errored && (tokens.peek() == PLUS || tokens.peek() == MINUS))
 		{
 			t = tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(multAndDivExpr(tokens)));
+			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(multAndDivExpr(tokens)));
 			if (!LHS)
 			{
 				logError("Error parsing a term in mathExpr", t);
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> greaterLessStmt(Stack<Token> &tokens)
@@ -814,12 +826,12 @@ namespace jimpilier
 			return LHS;
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> RHS = std::move(mathExpr(tokens));
-		while (tokens.peek() == GREATER || tokens.peek() == LESS)
+		while (!errored && (tokens.peek() == GREATER || tokens.peek() == LESS))
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(mathExpr(tokens)));
+			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(mathExpr(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -840,12 +852,12 @@ namespace jimpilier
 			return LHS;
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> RHS = std::move(greaterLessStmt(tokens));
-		while (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL)
+		while (!errored && (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL))
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(greaterLessStmt(tokens)));
+			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(greaterLessStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
@@ -855,12 +867,12 @@ namespace jimpilier
 			return LHS;
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> RHS = std::move(compareStmt(tokens));
-		while (tokens.peek() == AND)
+		while (!errored && tokens.peek() == AND)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(compareStmt(tokens)));
+			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(compareStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -889,12 +901,12 @@ namespace jimpilier
 			return LHS;
 		Token t = tokens.next();
 		std::unique_ptr<ExprAST> RHS = std::move(andStmt(tokens));
-		while (tokens.peek() == OR)
+		while (!errored && tokens.peek() == OR)
 		{
 			tokens.next();
-			RHS = std::make_unique<BinaryExprAST>(t.lex, std::move(RHS), std::move(andStmt(tokens)));
+			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(andStmt(tokens)));
 		}
-		return std::make_unique<BinaryExprAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
 	/**
@@ -926,7 +938,7 @@ namespace jimpilier
 				logError("Error when parsing list:", tokens.currentToken());
 				return NULL;
 			}
-		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.peek() != CLOSESQUARE)
 		{
 			logError("Expected a closing square parenthesis here", tokens.currentToken());
@@ -973,7 +985,7 @@ namespace jimpilier
 				return NULL;
 			if (LHS != NULL)
 				contents.push_back(std::move(LHS));
-		} while (tokens.peek() != CLOSECURL && !tokens.eof());
+		} while (!errored && tokens.peek() != CLOSECURL && !tokens.eof());
 		if (tokens.peek() != CLOSECURL || tokens.eof())
 		{
 			logError("Unbalanced curly brace after this token:", tokens.currentToken());
@@ -1000,7 +1012,7 @@ namespace jimpilier
 		logError("Error parsing a term in obj", tokens.peek());
 		return NULL;
 	}
-	llvm::Type* variableTypeStmt(Stack<Token>& tokens){
+	llvm::Type* variableTypeStmt(Stack<Token> &tokens){
 		Token t = tokens.peek();
 		if(t.token < INT){
 			logError("We don't recognise this data type; if it's an obj it may not be declared properly:", t); 
@@ -1278,7 +1290,7 @@ namespace jimpilier
 				argnames.push_back(t.lex);
 				argtypes.push_back(dtype);
 				dtypes[t.lex] = dtype;
-			} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+			} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.peek() == RPAREN)
 		{
 			tokens.next();
@@ -1288,7 +1300,6 @@ namespace jimpilier
 				dtypes[arg] = NULL;
 			if (body == NULL)
 			{
-				logError("Error in the body of function:", name);
 				dtypes[name.lex] = NULL;
 				return NULL;
 			}
@@ -1434,40 +1445,65 @@ namespace jimpilier
 				return NULL;
 			bodies.push_back(std::move(body));
 
-		} while (tokens.peek() == ELSE && tokens.next() == ELSE);
+		} while (!errored && tokens.peek() == ELSE && tokens.next() == ELSE);
 
 		return std::make_unique<IfExprAST>(std::move(conds), std::move(bodies));
 	}
 
 	std::unique_ptr<ExprAST> caseStmt(Stack<Token> &tokens)
 	{
-		Token variable = tokens.next();
-		if (variable.token != SCONST && variable.token != NUMCONST && variable.token != TRU && variable.token != FALS)
-		{
-			logError("I forget why this is here lol", variable);
-			return NULL;
-		}
-		logError("Error in CaseStmt()", variable);
 		return NULL; // Leaving this for now because I have to figure the specifics out later...
 	}
 
 	/**
 	 * @brief parses a switch stmt, alongside it's associated case stmts.
-	 *  TODO: Get this function off the ground
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> caseSwitchStmt(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> switchStmt(Stack<Token> &tokens)
 	{
-		Token variable = tokens.next();
-		if (variable != IDENT)
-		{
-			tokens.go_back();
-			logError("Expecting a variable at this token:", variable);
+		bool autobreak = false; 
+		if (tokens.next() != SWITCH){
+			logError("Somehow was expecting a switch stmt when there is no switch. Wtf.", tokens.currentToken());
 			return NULL;
 		}
-		return NULL;
+		if(tokens.peek() == AUTO){ 
+			tokens.next(); 
+			Token nextTok = tokens.next();
+			if (nextTok == BREAK){
+				autobreak = true; 
+			}else{
+				logError("Unknown option after 'auto'; did you mean 'break'?", tokens.currentToken());
+				return NULL; 
+			}
+		}
+		std::unique_ptr<ExprAST> variable = std::move(logicStmt(tokens));
+		if (variable == NULL)
+			return NULL;
+		if (tokens.next() != OPENCURL){
+			logError("Sorry! Switch Statements MUST have a set of curly braces after them; A switch without multiple switches is just pointless!", tokens.currentToken());
+			return NULL; 
+		}
+		std::vector<std::unique_ptr<ExprAST>> cases, conds; 
+		do{
+			Token nxt= tokens.next();
+			if(nxt == CASE){
+				std::unique_ptr<ExprAST> value = std::move(logicStmt(tokens)); 
+				std::unique_ptr<ExprAST> cond = std::make_unique<BinaryStmtAST>("==", std::move(variable), std::move(value)); 
+				conds.push_back(std::move(cond)); 
+			}else if (nxt != DEFAULT){
+			logError("Expected either 'case' or 'default' here:", tokens.currentToken());
+			return NULL; 
+			}
+			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
+			cases.push_back(std::move(body)); 
+		}while(!errored && (tokens.peek() == CASE || tokens.peek() == DEFAULT)); 
+		
+		tokens.next();
+		// if(autobreak)
+		return std::make_unique<IfExprAST>(std::move(conds), std::move(cases)); 
+		//return NULL;
 	}
 	std::unique_ptr<ExprAST> retStmt(Stack<Token> &tokens)
 	{
@@ -1481,7 +1517,7 @@ namespace jimpilier
 		{
 			return NULL;
 		}
-		return std::make_unique<RetExprAST>(val);
+		return std::make_unique<RetStmtAST>(val);
 	}
 
 	std::unique_ptr<ExprAST> printStmt(Stack<Token> &tokens)
@@ -1523,7 +1559,7 @@ namespace jimpilier
 		case IF:
 			return std::move(jimpilier::ifStmt(tokens));
 		case SWITCH:
-			return std::move(jimpilier::caseSwitchStmt(tokens));
+			return std::move(jimpilier::switchStmt(tokens));
 		case CASE:
 			return std::move(jimpilier::caseStmt(tokens));
 		case OBJECT:
@@ -1612,7 +1648,7 @@ namespace jimpilier
 			return s;
 		}
 		int ln = 1;
-		while (!file.eof())
+		while (!errored && !file.eof())
 		{
 			Token t = getNextToken(file, ln);
 			t.ln = ln;
