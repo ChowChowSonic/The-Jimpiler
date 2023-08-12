@@ -121,6 +121,68 @@ namespace jimpilier
 		}
 	};
 
+	class SwitchExprAST : public ExprAST
+	{
+	public:
+		std::vector<std::unique_ptr<ExprAST>> condition, body;
+		std::unique_ptr<ExprAST> comp; 
+		bool autoBr; 
+		SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak) : 
+			condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak) {}
+		llvm::Value *codegen()
+		{
+			llvm::Value* comparatorValue = comp->codegen(); 
+			int i = 0;
+			std::vector<llvm::BasicBlock*> bodBlocks; 
+			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction);
+			llvm::BasicBlock* condblock = llvm::BasicBlock::Create(*ctxt, "condition", currentFunction, glblend), *falseblock = llvm::BasicBlock::Create(*ctxt, "condition", currentFunction, glblend); 
+			llvm::BasicBlock* bodblock = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, glblend); 
+			builder->CreateBr(condblock);
+			builder->SetInsertPoint(condblock); 
+			for (i = condition.size()-1; i >= 0; i--){
+				bodBlocks.emplace_back(bodblock); 
+				llvm::Value* cmpresult; 
+				switch(comparatorValue->getType()->getTypeID()){
+					case(llvm::Type::IntegerTyID):
+						cmpresult= builder->CreateICmpEQ(comparatorValue, condition[i]->codegen(), "cmptmp"); 
+						break;
+					case(llvm::Type::FloatTyID):
+						cmpresult= builder->CreateFCmpOEQ(comparatorValue, condition[i]->codegen(), "cmptmp"); 
+						break;
+					default:
+						llvm::FunctionCallee strcmpFunc = GlobalVarsAndFunctions->getOrInsertFunction("strcmp", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt)},false)); 
+						cmpresult= builder->CreateCall(strcmpFunc, {comparatorValue, condition[i]->codegen()}, "strcmptmp");
+						cmpresult= builder->CreateICmpEQ(cmpresult, llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true)), "cmptmp"); 
+						break; 
+				}
+				
+				if(i > 0){
+				builder->CreateCondBr(cmpresult, bodblock, falseblock); 
+				condblock = falseblock; 
+				if(i > 1)
+					falseblock = llvm::BasicBlock::Create(*ctxt, "condition", currentFunction, glblend); 
+				bodblock = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, glblend);
+				builder->SetInsertPoint(condblock); 
+				}else{
+					builder->CreateCondBr(cmpresult, bodblock, glblend); 
+				}
+			}
+
+			for(i = 0; i < body.size(); i++){
+				builder->SetInsertPoint(bodBlocks[i]); 
+				body[i]->codegen(); 
+				if(!autoBr && i < body.size()-1)
+					builder->CreateBr(bodBlocks[i-1]);
+				else
+					builder->CreateBr(glblend);
+
+			}
+			builder->SetInsertPoint(glblend);
+			return glblend;
+		}
+	};
+
+
 	class ForExprAST : public ExprAST
 	{
 	public:
@@ -1485,13 +1547,12 @@ namespace jimpilier
 			logError("Sorry! Switch Statements MUST have a set of curly braces after them; A switch without multiple switches is just pointless!", tokens.currentToken());
 			return NULL; 
 		}
-		std::vector<std::unique_ptr<ExprAST>> cases, conds; 
+		std::vector<std::unique_ptr<ExprAST>> cases, conds;
 		do{
 			Token nxt= tokens.next();
 			if(nxt == CASE){
 				std::unique_ptr<ExprAST> value = std::move(logicStmt(tokens)); 
-				std::unique_ptr<ExprAST> cond = std::make_unique<BinaryStmtAST>("==", std::move(variable), std::move(value)); 
-				conds.push_back(std::move(cond)); 
+				conds.push_back(std::move(value)); 
 			}else if (nxt != DEFAULT){
 			logError("Expected either 'case' or 'default' here:", tokens.currentToken());
 			return NULL; 
@@ -1502,9 +1563,10 @@ namespace jimpilier
 		
 		tokens.next();
 		// if(autobreak)
-		return std::make_unique<IfExprAST>(std::move(conds), std::move(cases)); 
+		return std::make_unique<SwitchExprAST>(std::move(variable), std::move(conds), std::move(cases), autobreak); 
 		//return NULL;
 	}
+
 	std::unique_ptr<ExprAST> retStmt(Stack<Token> &tokens)
 	{
 		if (tokens.next() != RET)
