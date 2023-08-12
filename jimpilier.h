@@ -126,59 +126,31 @@ namespace jimpilier
 	public:
 		std::vector<std::unique_ptr<ExprAST>> condition, body;
 		std::unique_ptr<ExprAST> comp; 
+		int def;
 		bool autoBr; 
-		SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak) : 
-			condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak) {}
+		SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak, int defaultLoc = -1) : 
+			condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak), def(defaultLoc) {}
 		llvm::Value *codegen()
 		{
-			llvm::Value* comparatorValue = comp->codegen(); 
-			int i = 0;
-			std::vector<llvm::BasicBlock*> bodBlocks; 
-			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction);
-			llvm::BasicBlock* condblock = llvm::BasicBlock::Create(*ctxt, "condition", currentFunction, glblend), *falseblock = llvm::BasicBlock::Create(*ctxt, "condition", currentFunction, glblend); 
-			llvm::BasicBlock* bodblock = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, glblend); 
-			builder->CreateBr(condblock);
-			builder->SetInsertPoint(condblock); 
-			for (i = condition.size()-1; i >= 0; i--){
-				bodBlocks.emplace_back(bodblock); 
-				llvm::Value* cmpresult; 
-				switch(comparatorValue->getType()->getTypeID()){
-					case(llvm::Type::IntegerTyID):
-						cmpresult= builder->CreateICmpEQ(comparatorValue, condition[i]->codegen(), "cmptmp"); 
-						break;
-					case(llvm::Type::FloatTyID):
-						cmpresult= builder->CreateFCmpOEQ(comparatorValue, condition[i]->codegen(), "cmptmp"); 
-						break;
-					default:
-						llvm::FunctionCallee strcmpFunc = GlobalVarsAndFunctions->getOrInsertFunction("strcmp", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt)},false)); 
-						cmpresult= builder->CreateCall(strcmpFunc, {comparatorValue, condition[i]->codegen()}, "strcmptmp");
-						cmpresult= builder->CreateICmpEQ(cmpresult, llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true)), "cmptmp"); 
-						break; 
-				}
-				
-				if(i > 0){
-				builder->CreateCondBr(cmpresult, bodblock, falseblock); 
-				condblock = falseblock; 
-				if(i > 1)
-					falseblock = llvm::BasicBlock::Create(*ctxt, "condition", currentFunction, glblend); 
-				bodblock = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, glblend);
-				builder->SetInsertPoint(condblock); 
-				}else{
-					builder->CreateCondBr(cmpresult, bodblock, glblend); 
-				}
-			}
-
-			for(i = 0; i < body.size(); i++){
-				builder->SetInsertPoint(bodBlocks[i]); 
+			std::vector<llvm::BasicBlock*> bodBlocks;
+			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
+			llvm::SwitchInst* val = builder->CreateSwitch(comp->codegen(), glblend, body.size()); 
+			int i=body.size()-1;
+			do{
+				llvm::BasicBlock* currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody); 
+				bodBlocks.push_back(currentbody); 
+				builder->SetInsertPoint(currentbody); 
 				body[i]->codegen(); 
-				if(!autoBr && i < body.size()-1)
-					builder->CreateBr(bodBlocks[i-1]);
-				else
-					builder->CreateBr(glblend);
-
-			}
-			builder->SetInsertPoint(glblend);
-			return glblend;
+				builder->CreateBr(autoBr ? glblend : lastbody); 
+				if(condition[i] != NULL)
+					val->addCase((llvm::ConstantInt*)condition[i]->codegen(), currentbody); 
+				lastbody = currentbody; 
+				i-=1; 
+			}while( i >= 0); 
+			if(def >=0)
+				val->setDefaultDest(bodBlocks[bodBlocks.size()-1-def]); 
+			builder->SetInsertPoint(glblend); 
+			return val; 
 		}
 	};
 
@@ -1548,22 +1520,28 @@ namespace jimpilier
 			return NULL; 
 		}
 		std::vector<std::unique_ptr<ExprAST>> cases, conds;
+		int defaultposition = -1, ctr = 0; 
 		do{
 			Token nxt= tokens.next();
+			std::unique_ptr<ExprAST> value;
 			if(nxt == CASE){
-				std::unique_ptr<ExprAST> value = std::move(logicStmt(tokens)); 
+				value = std::move(logicStmt(tokens)); 
 				conds.push_back(std::move(value)); 
-			}else if (nxt != DEFAULT){
-			logError("Expected either 'case' or 'default' here:", tokens.currentToken());
-			return NULL; 
+			}else if (nxt == DEFAULT){
+				defaultposition = ctr; 
+				conds.push_back(NULL);
+			}else {
+				logError("Expected either 'case' or 'default' here:", tokens.currentToken());
+				return NULL; 
 			}
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
 			cases.push_back(std::move(body)); 
+			ctr++; 
 		}while(!errored && (tokens.peek() == CASE || tokens.peek() == DEFAULT)); 
 		
 		tokens.next();
 		// if(autobreak)
-		return std::make_unique<SwitchExprAST>(std::move(variable), std::move(conds), std::move(cases), autobreak); 
+		return std::make_unique<SwitchExprAST>(std::move(variable), std::move(conds), std::move(cases), autobreak, defaultposition); 
 		//return NULL;
 	}
 
