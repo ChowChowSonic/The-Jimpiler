@@ -25,6 +25,11 @@ namespace jimpilier
 	std::map<std::string, llvm::Type *> dtypes;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
+	/**
+	 * @brief In the event that a Break statement is called (I.E. in a for loop or switch statements), the compilier will automatically jump to the top block in this stack
+	 * 
+	 */
+	std::stack<llvm::BasicBlock*> escapeBlock; 
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;
@@ -135,6 +140,7 @@ namespace jimpilier
 			std::vector<llvm::BasicBlock*> bodBlocks;
 			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
 			llvm::SwitchInst* val = builder->CreateSwitch(comp->codegen(), glblend, body.size()); 
+			escapeBlock.push(glblend); 
 			int i=body.size()-1;
 			do{
 				llvm::BasicBlock* currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody); 
@@ -150,11 +156,31 @@ namespace jimpilier
 			if(def >=0)
 				val->setDefaultDest(bodBlocks[bodBlocks.size()-1-def]); 
 			builder->SetInsertPoint(glblend); 
+			escapeBlock.pop(); 
 			return val; 
 		}
 	};
 
-
+/**
+ * @brief represents a break statement with optional label. Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none 
+ * TODO: Get labels working if possible
+ */
+	class BreakExprAST : public ExprAST{
+		
+		string labelVal; 
+		public:
+		BreakExprAST(string label = "") : labelVal(label){}
+		llvm::Value* codegen(){
+			if(escapeBlock.empty()) return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true)); 
+			// if (labelVal != "") 
+			return builder->CreateBr(escapeBlock.top()); 
+		}
+	}; 
+	/**
+	 * @brief Represents a for loop in LLVM IR, currently does not support for each statements
+	 * TODO: Implement forEach statements
+	 * 
+	 */
 	class ForExprAST : public ExprAST
 	{
 	public:
@@ -171,6 +197,7 @@ namespace jimpilier
 		{
 			llvm::Value *retval;
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
+			escapeBlock.push(end);
 			for (int i = 0; i < prefix.size(); i++)
 			{
 				llvm::Value *startval = prefix[i]->codegen();
@@ -184,6 +211,7 @@ namespace jimpilier
 			}
 			builder->CreateCondBr(condition->codegen(), start, end);
 			builder->SetInsertPoint(end);
+			escapeBlock.pop(); 
 			return retval;
 		}
 	};
@@ -214,7 +242,6 @@ namespace jimpilier
 
 	/**
 	 * @brief Represents a return statement for a function
-	 * TODO: Add type casting here
 	 */
 	class RetStmtAST : public ExprAST
 	{
@@ -1626,6 +1653,9 @@ namespace jimpilier
 		case PRINTLN:
 		case PRINT:
 			return std::move(jimpilier::printStmt(tokens));
+		case BREAK:
+			tokens.next();
+			return std::make_unique<BreakExprAST>(); 
 		case INT:
 		case SHORT:
 		case POINTER:
