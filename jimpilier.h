@@ -26,7 +26,8 @@ namespace jimpilier
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	/**
-	 * @brief In the event that a Break statement is called (I.E. in a for loop or switch statements), the compilier will automatically jump to the top block in this stack
+	 * @brief In the event that a Break statement is called (I.E. in a for loop or switch statements), 
+	 * the compilier will automatically jump to the top llvm::BasicBlock in this stack
 	 * 
 	 */
 	std::stack<llvm::BasicBlock*> escapeBlock; 
@@ -69,7 +70,9 @@ namespace jimpilier
 		{
 			if (DEBUGGING)
 				std::cout << Val;
-			return builder->CreateGlobalStringPtr(Val, "Sconst");
+			// if(Val.length() > 1)
+				return builder->CreateGlobalStringPtr(Val, "Sconst");
+			// return llvm::ConstantInt::get(llvm::Type::getInt8Ty(*ctxt), llvm::APInt(8, Val[0])); 
 		}
 	};
 
@@ -91,6 +94,31 @@ namespace jimpilier
 				return nullptr;
 			}
 			return builder->CreateLoad(dtypes[Name], V, Name);
+		}
+	};
+
+	class TypeCastExprAST : public ExprAST{
+		std::unique_ptr<ExprAST> from; 
+		llvm::Type* to; 
+		public:
+		TypeCastExprAST(std::unique_ptr<ExprAST>& fromval, llvm::Type* toVal) : from(std::move(fromval)), to(toVal){}; 
+
+		llvm::Value* codegen(){
+			llvm::Value* init = from->codegen(); 
+			if(init->getType() == to) return init; 
+			llvm::Instruction::CastOps op; 
+			switch(init->getType()->getTypeID()){
+				case(llvm::Type::IntegerTyID):
+					if(to->getTypeID() == llvm::Type::FloatTyID)
+						op = llvm::Instruction::CastOps::SIToFP;
+					if(to->getTypeID() == llvm::Type::HalfTyID)
+						op = llvm::Instruction::CastOps::Trunc;
+					if(to->getTypeID() == llvm::Type::PointerTyID)
+						op = llvm::Instruction::CastOps::BitCast;
+					break; 
+
+			}
+			return builder->CreateCast(op, init, to);
 		}
 	};
 
@@ -452,7 +480,10 @@ namespace jimpilier
 					placeholder += "%f ";
 					break;
 				default:
-					placeholder += "%d ";
+					if(data->getType() == llvm::Type::getInt8Ty(*ctxt))
+						placeholder+="%c ";
+					else
+						placeholder += "%d ";
 				}
 				if (data != NULL)
 				{
@@ -654,6 +685,7 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
 	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens);
+	llvm::Type* variableTypeStmt(Stack<Token>& tokens);
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
@@ -781,6 +813,16 @@ namespace jimpilier
 		return std::make_unique<CallExprAST>(t.lex, params);
 	}
 
+	std::unique_ptr<ExprAST> typeAsExpr(Stack<Token> &tokens){
+		std::unique_ptr<ExprAST> convertee = std::move(functionCallExpr(tokens)); 
+		if(tokens.peek() != AS){
+			return convertee; 
+		}
+		tokens.next(); 
+		llvm::Type* toconv = variableTypeStmt(tokens);
+		return std::make_unique<TypeCastExprAST>(convertee, toconv);  
+	}
+
 	std::unique_ptr<ExprAST> incDecExpr(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> LHS;
@@ -788,10 +830,10 @@ namespace jimpilier
 		{
 			Token t = tokens.next();
 			std::string op = &t.lex[0];
-			LHS = std::move(functionCallExpr(tokens));
+			LHS = std::move(typeAsExpr(tokens));
 			return std::make_unique<BinaryStmtAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
 		}
-		LHS = std::move(functionCallExpr(tokens));
+		LHS = std::move(typeAsExpr(tokens));
 		if (LHS == NULL)
 		{
 			return NULL;
