@@ -74,5 +74,16 @@
         "set": "cpp",
         "cinttypes": "cpp"
     },
-    "C_Cpp.default.compilerPath": "/usr/bin/g++"
+    "C_Cpp.default.compilerPath": "/usr/bin/g++",
+    "todo-tree.general.rootFolder": "",
+    "todo-tree.general.schemes": [
+        "file",
+        "ssh",
+        "untitled"
+    ],
+    "todo-tree.general.statusBar": "current file",
+    "todo-tree.general.tagGroups": {
+
+    },
+    "todo-tree.general.debug": true
 }

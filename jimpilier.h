@@ -47,19 +47,24 @@ namespace jimpilier
 	{
 		double Val;
 		bool isInt = false;
+		bool isBool = false; 
 
 	public:
 		NumberExprAST(double Val) : Val(Val) {}
 		NumberExprAST(int Val) : Val(Val) { isInt = true; }
+		NumberExprAST(bool Val) : Val(Val) { isBool = true; }
 		llvm::Value *codegen()
 		{
 			if (DEBUGGING)
 				std::cout << Val;
 			if (isInt)
 				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, static_cast<long>(Val), true));
+				if(isBool)
+					return llvm::ConstantInt::get(*ctxt, llvm::APInt(1, Val == 1, true));
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat((float)Val));
 		}
 	};
+
 	class StringExprAST : public ExprAST
 	{
 		std::string Val;
@@ -232,11 +237,12 @@ namespace jimpilier
 			return val; 
 		}
 	};
-
-/**
- * @brief represents a break statement with optional label. Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none 
- * TODO: Get labels working if possible
- */
+	// TODO: Get labels working if possible
+	/**
+	 * @brief represents a break statement with optional label. 
+	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none 
+	 * 
+	 */
 	class BreakExprAST : public ExprAST{
 		
 		string labelVal; 
@@ -248,9 +254,9 @@ namespace jimpilier
 			return builder->CreateBr(escapeBlock.top()); 
 		}
 	}; 
+	// TODO: Implement forEach statements
 	/**
 	 * @brief Represents a for loop in LLVM IR, currently does not support for each statements
-	 * TODO: Implement forEach statements
 	 * 
 	 */
 	class ForExprAST : public ExprAST
@@ -287,7 +293,9 @@ namespace jimpilier
 			return retval;
 		}
 	};
-
+	/**
+	 * Represents a list of items in code, usually represented by a string such as "[1, 2, 3, 4, 5]" alongside an optional semicolon on the end
+	 */
 	class ListExprAST : public ExprAST
 	{
 	public:
@@ -386,11 +394,12 @@ namespace jimpilier
 			return builder->CreateStore(endres, variables[variable]);
 		}
 	};
-
+	// TODO: Add type casting here through the 'AS' operator; I.E.
+	// TODO: Fix type management with the codegen() function
 	/** BinaryStmtAST - Expression class for a binary operator.
-	 * TODO: Add type casting here through the 'AS' operator; I.E.
+	 * 
 	 * "x AS string"
-	 * TODO: Fix type management with the codegen() function
+	 * 
 	 */
 	class BinaryStmtAST : public ExprAST
 	{
@@ -410,29 +419,6 @@ namespace jimpilier
 			llvm::Value *R = RHS->codegen();
 			if (DEBUGGING)
 				std::cout << " )";
-
-			if (L->getType()->getTypeID() != R->getType()->getTypeID())
-			{
-				llvm::Instruction::CastOps castop;
-				llvm::Type *dest = NULL;
-				if (L->getType()->getTypeID() == llvm::Type::FloatTyID || R->getType()->getTypeID() == llvm::Type::FloatTyID)
-				{
-					castop = llvm::Instruction::SIToFP;
-					dest = llvm::Type::getFloatTy(*ctxt);
-				}
-				if (dest != NULL)
-				{
-					llvm::Value *v = (L->getType()->getTypeID() == dest->getTypeID()) ? R : L;
-					if (L->getType()->getTypeID() == dest->getTypeID())
-					{
-						R = builder->CreateCast(castop, v, dest, "typeCastTmp");
-					}
-					else
-					{
-						L = builder->CreateCast(castop, v, dest, "typeCastTmp");
-					}
-				}
-			}
 
 			switch (Op[0])
 			{
@@ -463,7 +449,8 @@ namespace jimpilier
 					return builder->CreateFCmpOEQ(L, R, "cmptmp");
 				if (L->getType() == llvm::Type::getInt32Ty(*ctxt) || R->getType() == llvm::Type::getInt32Ty(*ctxt))
 					return builder->CreateICmpEQ(L, R, "cmptmp");
-				return builder->CreateFCmpOEQ(L, R, "cmptmp");
+				if (L->getType() == llvm::Type::getInt1Ty(*ctxt) || R->getType() == llvm::Type::getInt1Ty(*ctxt))
+				return builder->CreateICmpEQ(L, R, "cmptmp");
 			case '>':
 				if (L->getType() == llvm::Type::getFloatTy(*ctxt) || R->getType() == llvm::Type::getFloatTy(*ctxt))
 					return builder->CreateFCmpOGT(L, R, "cmptmp");
@@ -476,6 +463,13 @@ namespace jimpilier
 				if (L->getType() == llvm::Type::getInt32Ty(*ctxt) || R->getType() == llvm::Type::getInt32Ty(*ctxt))
 					return builder->CreateICmpSLT(L, R, "cmptmp");
 				return builder->CreateFCmpOLT(L, R, "cmptmp");
+			case '!':
+				if (L->getType() == llvm::Type::getFloatTy(*ctxt) || R->getType() == llvm::Type::getFloatTy(*ctxt))
+					return builder->CreateFCmpONE(L, R, "cmptmp");
+				if (L->getType() == llvm::Type::getInt32Ty(*ctxt) || R->getType() == llvm::Type::getInt32Ty(*ctxt))
+					return builder->CreateICmpNE(L, R, "cmptmp");
+				if (L->getType() == llvm::Type::getInt1Ty(*ctxt) || R->getType() == llvm::Type::getInt1Ty(*ctxt))
+					return builder->CreateICmpNE(L, R, "cmptmp");
 			case '&':
 			case 'a':
 				return builder->CreateLogicalAnd(L, R, "andtmp");
@@ -489,15 +483,12 @@ namespace jimpilier
 		}
 	};
 
-	/**
-	 * Represents a list of items in code, usually represented by a string such as "[1, 2, 3, 4, 5]" alongside an optional semicolon on the end
-	 */
-	
+	// TODO: Add inline debugging print statements
+	// TODO: Finalize boolean support
 	/**
 	 * Class representing a print statement in the Abstract Syntax Tree (AST)
 	 * Inherits from ExprAST base class
-	 * TODO: Add inline debugging print statements
-	 * TODO: Finalize boolean support
+
 	 */
 	class PrintStmtAST : public ExprAST
 	{
@@ -774,12 +765,11 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype);
-
+	// TODO: Holy Fuckles It's Knuckles I need to revamp this function entirely.
 	/**
 	 * @brief using EBNF notation, a term is roughly defined as:
 	 *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<IDENT>["++"|"--"] | "true" | "NULL" | "(" <expr> ")";
 	 * However the ending [++|--] are only allowed if there is no (++|--) at the beginning of the term.
-	 * TODO: Holy Fuckles It's Knuckles I need to revamp this function entirely.
 	 *
 	 * @param tokens
 	 * @return true if the syntax is valid
@@ -819,8 +809,7 @@ namespace jimpilier
 			return std::make_unique<NumberExprAST>(stod(tokens.next().lex));
 		case(TRU):
 		case(FALS):
-			tokens.next(); 
-			return std::make_unique<NumberExprAST>(1); 
+			return std::make_unique<NumberExprAST>(tokens.next() == TRU); 
 		}
 		logError("Invalid term:", tokens.peek());
 		return NULL;
@@ -987,14 +976,14 @@ namespace jimpilier
 		}
 		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
-
+	// TODO: Fix and/or statements
 	/**
 	 * @brief checks for a basic <IDENT> (["=="|"!="] <IDENT>)* However,
 	 * I am torn between enabling N-way comparison (I.E.: "x == y == z == a == b").
 	 * No other programming languages that I know of include this, and I have a
 	 * feeling it's for good reason... But at the same time, I want to add it as I
 	 * feel that is extremely convienent in the situations it comes up in.
-	 * TODO: Fix and/or statements
+	 * 
 	 * @param tokens
 	 * @return true - if it is a valid statement,
 	 * @return NULL otherwise
@@ -1028,7 +1017,7 @@ namespace jimpilier
 		}
 		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
-
+	// TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
 	/**
 	 * @brief Parses a logic statement (I.E. "x == 5") consisting of only idents and string/number constants.
 	 * LogicStmt itself only parses OR Statements (x || y), but makes calls to functions like andStmt, compareStmt, etc. to do the rest.
@@ -1042,7 +1031,7 @@ namespace jimpilier
 	 * join			-> "and" | "or"
 	 * terminal		-> SCONST | NUMCONST | VARIABLE //Literal string number or variable values
 	 *
-	 * TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
+	 * 
 	 *
 	 * @param tokens
 	 * @return true - if it is a valid logic statement,
@@ -1148,10 +1137,10 @@ namespace jimpilier
 		tokens.next();
 		return std::move(std::make_unique<CodeBlockAST>(contents)); //*/
 	}
-
+	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses an object/class blueprint
-	 * TODO: Get this function off the ground
+	 * 
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -1469,10 +1458,10 @@ namespace jimpilier
 		dtypes[name.lex] = NULL;
 		return NULL;
 	}
-
+	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses a constructor for this class
-	 * TODO: Get this function off the ground
+	 * 
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -1497,9 +1486,10 @@ namespace jimpilier
 		return NULL;
 		// Need to handle closing curly bracket
 	}
+	// TODO: Get this fuction off the ground
 	/**
 	 * @brief Parses a destructor for a class
-	 * TODO: Get this fuction off the ground
+	 * 
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -1523,11 +1513,11 @@ namespace jimpilier
 		logError("Error in destruct()", t);
 		return NULL;
 	}
-
+	// TODO: Add support for do-while stmts
+	// TODO: Add support for while stmts
 	/**
 	 * @brief Parses a for statement header, followed by a body statement/block
-	 * TODO: Add support for do-while stmts
-	 * TODO: Add support for while stmts
+
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
@@ -1797,9 +1787,10 @@ namespace jimpilier
 		logError("Returning null on error?", tokens.currentToken());
 		return NULL;
 	}
+	// TODO: Move this function into driver code maybe ???
 	/**
 	 * @brief Takes a file name, opens the file, tokenizes it, and loads those into a custom Stack<Token> object
-	 *  TODO: Move this function into driver code maybe ???
+	 *  
 	 * @param fileDir
 	 * @return Stack<Token>
 	 */
@@ -1826,9 +1817,10 @@ namespace jimpilier
 		Stack<Token> s(tokens);
 		return s;
 	}
+	// TODO: Fix this whole damn function oh Lord help me
 	/**
 	 * @brief Soon-to-be depreciated
-	 * TODO: Fix this whole damn function oh Lord help me
+	 * 
 	 * @deprecated
 	 * @param fileDir
 	 * @return std::unique_ptr<ExprAST>
