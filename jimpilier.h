@@ -105,25 +105,69 @@ namespace jimpilier
 
 		llvm::Value* codegen(){
 			llvm::Value* init = from->codegen(); 
-			if(init->getType() == to) return init; 
 			llvm::Instruction::CastOps op; 
 			switch(init->getType()->getTypeID()){
 				case(llvm::Type::IntegerTyID):
-					if(to->getTypeID() == llvm::Type::FloatTyID)
+					if(to->getTypeID() == llvm::Type::FloatTyID){
 						op = llvm::Instruction::CastOps::SIToFP;
-					if(to->getTypeID() == llvm::Type::HalfTyID)
+					}else if(to->getTypeID() == llvm::Type::HalfTyID){
 						op = llvm::Instruction::CastOps::Trunc;
-					if(to->getTypeID() == llvm::Type::PointerTyID)
-						op = llvm::Instruction::CastOps::BitCast;
+					}else if(to->getTypeID() == llvm::Type::IntegerTyID){
+						if(to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth()) return init; 
+						op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc; 					
+					}else if(to->getTypeID() == llvm::Type::PointerTyID){
+						op = llvm::Instruction::CastOps::IntToPtr; 
+					}else{
+						std::cout << "Attempted conversion failed: "<<
+							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
+						errored= true; 
+					}
 					break; 
-
+				case(llvm::Type::HalfTyID):
+					if(to->getTypeID() == llvm::Type::FloatTyID){
+						op = llvm::Instruction::CastOps::SIToFP;
+					}else if(to->getTypeID() == llvm::Type::IntegerTyID){
+						if(to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth()) return init; 
+						op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc; 					
+					}else if(to->getTypeID() == llvm::Type::PointerTyID){
+						op = llvm::Instruction::CastOps::IntToPtr; 
+					}else{
+						std::cout << "Attempted conversion failed: "<<
+							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
+						errored= true; 
+					}
+					break; 
+				case(llvm::Type::DoubleTyID):
+					if(to->getTypeID() == llvm::Type::FloatTyID){
+						op = llvm::Instruction::CastOps::FPTrunc; 
+						break; 
+					}else if(to->getTypeID() == llvm::Type::DoubleTyID) return init; 
+				case(llvm::Type::FloatTyID):
+					if(to->getTypeID() == llvm::Type::DoubleTyID)
+						op = llvm::Instruction::CastOps::FPExt; 
+					else if(to->getTypeID() == llvm::Type::IntegerTyID)
+						op = llvm::Instruction::CastOps::FPToSI; 
+					else{
+						std::cout << "Attempted conversion failed: "<<
+							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
+						errored= true; 
+					}
+					break; 
+				case(llvm::Type::PointerTyID):
+					if(to->getTypeID() == llvm::Type::IntegerTyID)
+						op = llvm::Instruction::CastOps::PtrToInt; 
+					else{
+						std::cout << "Attempted conversion failed: "<<
+							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
+						errored= true; 
+					}
+					break; 
 			}
 			return builder->CreateCast(op, init, to);
 		}
 	};
 
-	class IfExprAST : public ExprAST
-	{
+	class IfExprAST : public ExprAST{
 	public:
 		std::vector<std::unique_ptr<ExprAST>> condition, body;
 		IfExprAST(std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod) : condition(std::move(cond)), body(std::move(bod)) {}
@@ -452,6 +496,8 @@ namespace jimpilier
 	/**
 	 * Class representing a print statement in the Abstract Syntax Tree (AST)
 	 * Inherits from ExprAST base class
+	 * TODO: Add inline debugging print statements
+	 * TODO: Finalize boolean support
 	 */
 	class PrintStmtAST : public ExprAST
 	{
@@ -473,17 +519,27 @@ namespace jimpilier
 				switch (data->getType()->getTypeID())
 				{
 				case (llvm::PointerType::PointerTyID):
-					placeholder += "%s ";
+					if(data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
+						placeholder += "%s ";
+					else placeholder+= "%p ";
 					break;
 				case (llvm::Type::TypeID::FloatTyID):
 					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
 					placeholder += "%f ";
 					break;
-				default:
-					if(data->getType() == llvm::Type::getInt8Ty(*ctxt))
+				case (llvm::Type::TypeID::IntegerTyID):
+					if(data->getType()->getIntegerBitWidth() == 64){
+						placeholder+= "%p ";
+					}else if(data->getType()->getIntegerBitWidth() == 16){
+						placeholder+="%hu "; 
+					}else if(data->getType() == llvm::Type::getInt8Ty(*ctxt)){
 						placeholder+="%c ";
-					else
+					} else {
 						placeholder += "%d ";
+					}
+					break;
+				default:
+					placeholder += "%p ";
 				}
 				if (data != NULL)
 				{
@@ -492,11 +548,7 @@ namespace jimpilier
 			}
 			// Create global string constant(s) for newline characters and the placeholder constant where needed.
 			if (isLine)
-			{
-				llvm::Constant *newline = builder->CreateGlobalStringPtr("\n", "newlineStr");
-				vals.push_back(newline);
-				placeholder += "%s";
-			}
+				placeholder += "\n";
 			llvm::Constant *globalString = builder->CreateGlobalStringPtr(placeholder);
 			vals.insert(vals.begin(), globalString);
 			// Initialize a function with no body to refrence C std libraries
@@ -746,32 +798,31 @@ namespace jimpilier
 				return LHS;
 			}
 		}
-
-		if (tokens.peek() == SCONST)
-		{
-			Token s = tokens.next();
+		Token s;
+		string x; 
+		switch(tokens.peek().token){
+		case (SCONST):
+			s = tokens.next();
 			return std::make_unique<StringExprAST>(s.lex);
-		}
-		else if (tokens.peek() == IDENT)
-		{
-			Token s = tokens.next();
+		case(IDENT):
+			s = tokens.next();
 			if(dtypes[s.lex] == NULL){
 				logError("You tried to use a variable before you declare it! Variable causing this error:",s);
 				return NULL; 
 			}
 			return std::make_unique<VariableExprAST>(s.lex);
-		}
-		else if (tokens.peek() == NUMCONST)
-		{
-			string x = tokens.peek().lex;
-			if (std::find(x.begin(), x.end(), '.') == x.end())
-			{
+		case(NUMCONST):
+			x = tokens.peek().lex;
+			if (std::find(x.begin(), x.end(), '.') == x.end()){
 				return std::make_unique<NumberExprAST>(stoi(tokens.next().lex));
 			}
 			return std::make_unique<NumberExprAST>(stod(tokens.next().lex));
+		case(TRU):
+		case(FALS):
+			tokens.next(); 
+			return std::make_unique<NumberExprAST>(1); 
 		}
-
-		logError("Invalid term:", tokens.currentToken());
+		logError("Invalid term:", tokens.peek());
 		return NULL;
 	}
 
@@ -1118,7 +1169,7 @@ namespace jimpilier
 	llvm::Type* variableTypeStmt(Stack<Token> &tokens){
 		Token t = tokens.peek();
 		if(t.token < INT){
-			logError("We don't recognise this data type; if it's an obj it may not be declared properly:", t); 
+			logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken()); 
 			return NULL; 
 		}
 		while (t.token >= INT)
@@ -1141,17 +1192,18 @@ namespace jimpilier
 					if (tokens.peek() == POINTER)
 					{
 						tokens.next();
-						return llvm::Type::getInt32PtrTy(*ctxt);
+						return llvm::Type::getInt16PtrTy(*ctxt);
 						break;
 					}
-					return llvm::Type::getInt32Ty(*ctxt);
+					return llvm::Type::getInt16Ty(*ctxt);
 					break;
 				case LONG:
 					if (tokens.peek() == POINTER)
 					{
 						tokens.next();
+						return llvm::Type::getInt64PtrTy(*ctxt);
 					}
-					return llvm::Type::getInt128Ty(*ctxt);
+					return llvm::Type::getInt64Ty(*ctxt);
 					break;
 				case FLOAT:
 					if (tokens.peek() == POINTER)
@@ -1207,12 +1259,16 @@ namespace jimpilier
 					}
 					return llvm::Type::getInt8Ty(*ctxt);
 					break;
+				default: 
+					tokens.go_back(); 
+					logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken());
+					return NULL;
 				}
 			}
 			// Operators.push_back(t) //Add this to the variable modifier memory
 		} //*/
-		logError("We don't recognise this data type; if it's an obj it may not be declared properly:", t);
-		return NULL;
+		logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken());
+		return NULL; 
 	}
 	/**
 	 * @brief Called whenever a modifier keyword are seen.
