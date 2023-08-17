@@ -320,6 +320,50 @@ namespace jimpilier
 		}
 	};
 
+	class DebugPrintExprAST : public ExprAST {
+		std::unique_ptr<ExprAST> val; 
+		int ln; 
+		public:
+		DebugPrintExprAST(std::unique_ptr<ExprAST> printval, int line) : val(std::move(printval)), ln(line) {}
+
+		llvm::Value* codegen(){
+			llvm::Value* data = val->codegen(); 
+			std::string placeholder = "Debug value (Line " + to_string(ln) + "): "; 
+
+			switch (data->getType()->getTypeID())
+				{
+				case (llvm::PointerType::PointerTyID):
+					if(data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
+						placeholder += "%s\n";
+					else placeholder+= "%p\n";
+					break;
+				case (llvm::Type::TypeID::FloatTyID):
+					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
+					placeholder += "%f\n";
+					break;
+				case (llvm::Type::TypeID::IntegerTyID):
+					if(data->getType()->getIntegerBitWidth() == 64){
+						placeholder+= "%p\n";
+					}else if(data->getType()->getIntegerBitWidth() == 16){
+						placeholder+="%hu\n"; 
+					}else if(data->getType() == llvm::Type::getInt8Ty(*ctxt)){
+						placeholder+="%c\n";
+					} else {
+						placeholder += "%d\n";
+					}
+					break;
+				default:
+					placeholder += "%p\n";
+				}
+			llvm::Constant *globalString = builder->CreateGlobalStringPtr(placeholder);
+			// Initialize a function with no body to refrence C std libraries
+			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
+																						 llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
+			builder->CreateCall(printfunc, {globalString, data}, "printftemp");
+			return data; 
+		}
+	};
+
 	/**
 	 * @brief Represents a return statement for a function
 	 */
@@ -394,7 +438,6 @@ namespace jimpilier
 			return builder->CreateStore(endres, variables[variable]);
 		}
 	};
-	// TODO: Add type casting here through the 'AS' operator; I.E.
 	// TODO: Fix type management with the codegen() function
 	/** BinaryStmtAST - Expression class for a binary operator.
 	 * 
@@ -483,7 +526,6 @@ namespace jimpilier
 		}
 	};
 
-	// TODO: Add inline debugging print statements
 	// TODO: Finalize boolean support
 	/**
 	 * Class representing a print statement in the Abstract Syntax Tree (AST)
@@ -1051,6 +1093,12 @@ namespace jimpilier
 		}
 		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
+	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens){
+		std::unique_ptr<ExprAST> x = std::move(logicStmt(tokens));
+		if(tokens.peek() != NOT) return x;
+		return std::make_unique<DebugPrintExprAST>(std::move(x), tokens.next().ln); 
+	}
+
 
 	/**
 	 * A list representation can be displayed in EBNF as:
@@ -1064,7 +1112,7 @@ namespace jimpilier
 	{
 		if (tokens.peek() != OPENSQUARE)
 		{
-			std::unique_ptr<ExprAST> x = std::move(logicStmt(tokens));
+			std::unique_ptr<ExprAST> x = std::move(debugPrintStmt(tokens));
 			if (tokens.peek() == SEMICOL)
 				tokens.next();
 			return x;
@@ -1073,7 +1121,7 @@ namespace jimpilier
 		std::vector<std::unique_ptr<ExprAST>> contents;
 		do
 		{
-			std::unique_ptr<ExprAST> LHS = std::move(logicStmt(tokens));
+			std::unique_ptr<ExprAST> LHS = std::move(debugPrintStmt(tokens));
 			if (LHS != NULL)
 				contents.push_back(std::move(LHS));
 			else
@@ -1322,7 +1370,7 @@ namespace jimpilier
 		case INCREMENT:
 		case DECREMENT:
 			tokens.go_back();
-			value = std::move(incDecExpr(tokens));
+			value = std::move(listExpr(tokens));
 			break;
 		case LPAREN:
 			tokens.go_back();
@@ -1773,7 +1821,7 @@ namespace jimpilier
 				}
 				else
 				{
-					return std::move(functionCallExpr(tokens));
+					return std::move(listExpr(tokens));
 				}
 				return NULL;
 			}
