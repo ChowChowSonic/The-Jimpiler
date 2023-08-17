@@ -269,7 +269,14 @@ namespace jimpilier
 				   std::unique_ptr<ExprAST> cond,
 				   std::unique_ptr<ExprAST> bod,
 				   std::vector<std::unique_ptr<ExprAST>> &edit) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)) {}
-
+		/**
+		 * @brief Construct a ForExprAST object, but with no bound variable or modifier; I.E. A while loop rather than a for loop
+		 * 
+		 * @param cond 
+		 * @param bod 
+		 */
+		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod) : 
+					condition(std::move(cond)), body(std::move(bod)){} 
 		// I have a feeling this function needs to be revamped.
 		llvm::Value *codegen()
 		{
@@ -1562,7 +1569,26 @@ namespace jimpilier
 		return NULL;
 	}
 	// TODO: Add support for do-while stmts
-	// TODO: Add support for while stmts
+	std::unique_ptr<ExprAST> whileStmt(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> condition, body;
+		bool hasparen= false; 
+		if (tokens.next() != WHILE)
+		{
+			logError("Somehow we ended up looking for a 'for' statement where there is none. wtf.", tokens.currentToken());
+			return NULL;
+		}
+		if(tokens.peek() == LPAREN && tokens.next() == LPAREN) hasparen = true; 
+		condition = std::move(jimpilier::logicStmt(tokens));
+		if (tokens.peek() == SEMICOL)
+			tokens.next();
+		if(hasparen && tokens.peek() != RPAREN){
+			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken()); 
+			return NULL; 
+		}else if(hasparen && tokens.peek() == RPAREN){ tokens.next(); }
+		body = std::move(jimpilier::codeBlockExpr(tokens));
+		return std::make_unique<ForExprAST>(std::move(condition), std::move(body));
+	}
 	/**
 	 * @brief Parses a for statement header, followed by a body statement/block
 
@@ -1765,6 +1791,8 @@ namespace jimpilier
 			return std::move(jimpilier::import(tokens));
 		case FOR:
 			return std::move(jimpilier::forStmt(tokens));
+		case WHILE: 
+			return std::move(jimpilier::whileStmt(tokens)); 
 		case IF:
 			return std::move(jimpilier::ifStmt(tokens));
 		case SWITCH:
