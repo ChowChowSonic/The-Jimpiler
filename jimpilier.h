@@ -1573,11 +1573,13 @@ namespace jimpilier
 	{
 		std::vector<std::unique_ptr<ExprAST>> beginStmts, endStmts;
 		std::unique_ptr<ExprAST> condition, body;
+		bool hasparen= false; 
 		if (tokens.next() != FOR)
 		{
 			logError("Somehow we ended up looking for a 'for' statement where there is none. wtf.", tokens.currentToken());
 			return NULL;
 		}
+		if(tokens.peek() == LPAREN && tokens.next() == LPAREN) hasparen = true; 
 		do
 		{
 			std::unique_ptr<ExprAST> x = std::move(declareOrAssign(tokens));
@@ -1610,6 +1612,10 @@ namespace jimpilier
 			return NULL;
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
+		if(hasparen && tokens.peek() != RPAREN){
+			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken()); 
+			return NULL; 
+		}else if(hasparen && tokens.peek() == RPAREN){ tokens.next(); }
 		body = std::move(jimpilier::codeBlockExpr(tokens));
 		return std::make_unique<ForExprAST>(beginStmts, std::move(condition), std::move(body), endStmts);
 	}
