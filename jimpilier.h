@@ -264,19 +264,20 @@ namespace jimpilier
 	public:
 		std::vector<std::unique_ptr<ExprAST>> prefix, postfix;
 		std::unique_ptr<ExprAST> condition, body;
+		bool dowhile; 
 
 		ForExprAST(std::vector<std::unique_ptr<ExprAST>> &init,
 				   std::unique_ptr<ExprAST> cond,
 				   std::unique_ptr<ExprAST> bod,
-				   std::vector<std::unique_ptr<ExprAST>> &edit) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)) {}
+				   std::vector<std::unique_ptr<ExprAST>> &edit, bool isdoWhile = false) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)), dowhile(isdoWhile) {}
 		/**
 		 * @brief Construct a ForExprAST object, but with no bound variable or modifier; I.E. A while loop rather than a for loop
 		 * 
 		 * @param cond 
 		 * @param bod 
 		 */
-		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod) : 
-					condition(std::move(cond)), body(std::move(bod)){} 
+		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod, bool isDoWhile = false) : 
+					condition(std::move(cond)), body(std::move(bod)), dowhile(isDoWhile){} 
 		// I have a feeling this function needs to be revamped.
 		llvm::Value *codegen()
 		{
@@ -287,7 +288,9 @@ namespace jimpilier
 			{
 				llvm::Value *startval = prefix[i]->codegen();
 			}
+			if(!dowhile){
 			builder->CreateCondBr(condition->codegen(), start, end);
+			}else{ builder->CreateBr(start); } 
 			builder->SetInsertPoint(start);
 			body->codegen();
 			for (int i = 0; i < postfix.size(); i++)
@@ -1374,17 +1377,13 @@ namespace jimpilier
 			tokens.next();
 			value = std::move(listExpr(tokens));
 			break;
-		case INCREMENT:
-		case DECREMENT:
-			tokens.go_back();
-			value = std::move(listExpr(tokens));
-			break;
 		case LPAREN:
 			tokens.go_back();
 			return NULL;
 		default:
-			logError("Unexpected token found here:", tokens.peek());
-			return NULL;
+			tokens.go_back(); 
+			value = std::move(listExpr(tokens));
+			break;
 		}
 		if (value == NULL)
 		{
@@ -1568,7 +1567,30 @@ namespace jimpilier
 		logError("Error in destruct()", t);
 		return NULL;
 	}
-	// TODO: Add support for do-while stmts
+	std::unique_ptr<ExprAST> doWhileStmt(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> condition, body;
+		if(tokens.next() != DO){
+			logError("Somehow went looking for a do statement when there is none. wtf.", tokens.currentToken()); 
+			return NULL;
+		}
+		body = std::move(jimpilier::codeBlockExpr(tokens));
+		bool hasparen= false; 
+		if (tokens.peek() != WHILE){
+			return std::move(body); 
+		}
+		tokens.next(); 
+		if(tokens.peek() == LPAREN && tokens.next() == LPAREN) hasparen = true; 
+		condition = std::move(jimpilier::logicStmt(tokens));
+		if (tokens.peek() == SEMICOL)
+			tokens.next();
+		if(hasparen && tokens.peek() != RPAREN){
+			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken()); 
+			return NULL; 
+		}else if(hasparen && tokens.peek() == RPAREN){ tokens.next(); }
+		
+		return std::make_unique<ForExprAST>(std::move(condition), std::move(body), true);
+	}
 	std::unique_ptr<ExprAST> whileStmt(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> condition, body;
@@ -1791,6 +1813,8 @@ namespace jimpilier
 			return std::move(jimpilier::import(tokens));
 		case FOR:
 			return std::move(jimpilier::forStmt(tokens));
+		case DO:
+			return std::move(jimpilier::doWhileStmt(tokens)); 
 		case WHILE: 
 			return std::move(jimpilier::whileStmt(tokens)); 
 		case IF:
