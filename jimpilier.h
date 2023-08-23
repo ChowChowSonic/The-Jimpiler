@@ -919,7 +919,12 @@ namespace jimpilier
 			return std::move(functionCallExpr(tokens)); 
 		}
 		tokens.next(); 
-		std::unique_ptr<ExprAST> drefval = std::move(functionCallExpr(tokens)); 
+		std::unique_ptr<ExprAST> drefval; 
+		if(tokens.peek() == REFRENCETO){
+			drefval = std::move(valueAtExpr(tokens)); 
+		}else {
+			drefval = std::move(functionCallExpr(tokens)); 
+		}
 		return std::make_unique<DeRefrenceExprAST>(drefval); 
 	}
 	std::unique_ptr<ExprAST> typeAsExpr(Stack<Token> &tokens){
@@ -1148,7 +1153,11 @@ namespace jimpilier
 		std::vector<std::unique_ptr<ExprAST>> contents;
 		do
 		{
-			std::unique_ptr<ExprAST> LHS = std::move(debugPrintStmt(tokens));
+			std::unique_ptr<ExprAST> LHS; 
+			if(tokens.peek() == OPENSQUARE)
+				LHS = std::move(listExpr(tokens));
+			else
+				LHS = std::move(debugPrintStmt(tokens));
 			if (LHS != NULL)
 				contents.push_back(std::move(LHS));
 			else
