@@ -1215,6 +1215,7 @@ namespace jimpilier
 	}
 	llvm::Type* variableTypeStmt(Stack<Token> &tokens){
 		Token t = tokens.peek();
+		llvm::Type* type = NULL; 
 		if(t.token < INT){
 			logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken()); 
 			return NULL; 
@@ -1227,90 +1228,42 @@ namespace jimpilier
 				switch (t.token)
 				{
 				case INT:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getInt32PtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getInt32Ty(*ctxt);
+					type =  llvm::Type::getInt32Ty(*ctxt);
 					break;
 				case SHORT:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getInt16PtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getInt16Ty(*ctxt);
+					type =  llvm::Type::getInt16Ty(*ctxt);
 					break;
 				case LONG:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getInt64PtrTy(*ctxt);
-					}
-					return llvm::Type::getInt64Ty(*ctxt);
+					type = llvm::Type::getInt64Ty(*ctxt);
 					break;
 				case FLOAT:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getFloatPtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getFloatTy(*ctxt);
+					type = llvm::Type::getFloatTy(*ctxt);
 					break;
 				case DOUBLE:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getDoublePtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getDoubleTy(*ctxt);
+					type = llvm::Type::getDoubleTy(*ctxt);
 					break;
 				case STRING:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getInt64PtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getInt8PtrTy(*ctxt);
+					type = llvm::Type::getInt8PtrTy(*ctxt);
 					break;
 				case BOOL:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getInt1PtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getInt1Ty(*ctxt);
+					type = llvm::Type::getInt1Ty(*ctxt);
 					break;
 				case CHAR:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getInt8PtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getInt8Ty(*ctxt);
-					break;
 				case BYTE:
-					if (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						return llvm::Type::getInt8PtrTy(*ctxt);
-						break;
-					}
-					return llvm::Type::getInt8Ty(*ctxt);
+					type = llvm::Type::getInt8Ty(*ctxt);
 					break;
 				default: 
 					tokens.go_back(); 
 					logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken());
 					return NULL;
 				}
+				while (tokens.peek() == POINTER)
+					{
+						tokens.next();
+						type = type->getPointerTo();
+						break;
+					}
+					return type; 
 			}
 			// Operators.push_back(t) //Add this to the variable modifier memory
 		} //*/
