@@ -6,9 +6,9 @@
 int test(int a, int b) 
     return a*b
 
-int main(int args){
+int main(int args, string pointer argv){
     int x
-
+    println "output of:", @argv
     if args == 0
         return 1;
     else if args > 100{
@@ -18,7 +18,7 @@ int main(int args){
     }
 
     for int t=0; t < args; t++ {
-        x=x*2
+        x=t*2!
     }
-    return 1
+    return 0
 }

@@ -102,6 +102,16 @@ namespace jimpilier
 		}
 	};
 
+	class DeRefrenceExprAST : public ExprAST {
+		std::unique_ptr<ExprAST> val; 
+		public:
+		DeRefrenceExprAST(std::unique_ptr<ExprAST>& val) : val(std::move(val)) {};
+		llvm::Value* codegen(){
+			llvm::Value* v = val->codegen(); 
+			return builder->CreateLoad(v->getType()->getNonOpaquePointerElementType(), v, "derefrencetmp"); 
+		} 
+	};
+
 	class TypeCastExprAST : public ExprAST{
 		std::unique_ptr<ExprAST> from; 
 		llvm::Type* to; 
@@ -904,9 +914,16 @@ namespace jimpilier
 		}
 		return std::make_unique<CallExprAST>(t.lex, params);
 	}
-
+	std::unique_ptr<ExprAST> valueAtExpr(Stack<Token> &tokens){
+		if(tokens.peek() != REFRENCETO){
+			return std::move(functionCallExpr(tokens)); 
+		}
+		tokens.next(); 
+		std::unique_ptr<ExprAST> drefval = std::move(functionCallExpr(tokens)); 
+		return std::make_unique<DeRefrenceExprAST>(drefval); 
+	}
 	std::unique_ptr<ExprAST> typeAsExpr(Stack<Token> &tokens){
-		std::unique_ptr<ExprAST> convertee = std::move(functionCallExpr(tokens)); 
+		std::unique_ptr<ExprAST> convertee = std::move(valueAtExpr(tokens)); 
 		if(tokens.peek() != AS){
 			return convertee; 
 		}
