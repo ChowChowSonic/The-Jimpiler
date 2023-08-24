@@ -64,7 +64,12 @@ namespace jimpilier
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat((float)Val));
 		}
 	};
-
+	//TODO: Fix(?) pointerTo operator
+	//TODO: Add pointer arithmatic
+	//TODO: Make strings safer
+	//TODO: Find a better way to differentiate between char* and string (use structs maybe?)
+	//TODO: Add not operator
+	//TODO: Add arrays
 	class StringExprAST : public ExprAST
 	{
 		std::string Val;
@@ -80,14 +85,24 @@ namespace jimpilier
 			// return llvm::ConstantInt::get(llvm::Type::getInt8Ty(*ctxt), llvm::APInt(8, Val[0])); 
 		}
 	};
+	class DeRefrenceExprAST : public ExprAST {
+		std::unique_ptr<ExprAST> val; 
+		public:
+		DeRefrenceExprAST(std::unique_ptr<ExprAST>& val) : val(std::move(val)) {};
+		llvm::Value* codegen(){
+			llvm::Value* v = val->codegen(); 
+			return builder->CreateLoad(v->getType()->getNonOpaquePointerElementType(), v, "derefrencetmp"); 
+		} 
+	};
 
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
 	class VariableExprAST : public ExprAST
 	{
 		string Name;
+		bool ptr; 
 
 	public:
-		VariableExprAST(const string &Name) : Name(Name) {}
+		VariableExprAST(const string &Name, bool isPtr = false) : Name(Name), ptr(isPtr) {}
 		llvm::Value *codegen()
 		{
 			if (DEBUGGING)
@@ -98,18 +113,9 @@ namespace jimpilier
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
+			if(ptr) return V; 
 			return builder->CreateLoad(dtypes[Name], V, Name);
 		}
-	};
-
-	class DeRefrenceExprAST : public ExprAST {
-		std::unique_ptr<ExprAST> val; 
-		public:
-		DeRefrenceExprAST(std::unique_ptr<ExprAST>& val) : val(std::move(val)) {};
-		llvm::Value* codegen(){
-			llvm::Value* v = val->codegen(); 
-			return builder->CreateLoad(v->getType()->getNonOpaquePointerElementType(), v, "derefrencetmp"); 
-		} 
 	};
 
 	class TypeCastExprAST : public ExprAST{
@@ -438,7 +444,7 @@ namespace jimpilier
 				dtypes[variable] = dtype;
 			}
 			llvm::Value *endres = val->codegen();
-			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && (!isconst))
+			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && endres->stripInBoundsConstantOffsets()->getType() == llvm::Type::getInt8Ty(*ctxt) &&(!isconst))
 			{ 
 				llvm::Type *strtype = llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false);
 				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen",
@@ -839,7 +845,10 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> term(Stack<Token> &tokens)
 	{
+		bool isPointerTo = false; 
 		std::unique_ptr<ExprAST> LHS;
+		Token s;
+		string x; 
 		if (tokens.peek() == LPAREN)
 		{
 			tokens.next();
@@ -849,9 +858,14 @@ namespace jimpilier
 				tokens.next();
 				return LHS;
 			}
+		}else if(tokens.peek() == POINTERTO){ 
+			tokens.next(); 
+			isPointerTo = true;
+			if(tokens.peek() != IDENT){
+				logError("Error while trying to get a pointer to something: We can only take pointers to variables, because temporary constants are not stored in memory!", tokens.peek()); 
+				return NULL; 
+			}
 		}
-		Token s;
-		string x; 
 		switch(tokens.peek().token){
 		case (SCONST):
 			s = tokens.next();
@@ -862,7 +876,7 @@ namespace jimpilier
 				logError("You tried to use a variable before you declare it! Variable causing this error:",s);
 				return NULL; 
 			}
-			return std::make_unique<VariableExprAST>(s.lex);
+			return std::make_unique<VariableExprAST>(s.lex, isPointerTo);
 		case(NUMCONST):
 			x = tokens.peek().lex;
 			if (std::find(x.begin(), x.end(), '.') == x.end()){
@@ -1050,7 +1064,7 @@ namespace jimpilier
 		}
 		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
-	// TODO: Fix and/or statements
+	// TODO: Fix and/or statements, make them n-way like addition or subtraction
 	/**
 	 * @brief checks for a basic <IDENT> (["=="|"!="] <IDENT>)* However,
 	 * I am torn between enabling N-way comparison (I.E.: "x == y == z == a == b").
@@ -1125,6 +1139,7 @@ namespace jimpilier
 		}
 		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
+
 	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens){
 		std::unique_ptr<ExprAST> x = std::move(logicStmt(tokens));
 		if(tokens.peek() != NOT) return x;
@@ -1287,7 +1302,6 @@ namespace jimpilier
 					{
 						tokens.next();
 						type = type->getPointerTo();
-						break;
 					}
 					return type; 
 			}
