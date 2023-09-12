@@ -117,7 +117,27 @@ namespace jimpilier
 			return builder->CreateLoad(dtypes[Name], V, Name);
 		}
 	};
-
+	class IndexExprAST : public ExprAST{
+		std::unique_ptr<ExprAST> bas, offs; 
+		public: 
+		IndexExprAST(std::unique_ptr<ExprAST>& base, std::unique_ptr<ExprAST>& offset) :
+			bas(std::move(base)), offs(std::move(offset)) {}; 
+		llvm::Value* codegen(){
+			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen(); 
+			if(!bsval->getType()->isPointerTy()){
+				std::cout <<  "Error: You tried to take an offset of a non-pointer, non-array type! "<<endl
+				<<"Make sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!" <<endl; 
+				errored = true; 
+				return NULL; 
+			}else if(!offv->getType()->isIntegerTy()){
+				std::cout << "Error when trying to take an offset: The value provided must be an integer. Cast it to an int if possible" <<endl; 
+				errored = true; 
+				return NULL; 
+			}
+			llvm::Value* indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
+			return builder->CreateLoad(bsval->getType()->getContainedType(0), indextmp, "loadtmp"); 
+		} 
+	};
 	class TypeCastExprAST : public ExprAST{
 		std::unique_ptr<ExprAST> from; 
 		llvm::Type* to; 
@@ -796,6 +816,7 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
 	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens);
 	llvm::Type* variableTypeStmt(Stack<Token>& tokens);
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
@@ -928,16 +949,30 @@ namespace jimpilier
 		}
 		return std::make_unique<CallExprAST>(t.lex, params);
 	}
+
+	std::unique_ptr<ExprAST> indexExpr(Stack<Token>& tokens){
+		std::unique_ptr<ExprAST> base = std::move(functionCallExpr(tokens)); 
+		if(tokens.peek() != OPENSQUARE) return base; 
+		tokens.next(); 
+		std::unique_ptr<ExprAST> index = std::move(debugPrintStmt(tokens)); 
+		if(tokens.peek() != CLOSESQUARE){
+			logError("Expected a closing square bracket when getting an index of an array/pointer here:", tokens.peek()); 
+			return NULL; 
+		}
+		tokens.next(); 
+		return std::make_unique<IndexExprAST>(base, index); //TODO: Implemenet indexing
+	}
+
 	std::unique_ptr<ExprAST> valueAtExpr(Stack<Token> &tokens){
 		if(tokens.peek() != REFRENCETO){
-			return std::move(functionCallExpr(tokens)); 
+			return std::move(indexExpr(tokens)); 
 		}
 		tokens.next(); 
 		std::unique_ptr<ExprAST> drefval; 
 		if(tokens.peek() == REFRENCETO){
 			drefval = std::move(valueAtExpr(tokens)); 
 		}else {
-			drefval = std::move(functionCallExpr(tokens)); 
+			drefval = std::move(indexExpr(tokens)); 
 		}
 		return std::make_unique<DeRefrenceExprAST>(drefval); 
 	}
