@@ -339,6 +339,7 @@ namespace jimpilier
 			return retval;
 		}
 	};
+	//TODO: Finish implementing list objects (Implement as a fat pointer struct)
 	/**
 	 * Represents a list of items in code, usually represented by a string such as "[1, 2, 3, 4, 5]" alongside an optional semicolon on the end
 	 */
@@ -950,8 +951,9 @@ namespace jimpilier
 		return std::make_unique<CallExprAST>(t.lex, params);
 	}
 
-	std::unique_ptr<ExprAST> indexExpr(Stack<Token>& tokens){
-		std::unique_ptr<ExprAST> base = std::move(functionCallExpr(tokens)); 
+	std::unique_ptr<ExprAST> indexExpr(Stack<Token>& tokens, std::unique_ptr<ExprAST> base = NULL){
+		if(base == NULL)
+			base = std::move(functionCallExpr(tokens)); 
 		if(tokens.peek() != OPENSQUARE) return base; 
 		tokens.next(); 
 		std::unique_ptr<ExprAST> index = std::move(debugPrintStmt(tokens)); 
@@ -960,7 +962,11 @@ namespace jimpilier
 			return NULL; 
 		}
 		tokens.next(); 
-		return std::make_unique<IndexExprAST>(base, index); //TODO: Implemenet indexing
+		if(tokens.peek() == OPENSQUARE){
+			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index); 
+			return std::move(indexExpr(tokens, std::move(thisval))); 
+		}else 
+		return std::make_unique<IndexExprAST>(base, index); 
 	}
 
 	std::unique_ptr<ExprAST> valueAtExpr(Stack<Token> &tokens){
