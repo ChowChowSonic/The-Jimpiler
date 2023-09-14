@@ -68,7 +68,6 @@ namespace jimpilier
 	//TODO: Add pointer arithmatic
 	//TODO: Make strings safer
 	//TODO: Find a better way to differentiate between char* and string (use structs maybe?)
-	//TODO: Add not operator
 	//TODO: Add arrays
 	class StringExprAST : public ExprAST
 	{
@@ -95,6 +94,21 @@ namespace jimpilier
 		} 
 	};
 
+	class NotExprAST : public ExprAST {
+		std::unique_ptr<ExprAST> val; 
+		public:
+		NotExprAST(std::unique_ptr<ExprAST> Val) : val(std::move(Val)) {}; 
+		llvm::Value* codegen(){
+			llvm::Value* v = val->codegen(); 
+			if(v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
+				return builder->CreateNot(v, "negationtmp"); 
+			if(v->getType()->isStructTy()){
+				//TODO: Implement operator overloading
+			}
+			std::cout << "Error: you're trying to take a negation of a non-boolean value!" <<endl;
+			return NULL;
+		}
+	}; 
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
 	class VariableExprAST : public ExprAST
 	{
@@ -485,7 +499,7 @@ namespace jimpilier
 			return builder->CreateStore(endres, variables[variable]);
 		}
 	};
-	// TODO: Fix type management with the codegen() function
+	// TODO: Fix type management with the BinaryStmtAST::codegen() function
 	/** BinaryStmtAST - Expression class for a binary operator.
 	 * 
 	 * "x AS string"
@@ -649,7 +663,7 @@ namespace jimpilier
 				Contents.push_back(std::move(x));
 			}
 		}
-		// : Contents(std::move(Args)) {}
+		
 		CodeBlockAST() {}
 		llvm::Value *codegen()
 		{
@@ -982,8 +996,16 @@ namespace jimpilier
 		}
 		return std::make_unique<DeRefrenceExprAST>(drefval); 
 	}
+
+std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
+	if(tokens.peek() != NOT) return std::move(valueAtExpr(tokens));
+	tokens.next(); 
+	std::unique_ptr<ExprAST> val = std::move(valueAtExpr(tokens));
+	return std::make_unique<NotExprAST>(std::move(val)); 
+}
+
 	std::unique_ptr<ExprAST> typeAsExpr(Stack<Token> &tokens){
-		std::unique_ptr<ExprAST> convertee = std::move(valueAtExpr(tokens)); 
+		std::unique_ptr<ExprAST> convertee = std::move(notExpr(tokens)); 
 		if(tokens.peek() != AS){
 			return convertee; 
 		}
