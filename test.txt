@@ -1,14 +1,50 @@
-//import test;
+//import test; //Not functional yet.
 
-//private const int alpha = 6+5 //Same thing as C/C++
-//public singular int x = 0 //equivalent of Java's Static modifier
+??
+Declaring variables out here is not functional yet. 
+Leaving them in a block comment for now
 
+private const int alpha = 6+5 //Same thing as C/C++
+public singular int x = 0 //equivalent of Java's Static modifier
+??
+
+//All code blocks have optional curly braces,
+//but they only accept 1 statement if you don't enclose them
 int test(int a, int b) 
     return a*b
 
-int main(int args, string pointer argv){
-    int x
+int main(int args, string pointer argv)
+{
+    int temp //By default initialized to zero
+    int pointer x = ->args
     println "output of:", @argv
+    ??
+    Major feature #1: Inline debug statements
+    Prints the value & line of whatever is passed to it...
+    then returns the value of what it just printed
+    ??
+    for( int t=0; t < args; t++ ){
+        temp = t!
+        println "temp variable =", temp
+    }
+
+    //Major feature #2: auto break switches
+    //Remove the "auto break" after the switch and see what happens!
+    switch auto break temp{
+        case 0{
+            println 0
+        }
+        case 1{
+            println 1
+        }
+        case 2{
+            println 2
+        }
+        default{
+            println "default reached:", temp
+        }
+    }
+
     if args == 0
         return 1;
     else if args > 100{
@@ -17,8 +53,6 @@ int main(int args, string pointer argv){
         //do nothing
     }
 
-    for int t=0; t < args; t++ {
-        x=t*2!
-    }
+    
     return 0
 }

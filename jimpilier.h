@@ -64,11 +64,21 @@ namespace jimpilier
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat((float)Val));
 		}
 	};
+	//TODO: Add implicit type casting (maybe)
+	//TODO: Completely revamp data type system to be almost exclusively front-end
+	//TODO: Find a better way to differentiate between char* and string (use structs maybe?)
+	//TODO: Add objects (God help me)
+	//TODO: Add arrays (God help me)
+	//TODO: Add a way to put things on the heap
+	//TODO: Add a way to delete things from the heap
+	//TODO: Add other modifier keywords (volatile, extern, etc...) 
+	//TODO: Make "auto" keyword work like C/C++
+	//TODO: Add "continue" keyword 
+	//TODO: Make "continue" keyword skip to next case statement 
+	//TODO: Revamp assignment function to take a LHS & RHS properly
 	//TODO: Fix(?) pointerTo operator
 	//TODO: Add pointer arithmatic
 	//TODO: Make strings safer
-	//TODO: Find a better way to differentiate between char* and string (use structs maybe?)
-	//TODO: Add arrays
 	class StringExprAST : public ExprAST
 	{
 		std::string Val;
@@ -369,7 +379,7 @@ namespace jimpilier
 			llvm::Value *ret = NULL;
 			if (DEBUGGING)
 				std::cout << "[ ";
-			for (auto i = Contents.begin(); i < Contents.end(); i++)
+			for (auto i = Contents.end(); i < Contents.begin(); i--)
 			{
 				ret = i->get()->codegen();
 				if (i != Contents.end() - 1 && DEBUGGING)
@@ -496,7 +506,8 @@ namespace jimpilier
 				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp");
 			}
 			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
-			return builder->CreateStore(endres, variables[variable]);
+			builder->CreateStore(endres, variables[variable]);
+			return endres; 
 		}
 	};
 	// TODO: Fix type management with the BinaryStmtAST::codegen() function
