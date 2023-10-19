@@ -30,7 +30,7 @@ namespace jimpilier
 	 * the compilier will automatically jump to the top llvm::BasicBlock in this stack
 	 * 
 	 */
-	std::stack<llvm::BasicBlock*> escapeBlock; 
+	std::stack<std::pair<llvm::BasicBlock*, llvm::BasicBlock*>> escapeBlock; 
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;
@@ -64,6 +64,7 @@ namespace jimpilier
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat((float)Val));
 		}
 	};
+	//TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr != null (@objptr).func()"
 	//TODO: Add implicit type casting (maybe)
 	//TODO: Completely revamp data type system to be almost exclusively front-end
 	//TODO: Find a better way to differentiate between char* and string (use structs maybe?)
@@ -73,8 +74,6 @@ namespace jimpilier
 	//TODO: Add a way to delete things from the heap
 	//TODO: Add other modifier keywords (volatile, extern, etc...) 
 	//TODO: Make "auto" keyword work like C/C++
-	//TODO: Add "continue" keyword 
-	//TODO: Make "continue" keyword skip to next case statement 
 	//TODO: Revamp assignment function to take a LHS & RHS properly
 	//TODO: Fix(?) pointerTo operator
 	//TODO: Add pointer arithmatic
@@ -277,7 +276,7 @@ namespace jimpilier
 			std::vector<llvm::BasicBlock*> bodBlocks;
 			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
 			llvm::SwitchInst* val = builder->CreateSwitch(comp->codegen(), glblend, body.size()); 
-			escapeBlock.push(glblend); 
+			escapeBlock.push(std::pair<llvm::BasicBlock*, llvm::BasicBlock*>(glblend, lastbody)); 
 			int i=body.size()-1;
 			do{
 				llvm::BasicBlock* currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody); 
@@ -289,6 +288,8 @@ namespace jimpilier
 					val->addCase((llvm::ConstantInt*)condition[i]->codegen(), currentbody); 
 				lastbody = currentbody; 
 				i-=1; 
+				escapeBlock.pop(); 
+				escapeBlock.push(std::pair<llvm::BasicBlock*,llvm::BasicBlock*>(glblend, lastbody));
 			}while( i >= 0); 
 			if(def >=0)
 				val->setDefaultDest(bodBlocks[bodBlocks.size()-1-def]); 
@@ -311,7 +312,23 @@ namespace jimpilier
 		llvm::Value* codegen(){
 			if(escapeBlock.empty()) return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true)); 
 			// if (labelVal != "") 
-			return builder->CreateBr(escapeBlock.top()); 
+			return builder->CreateBr(escapeBlock.top().first); 
+		}
+	}; 
+		/**
+	 * @brief represents a break statement with optional label. 
+	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none 
+	 * 
+	 */
+	class ContinueExprAST : public ExprAST{
+		
+		string labelVal; 
+		public:
+		ContinueExprAST(string label = "") : labelVal(label){}
+		llvm::Value* codegen(){
+			if(escapeBlock.empty()) return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true)); 
+			// if (labelVal != "") 
+			return builder->CreateBr(escapeBlock.top().second); 
 		}
 	}; 
 	// TODO: Implement forEach statements
@@ -343,7 +360,7 @@ namespace jimpilier
 		{
 			llvm::Value *retval;
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
-			escapeBlock.push(end);
+			escapeBlock.push(std::pair<llvm::BasicBlock*,llvm::BasicBlock*>(end, start));
 			for (int i = 0; i < prefix.size(); i++)
 			{
 				llvm::Value *startval = prefix[i]->codegen();
@@ -1917,6 +1934,9 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 		case BREAK:
 			tokens.next();
 			return std::make_unique<BreakExprAST>(); 
+		case CONTINUE: 
+			tokens.next(); 
+			return std::make_unique<ContinueExprAST>(); 
 		case INT:
 		case SHORT:
 		case POINTER:

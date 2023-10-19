@@ -33,9 +33,11 @@ int main(int args, string pointer argv)
     switch auto break temp{
         case 0{
             println 0
+            continue
         }
         case 1{
             println 1
+            continue
         }
         case 2{
             println 2
