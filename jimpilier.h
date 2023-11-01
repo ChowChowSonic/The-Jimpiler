@@ -14,23 +14,22 @@
 namespace jimpilier
 {
 	/*
-	 * General Naming rule: 
-	 * "___Stmt" = anything that does more than it may appear on the back end 
+	 * General Naming rule:
+	 * "___Stmt" = anything that does more than it may appear on the back end
 	 * "___Expr" = Anything that does what it can in a relatively straightforward way
 	 */
 	std::unique_ptr<llvm::LLVMContext> ctxt;
 	std::unique_ptr<llvm::IRBuilder<>> builder;
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
-	std::map<std::string, llvm::Type *> dtypes;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	/**
-	 * @brief In the event that a Break statement is called (I.E. in a for loop or switch statements), 
+	 * @brief In the event that a Break statement is called (I.E. in a for loop or switch statements),
 	 * the compilier will automatically jump to the top llvm::BasicBlock in this stack
-	 * 
+	 *
 	 */
-	std::stack<std::pair<llvm::BasicBlock*, llvm::BasicBlock*>> escapeBlock; 
+	std::stack<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> escapeBlock;
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;
@@ -47,7 +46,7 @@ namespace jimpilier
 	{
 		double Val;
 		bool isInt = false;
-		bool isBool = false; 
+		bool isBool = false;
 
 	public:
 		NumberExprAST(double Val) : Val(Val) {}
@@ -59,25 +58,12 @@ namespace jimpilier
 				std::cout << Val;
 			if (isInt)
 				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, static_cast<long>(Val), true));
-				if(isBool)
-					return llvm::ConstantInt::get(*ctxt, llvm::APInt(1, Val == 1, true));
+			if (isBool)
+				return llvm::ConstantInt::get(*ctxt, llvm::APInt(1, Val == 1, true));
 			return llvm::ConstantFP::get(*ctxt, llvm::APFloat((float)Val));
 		}
 	};
-	//TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr != null (@objptr).func()"
-	//TODO: Add implicit type casting (maybe)
-	//TODO: Completely revamp data type system to be almost exclusively front-end
-	//TODO: Find a better way to differentiate between char* and string (use structs maybe?)
-	//TODO: Add objects (God help me)
-	//TODO: Add arrays (God help me)
-	//TODO: Add a way to put things on the heap
-	//TODO: Add a way to delete things from the heap
-	//TODO: Add other modifier keywords (volatile, extern, etc...) 
-	//TODO: Make "auto" keyword work like C/C++
-	//TODO: Revamp assignment function to take a LHS & RHS properly
-	//TODO: Fix(?) pointerTo operator
-	//TODO: Add pointer arithmatic
-	//TODO: Make strings safer
+
 	class StringExprAST : public ExprAST
 	{
 		std::string Val;
@@ -89,149 +75,224 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Val;
 			// if(Val.length() > 1)
-				return builder->CreateGlobalStringPtr(Val, "Sconst");
-			// return llvm::ConstantInt::get(llvm::Type::getInt8Ty(*ctxt), llvm::APInt(8, Val[0])); 
+			return builder->CreateGlobalStringPtr(Val, "Sconst");
+			// return llvm::ConstantInt::get(llvm::Type::getInt8Ty(*ctxt), llvm::APInt(8, Val[0]));
 		}
-	};
-	class DeRefrenceExprAST : public ExprAST {
-		std::unique_ptr<ExprAST> val; 
-		public:
-		DeRefrenceExprAST(std::unique_ptr<ExprAST>& val) : val(std::move(val)) {};
-		llvm::Value* codegen(){
-			llvm::Value* v = val->codegen(); 
-			return builder->CreateLoad(v->getType()->getNonOpaquePointerElementType(), v, "derefrencetmp"); 
-		} 
 	};
 
-	class NotExprAST : public ExprAST {
-		std::unique_ptr<ExprAST> val; 
-		public:
-		NotExprAST(std::unique_ptr<ExprAST> Val) : val(std::move(Val)) {}; 
-		llvm::Value* codegen(){
-			llvm::Value* v = val->codegen(); 
-			if(v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
-				return builder->CreateNot(v, "negationtmp"); 
-			if(v->getType()->isStructTy()){
-				//TODO: Implement operator overloading
-			}
-			std::cout << "Error: you're trying to take a negation of a non-boolean value!" <<endl;
-			return NULL;
-		}
-	}; 
 	/// VariableExprAST - Expression class for referencing a variable, like "a".
 	class VariableExprAST : public ExprAST
 	{
 		string Name;
-		bool ptr; 
 
 	public:
-		VariableExprAST(const string &Name, bool isPtr = false) : Name(Name), ptr(isPtr) {}
+		VariableExprAST(const string &Name) : Name(Name) {}
 		llvm::Value *codegen()
 		{
 			if (DEBUGGING)
 				std::cout << Name;
 			llvm::Value *V = variables[Name];
-			if (!V || !dtypes[Name])
+			if (!V)
 			{
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
-			if(ptr) return V; 
-			return builder->CreateLoad(dtypes[Name], V, Name);
+			return V;
 		}
 	};
-	class IndexExprAST : public ExprAST{
-		std::unique_ptr<ExprAST> bas, offs; 
-		public: 
-		IndexExprAST(std::unique_ptr<ExprAST>& base, std::unique_ptr<ExprAST>& offset) :
-			bas(std::move(base)), offs(std::move(offset)) {}; 
-		llvm::Value* codegen(){
-			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen(); 
-			if(!bsval->getType()->isPointerTy()){
-				std::cout <<  "Error: You tried to take an offset of a non-pointer, non-array type! "<<endl
-				<<"Make sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!" <<endl; 
-				errored = true; 
-				return NULL; 
-			}else if(!offv->getType()->isIntegerTy()){
-				std::cout << "Error when trying to take an offset: The value provided must be an integer. Cast it to an int if possible" <<endl; 
-				errored = true; 
-				return NULL; 
-			}
-			llvm::Value* indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
-			return builder->CreateLoad(bsval->getType()->getContainedType(0), indextmp, "loadtmp"); 
-		} 
-	};
-	class TypeCastExprAST : public ExprAST{
-		std::unique_ptr<ExprAST> from; 
-		llvm::Type* to; 
-		public:
-		TypeCastExprAST(std::unique_ptr<ExprAST>& fromval, llvm::Type* toVal) : from(std::move(fromval)), to(toVal){}; 
 
-		llvm::Value* codegen(){
-			llvm::Value* init = from->codegen(); 
-			llvm::Instruction::CastOps op; 
-			switch(init->getType()->getTypeID()){
-				case(llvm::Type::IntegerTyID):
-					if(to->getTypeID() == llvm::Type::FloatTyID){
-						op = llvm::Instruction::CastOps::SIToFP;
-					}else if(to->getTypeID() == llvm::Type::HalfTyID){
-						op = llvm::Instruction::CastOps::Trunc;
-					}else if(to->getTypeID() == llvm::Type::IntegerTyID){
-						if(to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth()) return init; 
-						op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc; 					
-					}else if(to->getTypeID() == llvm::Type::PointerTyID){
-						op = llvm::Instruction::CastOps::IntToPtr; 
-					}else{
-						std::cout << "Attempted conversion failed: "<<
-							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
-						errored= true; 
-					}
-					break; 
-				case(llvm::Type::HalfTyID):
-					if(to->getTypeID() == llvm::Type::FloatTyID){
-						op = llvm::Instruction::CastOps::SIToFP;
-					}else if(to->getTypeID() == llvm::Type::IntegerTyID){
-						if(to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth()) return init; 
-						op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc; 					
-					}else if(to->getTypeID() == llvm::Type::PointerTyID){
-						op = llvm::Instruction::CastOps::IntToPtr; 
-					}else{
-						std::cout << "Attempted conversion failed: "<<
-							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
-						errored= true; 
-					}
-					break; 
-				case(llvm::Type::DoubleTyID):
-					if(to->getTypeID() == llvm::Type::FloatTyID){
-						op = llvm::Instruction::CastOps::FPTrunc; 
-						break; 
-					}else if(to->getTypeID() == llvm::Type::DoubleTyID) return init; 
-				case(llvm::Type::FloatTyID):
-					if(to->getTypeID() == llvm::Type::DoubleTyID)
-						op = llvm::Instruction::CastOps::FPExt; 
-					else if(to->getTypeID() == llvm::Type::IntegerTyID)
-						op = llvm::Instruction::CastOps::FPToSI; 
-					else{
-						std::cout << "Attempted conversion failed: "<<
-							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
-						errored= true; 
-					}
-					break; 
-				case(llvm::Type::PointerTyID):
-					if(to->getTypeID() == llvm::Type::IntegerTyID)
-						op = llvm::Instruction::CastOps::PtrToInt; 
-					else{
-						std::cout << "Attempted conversion failed: "<<
-							"Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"<<endl; 
-						errored= true; 
-					}
-					break; 
+	class DeclareExprAST : public ExprAST
+	{
+		const std::string name;
+		llvm::Type *ty;
+		int size;
+		bool lateinit;
+
+	public:
+		DeclareExprAST(const std::string Name, llvm::Type *type, bool isLateInit = false, int ArrSize = 1) : name(Name), ty(type), size(ArrSize), lateinit(isLateInit) {}
+
+		llvm::Value *codegen()
+		{
+			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
+			variables.emplace(std::pair<std::string, llvm::Value *>(name, builder->CreateAlloca(ty, sizeval, name)));
+			if (!lateinit)
+				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), variables[name]);
+			return variables[name];
+		}
+	};
+	// TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr != null (@objptr).func()"
+	// TODO: Add implicit type casting (maybe)
+	// TODO: Completely revamp data type system to be almost exclusively front-end
+	// TODO: Find a better way to differentiate between char* and string (use structs maybe?)
+	// TODO: Add objects (God help me)
+	// TODO: Add arrays (God help me)
+	// TODO: Add a way to put things on the heap
+	// TODO: Add a way to delete things from the heap
+	// TODO: Add other modifier keywords (volatile, extern, etc...)
+	// TODO: Make "auto" keyword work like C/C++
+	// TODO: Revamp assignment function to take a LHS & RHS properly
+	// TODO: Fix(?) pointerTo operator
+	// TODO: Add pointer arithmatic
+	// TODO: Make strings safer
+	
+	class NotExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> val;
+
+	public:
+		NotExprAST(std::unique_ptr<ExprAST> Val) : val(std::move(Val)){};
+		llvm::Value *codegen()
+		{
+			llvm::Value *v = val->codegen();
+			if (v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
+				return builder->CreateNot(v, "negationtmp");
+			if (v->getType()->isStructTy())
+			{
+				// TODO: Implement operator overloading
+			}
+			std::cout << "Error: you're trying to take a negation of a non-boolean value!" << endl;
+			return NULL;
+		}
+	};
+
+	class DeRefrenceExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> val;
+
+	public:
+		DeRefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
+		llvm::Value *codegen()
+		{
+			llvm::Value *v = val->codegen();
+			return builder->CreateLoad(v->getType()->getNonOpaquePointerElementType(), v, "derefrencetmp");
+		}
+	};
+
+	class IndexExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> bas, offs;
+
+	public:
+		IndexExprAST(std::unique_ptr<ExprAST> &base, std::unique_ptr<ExprAST> &offset) : bas(std::move(base)), offs(std::move(offset)){};
+		llvm::Value *codegen()
+		{
+			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
+			if (!bsval->getType()->isPointerTy())
+			{
+				std::cout << "Error: You tried to take an offset of a non-pointer, non-array type! " << endl
+						  << "Make sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!" << endl;
+				errored = true;
+				return NULL;
+			}
+			else if (!offv->getType()->isIntegerTy())
+			{
+				std::cout << "Error when trying to take an offset: The value provided must be an integer. Cast it to an int if possible" << endl;
+				errored = true;
+				return NULL;
+			}
+			llvm::Value *indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
+			return builder->CreateLoad(bsval->getType()->getContainedType(0), indextmp, "loadtmp");
+		}
+	};
+	class TypeCastExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> from;
+		llvm::Type *to;
+
+	public:
+		TypeCastExprAST(std::unique_ptr<ExprAST> &fromval, llvm::Type *toVal) : from(std::move(fromval)), to(toVal){};
+
+		llvm::Value *codegen()
+		{
+			llvm::Value *init = from->codegen();
+			llvm::Instruction::CastOps op;
+			switch (init->getType()->getTypeID())
+			{
+			case (llvm::Type::IntegerTyID):
+				if (to->getTypeID() == llvm::Type::FloatTyID)
+				{
+					op = llvm::Instruction::CastOps::SIToFP;
+				}
+				else if (to->getTypeID() == llvm::Type::HalfTyID)
+				{
+					op = llvm::Instruction::CastOps::Trunc;
+				}
+				else if (to->getTypeID() == llvm::Type::IntegerTyID)
+				{
+					if (to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth())
+						return init;
+					op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc;
+				}
+				else if (to->getTypeID() == llvm::Type::PointerTyID)
+				{
+					op = llvm::Instruction::CastOps::IntToPtr;
+				}
+				else
+				{
+					std::cout << "Attempted conversion failed: "
+							  << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << endl;
+					errored = true;
+				}
+				break;
+			case (llvm::Type::HalfTyID):
+				if (to->getTypeID() == llvm::Type::FloatTyID)
+				{
+					op = llvm::Instruction::CastOps::SIToFP;
+				}
+				else if (to->getTypeID() == llvm::Type::IntegerTyID)
+				{
+					if (to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth())
+						return init;
+					op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc;
+				}
+				else if (to->getTypeID() == llvm::Type::PointerTyID)
+				{
+					op = llvm::Instruction::CastOps::IntToPtr;
+				}
+				else
+				{
+					std::cout << "Attempted conversion failed: "
+							  << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << endl;
+					errored = true;
+				}
+				break;
+			case (llvm::Type::DoubleTyID):
+				if (to->getTypeID() == llvm::Type::FloatTyID)
+				{
+					op = llvm::Instruction::CastOps::FPTrunc;
+					break;
+				}
+				else if (to->getTypeID() == llvm::Type::DoubleTyID)
+					return init;
+			case (llvm::Type::FloatTyID):
+				if (to->getTypeID() == llvm::Type::DoubleTyID)
+					op = llvm::Instruction::CastOps::FPExt;
+				else if (to->getTypeID() == llvm::Type::IntegerTyID)
+					op = llvm::Instruction::CastOps::FPToSI;
+				else
+				{
+					std::cout << "Attempted conversion failed: "
+							  << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << endl;
+					errored = true;
+				}
+				break;
+			case (llvm::Type::PointerTyID):
+				if (to->getTypeID() == llvm::Type::IntegerTyID)
+					op = llvm::Instruction::CastOps::PtrToInt;
+				else
+				{
+					std::cout << "Attempted conversion failed: "
+							  << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << endl;
+					errored = true;
+				}
+				break;
 			}
 			return builder->CreateCast(op, init, to);
 		}
 	};
 
-	class IfExprAST : public ExprAST{
+	class IfExprAST : public ExprAST
+	{
 	public:
 		std::vector<std::unique_ptr<ExprAST>> condition, body;
 		IfExprAST(std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod) : condition(std::move(cond)), body(std::move(bod)) {}
@@ -266,82 +327,90 @@ namespace jimpilier
 	{
 	public:
 		std::vector<std::unique_ptr<ExprAST>> condition, body;
-		std::unique_ptr<ExprAST> comp; 
+		std::unique_ptr<ExprAST> comp;
 		int def;
-		bool autoBr; 
-		SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak, int defaultLoc = -1) : 
-			condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak), def(defaultLoc) {}
+		bool autoBr;
+		SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak, int defaultLoc = -1) : condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak), def(defaultLoc) {}
 		llvm::Value *codegen()
 		{
-			std::vector<llvm::BasicBlock*> bodBlocks;
+			std::vector<llvm::BasicBlock *> bodBlocks;
 			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
-			llvm::SwitchInst* val = builder->CreateSwitch(comp->codegen(), glblend, body.size()); 
-			escapeBlock.push(std::pair<llvm::BasicBlock*, llvm::BasicBlock*>(glblend, lastbody)); 
-			int i=body.size()-1;
-			do{
-				llvm::BasicBlock* currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody); 
-				bodBlocks.push_back(currentbody); 
-				builder->SetInsertPoint(currentbody); 
-				body[i]->codegen(); 
-				builder->CreateBr(autoBr ? glblend : lastbody); 
-				if(condition[i] != NULL)
-					val->addCase((llvm::ConstantInt*)condition[i]->codegen(), currentbody); 
-				lastbody = currentbody; 
-				i-=1; 
-				escapeBlock.pop(); 
-				escapeBlock.push(std::pair<llvm::BasicBlock*,llvm::BasicBlock*>(glblend, lastbody));
-			}while( i >= 0); 
-			if(def >=0)
-				val->setDefaultDest(bodBlocks[bodBlocks.size()-1-def]); 
-			builder->SetInsertPoint(glblend); 
-			escapeBlock.pop(); 
-			return val; 
+			llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, body.size());
+			escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
+			int i = body.size() - 1;
+			do
+			{
+				llvm::BasicBlock *currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody);
+				bodBlocks.push_back(currentbody);
+				builder->SetInsertPoint(currentbody);
+				body[i]->codegen();
+				builder->CreateBr(autoBr ? glblend : lastbody);
+				if (condition[i] != NULL)
+					val->addCase((llvm::ConstantInt *)condition[i]->codegen(), currentbody);
+				lastbody = currentbody;
+				i -= 1;
+				escapeBlock.pop();
+				escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
+			} while (i >= 0);
+			if (def >= 0)
+				val->setDefaultDest(bodBlocks[bodBlocks.size() - 1 - def]);
+			builder->SetInsertPoint(glblend);
+			escapeBlock.pop();
+			return val;
 		}
 	};
 	// TODO: Get labels working if possible
 	/**
-	 * @brief represents a break statement with optional label. 
-	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none 
-	 * 
+	 * @brief represents a break statement with optional label.
+	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none
+	 *
 	 */
-	class BreakExprAST : public ExprAST{
-		
-		string labelVal; 
-		public:
-		BreakExprAST(string label = "") : labelVal(label){}
-		llvm::Value* codegen(){
-			if(escapeBlock.empty()) return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true)); 
-			// if (labelVal != "") 
-			return builder->CreateBr(escapeBlock.top().first); 
+	class BreakExprAST : public ExprAST
+	{
+
+		string labelVal;
+
+	public:
+		BreakExprAST(string label = "") : labelVal(label) {}
+		llvm::Value *codegen()
+		{
+			if (escapeBlock.empty())
+				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
+			// if (labelVal != "")
+			return builder->CreateBr(escapeBlock.top().first);
 		}
-	}; 
-		/**
-	 * @brief represents a break statement with optional label. 
-	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none 
-	 * 
+	};
+	/**
+	 * @brief represents a break statement with optional label.
+	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none
+	 *
 	 */
-	class ContinueExprAST : public ExprAST{
-		
-		string labelVal; 
-		public:
-		ContinueExprAST(string label = "") : labelVal(label){}
-		llvm::Value* codegen(){
-			if(escapeBlock.empty()) return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true)); 
-			// if (labelVal != "") 
-			return builder->CreateBr(escapeBlock.top().second); 
+	class ContinueExprAST : public ExprAST
+	{
+
+		string labelVal;
+
+	public:
+		ContinueExprAST(string label = "") : labelVal(label) {}
+		llvm::Value *codegen()
+		{
+			if (escapeBlock.empty())
+				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
+			// if (labelVal != "")
+			return builder->CreateBr(escapeBlock.top().second);
 		}
-	}; 
+	};
 	// TODO: Implement forEach statements
 	/**
 	 * @brief Represents a for loop in LLVM IR, currently does not support for each statements
-	 * 
+	 *
 	 */
 	class ForExprAST : public ExprAST
 	{
 	public:
 		std::vector<std::unique_ptr<ExprAST>> prefix, postfix;
 		std::unique_ptr<ExprAST> condition, body;
-		bool dowhile; 
+		bool dowhile;
 
 		ForExprAST(std::vector<std::unique_ptr<ExprAST>> &init,
 				   std::unique_ptr<ExprAST> cond,
@@ -349,25 +418,29 @@ namespace jimpilier
 				   std::vector<std::unique_ptr<ExprAST>> &edit, bool isdoWhile = false) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)), dowhile(isdoWhile) {}
 		/**
 		 * @brief Construct a ForExprAST object, but with no bound variable or modifier; I.E. A while loop rather than a for loop
-		 * 
-		 * @param cond 
-		 * @param bod 
+		 *
+		 * @param cond
+		 * @param bod
 		 */
-		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod, bool isDoWhile = false) : 
-					condition(std::move(cond)), body(std::move(bod)), dowhile(isDoWhile){} 
+		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod, bool isDoWhile = false) : condition(std::move(cond)), body(std::move(bod)), dowhile(isDoWhile) {}
 		// I have a feeling this function needs to be revamped.
 		llvm::Value *codegen()
 		{
 			llvm::Value *retval;
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
-			escapeBlock.push(std::pair<llvm::BasicBlock*,llvm::BasicBlock*>(end, start));
+			escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(end, start));
 			for (int i = 0; i < prefix.size(); i++)
 			{
 				llvm::Value *startval = prefix[i]->codegen();
 			}
-			if(!dowhile){
-			builder->CreateCondBr(condition->codegen(), start, end);
-			}else{ builder->CreateBr(start); } 
+			if (!dowhile)
+			{
+				builder->CreateCondBr(condition->codegen(), start, end);
+			}
+			else
+			{
+				builder->CreateBr(start);
+			}
 			builder->SetInsertPoint(start);
 			body->codegen();
 			for (int i = 0; i < postfix.size(); i++)
@@ -376,11 +449,11 @@ namespace jimpilier
 			}
 			builder->CreateCondBr(condition->codegen(), start, end);
 			builder->SetInsertPoint(end);
-			escapeBlock.pop(); 
+			escapeBlock.pop();
 			return retval;
 		}
 	};
-	//TODO: Finish implementing list objects (Implement as a fat pointer struct)
+	// TODO: Finish implementing list objects (Implement as a fat pointer struct)
 	/**
 	 * Represents a list of items in code, usually represented by a string such as "[1, 2, 3, 4, 5]" alongside an optional semicolon on the end
 	 */
@@ -408,47 +481,58 @@ namespace jimpilier
 		}
 	};
 
-	class DebugPrintExprAST : public ExprAST {
-		std::unique_ptr<ExprAST> val; 
-		int ln; 
-		public:
+	class DebugPrintExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> val;
+		int ln;
+
+	public:
 		DebugPrintExprAST(std::unique_ptr<ExprAST> printval, int line) : val(std::move(printval)), ln(line) {}
 
-		llvm::Value* codegen(){
-			llvm::Value* data = val->codegen(); 
-			std::string placeholder = "Debug value (Line " + to_string(ln) + "): "; 
+		llvm::Value *codegen()
+		{
+			llvm::Value *data = val->codegen();
+			std::string placeholder = "Debug value (Line " + to_string(ln) + "): ";
 
 			switch (data->getType()->getTypeID())
+			{
+			case (llvm::PointerType::PointerTyID):
+				if (data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
+					placeholder += "%s\n";
+				else
+					placeholder += "%p\n";
+				break;
+			case (llvm::Type::TypeID::FloatTyID):
+				data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
+				placeholder += "%f\n";
+				break;
+			case (llvm::Type::TypeID::IntegerTyID):
+				if (data->getType()->getIntegerBitWidth() == 64)
 				{
-				case (llvm::PointerType::PointerTyID):
-					if(data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
-						placeholder += "%s\n";
-					else placeholder+= "%p\n";
-					break;
-				case (llvm::Type::TypeID::FloatTyID):
-					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
-					placeholder += "%f\n";
-					break;
-				case (llvm::Type::TypeID::IntegerTyID):
-					if(data->getType()->getIntegerBitWidth() == 64){
-						placeholder+= "%p\n";
-					}else if(data->getType()->getIntegerBitWidth() == 16){
-						placeholder+="%hu\n"; 
-					}else if(data->getType() == llvm::Type::getInt8Ty(*ctxt)){
-						placeholder+="%c\n";
-					} else {
-						placeholder += "%d\n";
-					}
-					break;
-				default:
 					placeholder += "%p\n";
 				}
+				else if (data->getType()->getIntegerBitWidth() == 16)
+				{
+					placeholder += "%hu\n";
+				}
+				else if (data->getType() == llvm::Type::getInt8Ty(*ctxt))
+				{
+					placeholder += "%c\n";
+				}
+				else
+				{
+					placeholder += "%d\n";
+				}
+				break;
+			default:
+				placeholder += "%p\n";
+			}
 			llvm::Constant *globalString = builder->CreateGlobalStringPtr(placeholder);
 			// Initialize a function with no body to refrence C std libraries
 			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
 																						 llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
 			builder->CreateCall(printfunc, {globalString, data}, "printftemp");
-			return data; 
+			return data;
 		}
 	};
 
@@ -478,60 +562,29 @@ namespace jimpilier
 
 	class AssignStmtAST : public ExprAST
 	{
-	public:
-		std::string variable;
-		std::unique_ptr<ExprAST> val;
-		llvm::Type *dtype;
-		bool isconst = false, isglbl = false; 
+		std::unique_ptr<ExprAST> lhs, rhs;
 
-		AssignStmtAST(std::string var, std::unique_ptr<ExprAST> &value, 
-		llvm::Type *dtype = NULL, bool isConst = false, bool isGlobal= false) : 
-		variable(var), val(std::move(value)), dtype(dtype), isconst(isConst), isglbl(isGlobal)
+	public:
+		AssignStmtAST(std::unique_ptr<ExprAST> &LHS, std::unique_ptr<ExprAST> &RHS)
+			: lhs(std::move(LHS)), rhs(std::move(RHS))
 		{
-			if (dtype == NULL)
-				dtype = dtypes[variable];
 		}
 
 		llvm::Value *codegen()
 		{
-			if (variables[variable] == NULL)
-			{
-				if (dtype == NULL)
-				{
-					std::cout << "Data type for variable " << variable << " is not defined yet!" << endl;
-					errored = true;
-					return NULL;
-				}
-				variables[variable] = builder->CreateAlloca(dtype, nullptr, variable);
-				dtypes[variable] = dtype;
-			}
-			llvm::Value *endres = val->codegen();
-			if (endres->getType()->getTypeID() == llvm::Type::getInt8PtrTy(*ctxt)->getTypeID() && endres->stripInBoundsConstantOffsets()->getType() == llvm::Type::getInt8Ty(*ctxt) &&(!isconst))
-			{ 
-				llvm::Type *strtype = llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false);
-				llvm::FunctionCallee strlenfunc = GlobalVarsAndFunctions->getOrInsertFunction("strlen",
-																							  llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), false));
-				llvm::FunctionCallee strcpyfunc = GlobalVarsAndFunctions->getOrInsertFunction("strcpy",
-																							  llvm::FunctionType::get(llvm::PointerType::getInt8PtrTy(*ctxt), {strtype, strtype}, false));
-				llvm::Value *strlen = builder->CreateCall(strlenfunc, endres, "strconstlen");
-				strlen = builder->CreateAdd(strlen, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), 1), "addtmp");
-				llvm::Value *args[] =
-					{
-						builder->CreateAlloca(llvm::ArrayType::getInt8Ty(*ctxt), strlen, "strconstcpy"),
-						endres
-					};
-				endres = builder->CreateCall(strcpyfunc, args, "strcpytmp");
-			}
-			// if(endres->getType()->getTypeID() != dtypes[variable]->getTypeID())
-			builder->CreateStore(endres, variables[variable]);
-			return endres; 
+			llvm::Value *lval, *rval;
+			// std::cout << std::hex << LHS << RHS <<endl;
+			lval = lhs->codegen();
+			rval = rhs->codegen();
+			builder->CreateStore(rval, lval);
+			return rval;
 		}
 	};
 	// TODO: Fix type management with the BinaryStmtAST::codegen() function
 	/** BinaryStmtAST - Expression class for a binary operator.
-	 * 
+	 *
 	 * "x AS string"
-	 * 
+	 *
 	 */
 	class BinaryStmtAST : public ExprAST
 	{
@@ -546,9 +599,14 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Op << "( ";
 			llvm::Value *L = LHS->codegen();
+			if(L->getType()->isPointerTy())
+				L = builder->CreateLoad(L->getType()->getNonOpaquePointerElementType(), L); 
 			if (DEBUGGING)
 				std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
+			if(R->getType()->isPointerTy())
+				R = builder->CreateLoad(R->getType()->getNonOpaquePointerElementType(), R); 
+
 			if (DEBUGGING)
 				std::cout << " )";
 
@@ -582,7 +640,7 @@ namespace jimpilier
 				if (L->getType() == llvm::Type::getInt32Ty(*ctxt) || R->getType() == llvm::Type::getInt32Ty(*ctxt))
 					return builder->CreateICmpEQ(L, R, "cmptmp");
 				if (L->getType() == llvm::Type::getInt1Ty(*ctxt) || R->getType() == llvm::Type::getInt1Ty(*ctxt))
-				return builder->CreateICmpEQ(L, R, "cmptmp");
+					return builder->CreateICmpEQ(L, R, "cmptmp");
 			case '>':
 				if (L->getType() == llvm::Type::getFloatTy(*ctxt) || R->getType() == llvm::Type::getFloatTy(*ctxt))
 					return builder->CreateFCmpOGT(L, R, "cmptmp");
@@ -641,22 +699,30 @@ namespace jimpilier
 				switch (data->getType()->getTypeID())
 				{
 				case (llvm::PointerType::PointerTyID):
-					if(data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
+					if (data->getType() == llvm::Type::getInt8PtrTy(*ctxt))
 						placeholder += "%s ";
-					else placeholder+= "%p ";
+					else
+						placeholder += "%p ";
 					break;
 				case (llvm::Type::TypeID::FloatTyID):
 					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
 					placeholder += "%f ";
 					break;
 				case (llvm::Type::TypeID::IntegerTyID):
-					if(data->getType()->getIntegerBitWidth() == 64){
-						placeholder+= "%p ";
-					}else if(data->getType()->getIntegerBitWidth() == 16){
-						placeholder+="%hu "; 
-					}else if(data->getType() == llvm::Type::getInt8Ty(*ctxt)){
-						placeholder+="%c ";
-					} else {
+					if (data->getType()->getIntegerBitWidth() == 64)
+					{
+						placeholder += "%p ";
+					}
+					else if (data->getType()->getIntegerBitWidth() == 16)
+					{
+						placeholder += "%hu ";
+					}
+					else if (data->getType() == llvm::Type::getInt8Ty(*ctxt))
+					{
+						placeholder += "%c ";
+					}
+					else
+					{
 						placeholder += "%d ";
 					}
 					break;
@@ -691,7 +757,7 @@ namespace jimpilier
 				Contents.push_back(std::move(x));
 			}
 		}
-		
+
 		CodeBlockAST() {}
 		llvm::Value *codegen()
 		{
@@ -779,7 +845,7 @@ namespace jimpilier
 	};
 
 	/// FunctionAST - This class represents a function definition itself.
-	class FunctionAST
+	class FunctionAST : public ExprAST
 	{
 		std::unique_ptr<PrototypeAST> Proto;
 		std::unique_ptr<ExprAST> Body;
@@ -815,14 +881,14 @@ namespace jimpilier
 			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
 			builder->SetInsertPoint(BB);
 
-			// Record the function arguments in the NamedValues map.
+			// Record the function arguments in the Named Values map.
 			for (auto &Arg : currentFunction->args())
 			{
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
 				variables[name] = storedvar;
-				dtypes[name] = Arg.getType();
+				// dtypes[name] = Arg.getType();
 			}
 			if (
 				llvm::Value *RetVal = Body->codegen())
@@ -835,7 +901,7 @@ namespace jimpilier
 				for (auto &Arg : currentFunction->args())
 				{
 					variables[std::string(Arg.getName())] = NULL;
-					dtypes[std::string(Arg.getName())] = NULL;
+					// dtypes[std::string(Arg.getName())] = NULL;
 				}
 				currentFunction = prevFunction;
 				return currentFunction;
@@ -860,7 +926,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
 	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens);
-	llvm::Type* variableTypeStmt(Stack<Token>& tokens);
+	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
@@ -896,7 +962,8 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
-	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype);
+	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens);
+	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name);
 	// TODO: Holy Fuckles It's Knuckles I need to revamp this function entirely.
 	/**
 	 * @brief using EBNF notation, a term is roughly defined as:
@@ -909,47 +976,48 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> term(Stack<Token> &tokens)
 	{
-		bool isPointerTo = false; 
+		bool isPointerTo = false;
 		std::unique_ptr<ExprAST> LHS;
 		Token s;
-		string x; 
+		string x;
 		if (tokens.peek() == LPAREN)
 		{
 			tokens.next();
-			LHS = std::move(listExpr(tokens));
+			LHS = std::move(assignStmt(tokens));
 			if (tokens.peek() == RPAREN)
 			{
 				tokens.next();
 				return LHS;
 			}
-		}else if(tokens.peek() == POINTERTO){ 
-			tokens.next(); 
+		}
+		else if (tokens.peek() == POINTERTO)
+		{
+			tokens.next();
 			isPointerTo = true;
-			if(tokens.peek() != IDENT){
-				logError("Error while trying to get a pointer to something: We can only take pointers to variables, because temporary constants are not stored in memory!", tokens.peek()); 
-				return NULL; 
+			if (tokens.peek() != IDENT)
+			{
+				logError("Error while trying to get a pointer to something: We can only take pointers to variables, because temporary constants are not stored in memory!", tokens.peek());
+				return NULL;
 			}
 		}
-		switch(tokens.peek().token){
+		switch (tokens.peek().token)
+		{
 		case (SCONST):
 			s = tokens.next();
 			return std::make_unique<StringExprAST>(s.lex);
-		case(IDENT):
+		case (IDENT):
 			s = tokens.next();
-			if(dtypes[s.lex] == NULL){
-				logError("You tried to use a variable before you declare it! Variable causing this error:",s);
-				return NULL; 
-			}
-			return std::make_unique<VariableExprAST>(s.lex, isPointerTo);
-		case(NUMCONST):
+			return std::make_unique<VariableExprAST>(s.lex);
+		case (NUMCONST):
 			x = tokens.peek().lex;
-			if (std::find(x.begin(), x.end(), '.') == x.end()){
+			if (std::find(x.begin(), x.end(), '.') == x.end())
+			{
 				return std::make_unique<NumberExprAST>(stoi(tokens.next().lex));
 			}
 			return std::make_unique<NumberExprAST>(stod(tokens.next().lex));
-		case(TRU):
-		case(FALS):
-			return std::make_unique<NumberExprAST>(tokens.next() == TRU); 
+		case (TRU):
+		case (FALS):
+			return std::make_unique<NumberExprAST>(tokens.next() == TRU);
 		}
 		logError("Invalid term:", tokens.peek());
 		return NULL;
@@ -977,7 +1045,7 @@ namespace jimpilier
 		if (tokens.peek() != RPAREN)
 			do
 			{
-				std::unique_ptr<ExprAST> param = std::move(jimpilier::listExpr(tokens));
+				std::unique_ptr<ExprAST> param = std::move(jimpilier::assignStmt(tokens));
 				if (param == NULL)
 				{
 					logError("Invalid parameter passed to function", t);
@@ -993,53 +1061,67 @@ namespace jimpilier
 		return std::make_unique<CallExprAST>(t.lex, params);
 	}
 
-	std::unique_ptr<ExprAST> indexExpr(Stack<Token>& tokens, std::unique_ptr<ExprAST> base = NULL){
-		if(base == NULL)
-			base = std::move(functionCallExpr(tokens)); 
-		if(tokens.peek() != OPENSQUARE) return base; 
-		tokens.next(); 
-		std::unique_ptr<ExprAST> index = std::move(debugPrintStmt(tokens)); 
-		if(tokens.peek() != CLOSESQUARE){
-			logError("Expected a closing square bracket when getting an index of an array/pointer here:", tokens.peek()); 
-			return NULL; 
+	std::unique_ptr<ExprAST> indexExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL)
+	{
+		if (base == NULL)
+			base = std::move(functionCallExpr(tokens));
+		if (tokens.peek() != OPENSQUARE)
+			return base;
+		tokens.next();
+		std::unique_ptr<ExprAST> index = std::move(debugPrintStmt(tokens));
+		if (tokens.peek() != CLOSESQUARE)
+		{
+			logError("Expected a closing square bracket when getting an index of an array/pointer here:", tokens.peek());
+			return NULL;
 		}
-		tokens.next(); 
-		if(tokens.peek() == OPENSQUARE){
-			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index); 
-			return std::move(indexExpr(tokens, std::move(thisval))); 
-		}else 
-		return std::make_unique<IndexExprAST>(base, index); 
+		tokens.next();
+		if (tokens.peek() == OPENSQUARE)
+		{
+			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index);
+			return std::move(indexExpr(tokens, std::move(thisval)));
+		}
+		else
+			return std::make_unique<IndexExprAST>(base, index);
 	}
 
-	std::unique_ptr<ExprAST> valueAtExpr(Stack<Token> &tokens){
-		if(tokens.peek() != REFRENCETO){
-			return std::move(indexExpr(tokens)); 
+	std::unique_ptr<ExprAST> valueAtExpr(Stack<Token> &tokens)
+	{
+		if (tokens.peek() != REFRENCETO)
+		{
+			return std::move(indexExpr(tokens));
 		}
-		tokens.next(); 
-		std::unique_ptr<ExprAST> drefval; 
-		if(tokens.peek() == REFRENCETO){
-			drefval = std::move(valueAtExpr(tokens)); 
-		}else {
-			drefval = std::move(indexExpr(tokens)); 
+		tokens.next();
+		std::unique_ptr<ExprAST> drefval;
+		if (tokens.peek() == REFRENCETO)
+		{
+			drefval = std::move(valueAtExpr(tokens));
 		}
-		return std::make_unique<DeRefrenceExprAST>(drefval); 
+		else
+		{
+			drefval = std::move(indexExpr(tokens));
+		}
+		return std::make_unique<DeRefrenceExprAST>(drefval);
 	}
 
-std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
-	if(tokens.peek() != NOT) return std::move(valueAtExpr(tokens));
-	tokens.next(); 
-	std::unique_ptr<ExprAST> val = std::move(valueAtExpr(tokens));
-	return std::make_unique<NotExprAST>(std::move(val)); 
-}
+	std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens)
+	{
+		if (tokens.peek() != NOT)
+			return std::move(valueAtExpr(tokens));
+		tokens.next();
+		std::unique_ptr<ExprAST> val = std::move(valueAtExpr(tokens));
+		return std::make_unique<NotExprAST>(std::move(val));
+	}
 
-	std::unique_ptr<ExprAST> typeAsExpr(Stack<Token> &tokens){
-		std::unique_ptr<ExprAST> convertee = std::move(notExpr(tokens)); 
-		if(tokens.peek() != AS){
-			return convertee; 
+	std::unique_ptr<ExprAST> typeAsExpr(Stack<Token> &tokens)
+	{
+		std::unique_ptr<ExprAST> convertee = std::move(notExpr(tokens));
+		if (tokens.peek() != AS)
+		{
+			return convertee;
 		}
-		tokens.next(); 
-		llvm::Type* toconv = variableTypeStmt(tokens);
-		return std::make_unique<TypeCastExprAST>(convertee, toconv);  
+		tokens.next();
+		llvm::Type *toconv = variableTypeStmt(tokens);
+		return std::make_unique<TypeCastExprAST>(convertee, toconv);
 	}
 
 	std::unique_ptr<ExprAST> incDecExpr(Stack<Token> &tokens)
@@ -1162,7 +1244,7 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	 * No other programming languages that I know of include this, and I have a
 	 * feeling it's for good reason... But at the same time, I want to add it as I
 	 * feel that is extremely convienent in the situations it comes up in.
-	 * 
+	 *
 	 * @param tokens
 	 * @return true - if it is a valid statement,
 	 * @return NULL otherwise
@@ -1210,7 +1292,7 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	 * join			-> "and" | "or"
 	 * terminal		-> SCONST | NUMCONST | VARIABLE //Literal string number or variable values
 	 *
-	 * 
+	 *
 	 *
 	 * @param tokens
 	 * @return true - if it is a valid logic statement,
@@ -1231,12 +1313,13 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
 	}
 
-	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens){
+	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens)
+	{
 		std::unique_ptr<ExprAST> x = std::move(logicStmt(tokens));
-		if(tokens.peek() != NOT) return x;
-		return std::make_unique<DebugPrintExprAST>(std::move(x), tokens.next().ln); 
+		if (tokens.peek() != NOT)
+			return x;
+		return std::make_unique<DebugPrintExprAST>(std::move(x), tokens.next().ln);
 	}
-
 
 	/**
 	 * A list representation can be displayed in EBNF as:
@@ -1259,8 +1342,8 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 		std::vector<std::unique_ptr<ExprAST>> contents;
 		do
 		{
-			std::unique_ptr<ExprAST> LHS; 
-			if(tokens.peek() == OPENSQUARE)
+			std::unique_ptr<ExprAST> LHS;
+			if (tokens.peek() == OPENSQUARE)
 				LHS = std::move(listExpr(tokens));
 			else
 				LHS = std::move(debugPrintStmt(tokens));
@@ -1330,7 +1413,7 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses an object/class blueprint
-	 * 
+	 *
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -1345,12 +1428,13 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 		logError("Error parsing a term in obj", tokens.peek());
 		return NULL;
 	}
-	llvm::Type* variableTypeStmt(Stack<Token> &tokens){
+	llvm::Type *variableTypeStmt(Stack<Token> &tokens)
+	{
 		Token t = tokens.peek();
-		llvm::Type* type = NULL; 
-		if(t.token < INT){
-			logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken()); 
-			return NULL; 
+		llvm::Type *type = NULL;
+		if (t.token < INT)
+		{
+			return NULL;
 		}
 		while (t.token >= INT)
 		{
@@ -1360,10 +1444,10 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 				switch (t.token)
 				{
 				case INT:
-					type =  llvm::Type::getInt32Ty(*ctxt);
+					type = llvm::Type::getInt32Ty(*ctxt);
 					break;
 				case SHORT:
-					type =  llvm::Type::getInt16Ty(*ctxt);
+					type = llvm::Type::getInt16Ty(*ctxt);
 					break;
 				case LONG:
 					type = llvm::Type::getInt64Ty(*ctxt);
@@ -1384,22 +1468,20 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 				case BYTE:
 					type = llvm::Type::getInt8Ty(*ctxt);
 					break;
-				default: 
-					tokens.go_back(); 
-					logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken());
+				default:
+					tokens.go_back();
 					return NULL;
 				}
 				while (tokens.peek() == POINTER)
-					{
-						tokens.next();
-						type = type->getPointerTo();
-					}
-					return type; 
+				{
+					tokens.next();
+					type = type->getPointerTo();
+				}
+				return type;
 			}
 			// Operators.push_back(t) //Add this to the variable modifier memory
 		} //*/
-		logError("We don't recognise this data type; if it's an obj it may not be declared properly:", tokens.currentToken());
-		return NULL; 
+		return NULL;
 	}
 	/**
 	 * @brief Called whenever a modifier keyword are seen.
@@ -1415,23 +1497,50 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	{
 		// clear variable modifier memory if possible
 		// TBI
-		Token t = tokens.peek(); 
-		std::map<KeyToken, bool> modifiers = 
+		Token t = tokens.peek();
+		std::map<KeyToken, bool> modifiers =
+			{
+				{CONST, false},
+				{SINGULAR, false},
+				{VOLATILE, false},
+				{PUBLIC, false},
+				{PRIVATE, false},
+				{PROTECTED, false},
+			};
+		while ((t = tokens.peek()).token <= PROTECTED && t.token >= CONST)
 		{
-		{CONST, false}, {SINGULAR, false}, {VOLATILE, false}, 
-		{PUBLIC, false}, {PRIVATE, false}, {PROTECTED, false},
-		};
-		while((t = tokens.peek()).token <= PROTECTED && t.token >= CONST){
-			modifiers[t.token] = true; 
+			modifiers[t.token] = true;
 			t = tokens.next();
 		}
-		// if(tokens.peek() == COLON){ 
-			// tokens.next(); 
-			// keepMods = true;
-		// }else{ 
-			// keepMods = false;
-		// } 
+		// if(tokens.peek() == COLON){
+		// tokens.next();
+		// keepMods = true;
+		// }else{
+		// keepMods = false;
+		// }
 		return modifiers;
+	}
+
+	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
+	{
+		std::map<KeyToken, bool> mods = variableModStmt(tokens);
+		llvm::Type *dtype = variableTypeStmt(tokens);
+		if (dtype == NULL)
+		{
+			return std::move(listExpr(tokens));
+		}
+		Token name = tokens.peek();
+		if (name != IDENT)
+		{
+			logError("Expected identifier for new variable in place of this token:", tokens.peek());
+			return NULL;
+		}
+		tokens.next();
+		if (tokens.peek() == LPAREN)
+		{
+			return std::move(functionDecl(tokens, dtype, name.lex));
+		}
+		return std::make_unique<DeclareExprAST>(name.lex, dtype);
 	}
 
 	/**
@@ -1442,97 +1551,16 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	 */
 	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens)
 	{
-		Token name = tokens.peek();
-		if (name != IDENT)
+		std::unique_ptr<ExprAST> LHS = std::move(declareStmt(tokens)), RHS = NULL;
+		if (tokens.peek() == EQUALS)
 		{
-			logError("Expected identifier in place of this token:", tokens.peek());
-			return NULL;
-		}
-		else if (dtypes[name.lex] == NULL)
-		{
-			logError("Unknown variable name:", tokens.peek());
-			return NULL;
-		}
-		tokens.next();
-		std::unique_ptr<ExprAST> value;
-		switch (tokens.peek().token)
-		{
-		case (EQUALS):
 			tokens.next();
-			value = std::move(listExpr(tokens));
-			break;
-		case LPAREN:
-			tokens.go_back();
-			return NULL;
-		default:
-			tokens.go_back(); 
-			value = std::move(listExpr(tokens));
-			break;
+			RHS = std::move(assignStmt(tokens));
 		}
-		if (value == NULL)
-		{
-			return NULL;
-		}
-		return std::make_unique<AssignStmtAST>(name.lex, value, dtypes[name.lex]);
-	}
+		else
+			return LHS;
 
-	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
-	{
-		std::map<KeyToken, bool> mods = variableModStmt(tokens);
-		llvm::Type *dtype = variableTypeStmt(tokens);
-		if (dtype == NULL)
-		{
-			return NULL;
-		}
-		Token name = tokens.peek();
-		if (name != IDENT)
-		{
-			logError("Expected identifier for new variable in place of this token:", tokens.peek());
-			return NULL;
-		}
-		tokens.next();
-		std::unique_ptr<ExprAST> value = NULL;
-		std::unique_ptr<FunctionAST> func = NULL;
-		switch (tokens.peek().token)
-		{
-		case (EQUALS):
-			tokens.next();
-			value = std::move(listExpr(tokens));
-			break;
-		case INCREMENT:
-		case DECREMENT:
-			tokens.go_back();
-			value = std::move(incDecExpr(tokens));
-			break;
-		case LPAREN:
-			tokens.go_back();
-			// Function declaration goes here:
-			func = std::move(functionDecl(tokens, dtype));
-			if (func == NULL)
-				return NULL;
-			func->codegen();
-			return NULL;
-		default:
-			if (dtype == llvm::Type::getInt8PtrTy(*ctxt))
-				value = std::make_unique<StringExprAST>("");
-			else if (dtype == llvm::Type::getFloatTy(*ctxt))
-				value = std::make_unique<NumberExprAST>(0.0f);
-			else
-				value = std::make_unique<NumberExprAST>(0);
-		}
-		if (value == NULL || dtype == NULL)
-		{
-			return NULL;
-		}
-		dtypes[name.lex] = dtype;
-		return std::make_unique<AssignStmtAST>(name.lex, value, dtype, mods[CONST], mods[SINGULAR]);
-	}
-
-	std::unique_ptr<ExprAST> declareOrAssign(Stack<Token> &tokens)
-	{
-		if (tokens.peek() == IDENT)
-			return std::move(assignStmt(tokens));
-		return std::move(declareStmt(tokens));
+		return std::make_unique<AssignStmtAST>(LHS, RHS);
 	}
 
 	/**
@@ -1541,22 +1569,11 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	 * @param tokens
 	 * @return std::unique_ptr<FunctionAST>
 	 */
-	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype = NULL)
+	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name)
 	{
-		if (dtype == NULL) // try parsing dtypes, assuming the optional variable was simply not provided
-			{dtype = variableTypeStmt(tokens);}
-		if (dtype == NULL) // if it fails a second time assume it's invalid
-			return NULL;
-		Token name = tokens.next();
-		dtypes[name.lex] = dtype;
 		std::vector<std::string> argnames;
 		std::vector<llvm::Type *> argtypes;
-		if (tokens.next() != LPAREN)
-		{
-			logError("Expected parenthesis here:", tokens.currentToken());
-			dtypes[name.lex] = NULL;
-			return NULL;
-		}
+		tokens.next();
 		if (tokens.peek().token >= INT)
 			do
 			{
@@ -1564,7 +1581,6 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 				if (tokens.peek() != IDENT)
 				{
 					logError("Expected identifier here:", tokens.currentToken());
-					dtypes[name.lex] = NULL;
 					return NULL;
 				}
 				else if (dtype == NULL)
@@ -1575,31 +1591,28 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 				Token t = tokens.next();
 				argnames.push_back(t.lex);
 				argtypes.push_back(dtype);
-				dtypes[t.lex] = dtype;
 			} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 		if (tokens.peek() == RPAREN)
 		{
 			tokens.next();
-			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name.lex, argnames, argtypes, dtype);
+			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, argnames, argtypes, dtype);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
 			for (auto arg : argnames)
-				dtypes[arg] = NULL;
+				variables[arg] = NULL;
 			if (body == NULL)
 			{
-				dtypes[name.lex] = NULL;
 				return NULL;
 			}
 			std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
 			return func;
 		}
 		logError("Expected a closing parenthesis here:", tokens.currentToken());
-		dtypes[name.lex] = NULL;
 		return NULL;
 	}
 	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses a constructor for this class
-	 * 
+	 *
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -1627,7 +1640,7 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	// TODO: Get this fuction off the ground
 	/**
 	 * @brief Parses a destructor for a class
-	 * 
+	 *
 	 *
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
@@ -1654,44 +1667,58 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	std::unique_ptr<ExprAST> doWhileStmt(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> condition, body;
-		if(tokens.next() != DO){
-			logError("Somehow went looking for a do statement when there is none. wtf.", tokens.currentToken()); 
+		if (tokens.next() != DO)
+		{
+			logError("Somehow went looking for a do statement when there is none. wtf.", tokens.currentToken());
 			return NULL;
 		}
 		body = std::move(jimpilier::codeBlockExpr(tokens));
-		bool hasparen= false; 
-		if (tokens.peek() != WHILE){
-			return std::move(body); 
+		bool hasparen = false;
+		if (tokens.peek() != WHILE)
+		{
+			return std::move(body);
 		}
-		tokens.next(); 
-		if(tokens.peek() == LPAREN && tokens.next() == LPAREN) hasparen = true; 
+		tokens.next();
+		if (tokens.peek() == LPAREN && tokens.next() == LPAREN)
+			hasparen = true;
 		condition = std::move(jimpilier::logicStmt(tokens));
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
-		if(hasparen && tokens.peek() != RPAREN){
-			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken()); 
-			return NULL; 
-		}else if(hasparen && tokens.peek() == RPAREN){ tokens.next(); }
-		
+		if (hasparen && tokens.peek() != RPAREN)
+		{
+			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken());
+			return NULL;
+		}
+		else if (hasparen && tokens.peek() == RPAREN)
+		{
+			tokens.next();
+		}
+
 		return std::make_unique<ForExprAST>(std::move(condition), std::move(body), true);
 	}
 	std::unique_ptr<ExprAST> whileStmt(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> condition, body;
-		bool hasparen= false; 
+		bool hasparen = false;
 		if (tokens.next() != WHILE)
 		{
 			logError("Somehow we ended up looking for a 'for' statement where there is none. wtf.", tokens.currentToken());
 			return NULL;
 		}
-		if(tokens.peek() == LPAREN && tokens.next() == LPAREN) hasparen = true; 
+		if (tokens.peek() == LPAREN && tokens.next() == LPAREN)
+			hasparen = true;
 		condition = std::move(jimpilier::logicStmt(tokens));
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
-		if(hasparen && tokens.peek() != RPAREN){
-			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken()); 
-			return NULL; 
-		}else if(hasparen && tokens.peek() == RPAREN){ tokens.next(); }
+		if (hasparen && tokens.peek() != RPAREN)
+		{
+			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken());
+			return NULL;
+		}
+		else if (hasparen && tokens.peek() == RPAREN)
+		{
+			tokens.next();
+		}
 		body = std::move(jimpilier::codeBlockExpr(tokens));
 		return std::make_unique<ForExprAST>(std::move(condition), std::move(body));
 	}
@@ -1705,16 +1732,17 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	{
 		std::vector<std::unique_ptr<ExprAST>> beginStmts, endStmts;
 		std::unique_ptr<ExprAST> condition, body;
-		bool hasparen= false; 
+		bool hasparen = false;
 		if (tokens.next() != FOR)
 		{
 			logError("Somehow we ended up looking for a 'for' statement where there is none. wtf.", tokens.currentToken());
 			return NULL;
 		}
-		if(tokens.peek() == LPAREN && tokens.next() == LPAREN) hasparen = true; 
+		if (tokens.peek() == LPAREN && tokens.next() == LPAREN)
+			hasparen = true;
 		do
 		{
-			std::unique_ptr<ExprAST> x = std::move(declareOrAssign(tokens));
+			std::unique_ptr<ExprAST> x = std::move(assignStmt(tokens));
 			if (x != NULL)
 				beginStmts.push_back(std::move(x));
 		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
@@ -1744,10 +1772,15 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 			return NULL;
 		if (tokens.peek() == SEMICOL)
 			tokens.next();
-		if(hasparen && tokens.peek() != RPAREN){
-			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken()); 
-			return NULL; 
-		}else if(hasparen && tokens.peek() == RPAREN){ tokens.next(); }
+		if (hasparen && tokens.peek() != RPAREN)
+		{
+			logError("Unclosed parenthesis surrounding for statement after this token:", tokens.currentToken());
+			return NULL;
+		}
+		else if (hasparen && tokens.peek() == RPAREN)
+		{
+			tokens.next();
+		}
 		body = std::move(jimpilier::codeBlockExpr(tokens));
 		return std::make_unique<ForExprAST>(beginStmts, std::move(condition), std::move(body), endStmts);
 	}
@@ -1798,52 +1831,64 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	 */
 	std::unique_ptr<ExprAST> switchStmt(Stack<Token> &tokens)
 	{
-		bool autobreak = false; 
-		if (tokens.next() != SWITCH){
+		bool autobreak = false;
+		if (tokens.next() != SWITCH)
+		{
 			logError("Somehow was expecting a switch stmt when there is no switch. Wtf.", tokens.currentToken());
 			return NULL;
 		}
-		if(tokens.peek() == AUTO){ 
-			tokens.next(); 
+		if (tokens.peek() == AUTO)
+		{
+			tokens.next();
 			Token nextTok = tokens.next();
-			if (nextTok == BREAK){
-				autobreak = true; 
-			}else{
+			if (nextTok == BREAK)
+			{
+				autobreak = true;
+			}
+			else
+			{
 				logError("Unknown option after 'auto'; did you mean 'break'?", tokens.currentToken());
-				return NULL; 
+				return NULL;
 			}
 		}
 		std::unique_ptr<ExprAST> variable = std::move(logicStmt(tokens));
 		if (variable == NULL)
 			return NULL;
-		if (tokens.next() != OPENCURL){
+		if (tokens.next() != OPENCURL)
+		{
 			logError("Sorry! Switch Statements MUST have a set of curly braces after them; A switch without multiple switches is just pointless!", tokens.currentToken());
-			return NULL; 
+			return NULL;
 		}
 		std::vector<std::unique_ptr<ExprAST>> cases, conds;
-		int defaultposition = -1, ctr = 0; 
-		do{
-			Token nxt= tokens.next();
+		int defaultposition = -1, ctr = 0;
+		do
+		{
+			Token nxt = tokens.next();
 			std::unique_ptr<ExprAST> value;
-			if(nxt == CASE){
-				value = std::move(logicStmt(tokens)); 
-				conds.push_back(std::move(value)); 
-			}else if (nxt == DEFAULT){
-				defaultposition = ctr; 
-				conds.push_back(NULL);
-			}else {
-				logError("Expected either 'case' or 'default' here:", tokens.currentToken());
-				return NULL; 
+			if (nxt == CASE)
+			{
+				value = std::move(logicStmt(tokens));
+				conds.push_back(std::move(value));
 			}
-			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
-			cases.push_back(std::move(body)); 
-			ctr++; 
-		}while(!errored && (tokens.peek() == CASE || tokens.peek() == DEFAULT)); 
-		
+			else if (nxt == DEFAULT)
+			{
+				defaultposition = ctr;
+				conds.push_back(NULL);
+			}
+			else
+			{
+				logError("Expected either 'case' or 'default' here:", tokens.currentToken());
+				return NULL;
+			}
+			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+			cases.push_back(std::move(body));
+			ctr++;
+		} while (!errored && (tokens.peek() == CASE || tokens.peek() == DEFAULT));
+
 		tokens.next();
 		// if(autobreak)
-		return std::make_unique<SwitchExprAST>(std::move(variable), std::move(conds), std::move(cases), autobreak, defaultposition); 
-		//return NULL;
+		return std::make_unique<SwitchExprAST>(std::move(variable), std::move(conds), std::move(cases), autobreak, defaultposition);
+		// return NULL;
 	}
 
 	std::unique_ptr<ExprAST> retStmt(Stack<Token> &tokens)
@@ -1898,9 +1943,9 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 		case FOR:
 			return std::move(jimpilier::forStmt(tokens));
 		case DO:
-			return std::move(jimpilier::doWhileStmt(tokens)); 
-		case WHILE: 
-			return std::move(jimpilier::whileStmt(tokens)); 
+			return std::move(jimpilier::doWhileStmt(tokens));
+		case WHILE:
+			return std::move(jimpilier::whileStmt(tokens));
 		case IF:
 			return std::move(jimpilier::ifStmt(tokens));
 		case SWITCH:
@@ -1933,10 +1978,10 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 			return std::move(jimpilier::printStmt(tokens));
 		case BREAK:
 			tokens.next();
-			return std::make_unique<BreakExprAST>(); 
-		case CONTINUE: 
-			tokens.next(); 
-			return std::make_unique<ContinueExprAST>(); 
+			return std::make_unique<BreakExprAST>();
+		case CONTINUE:
+			tokens.next();
+			return std::make_unique<ContinueExprAST>();
 		case INT:
 		case SHORT:
 		case POINTER:
@@ -1952,7 +1997,7 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 		case PROTECTED:
 		case SINGULAR:
 		case CONST:
-			return std::move(declareStmt(tokens));
+			return std::move(assignStmt(tokens));
 		case IDENT:
 		{
 			std::unique_ptr<ExprAST> retval = std::move(assignStmt(tokens));
@@ -1983,7 +2028,7 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	// TODO: Move this function into driver code maybe ???
 	/**
 	 * @brief Takes a file name, opens the file, tokenizes it, and loads those into a custom Stack<Token> object
-	 *  
+	 *
 	 * @param fileDir
 	 * @return Stack<Token>
 	 */
@@ -2013,7 +2058,7 @@ std::unique_ptr<ExprAST> notExpr(Stack<Token> &tokens){
 	// TODO: Fix this whole damn function oh Lord help me
 	/**
 	 * @brief Soon-to-be depreciated
-	 * 
+	 *
 	 * @deprecated
 	 * @param fileDir
 	 * @return std::unique_ptr<ExprAST>
