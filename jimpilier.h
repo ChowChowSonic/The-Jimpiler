@@ -12,7 +12,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/FileCheck/FileCheck.h"
 namespace jimpilier
-{
+{  
 	/*
 	 * General Naming rule:
 	 * "___Stmt" = anything that does more than it may appear on the back end
@@ -38,7 +38,7 @@ namespace jimpilier
 	{
 	public:
 		virtual ~ExprAST(){};
-		virtual llvm::Value *codegen() = 0;
+		virtual llvm::Value *codegen(bool autoDeref = true) = 0;
 	};
 
 	/// NumberExprAST - Expression class for numeric literals like "1.0".
@@ -52,7 +52,7 @@ namespace jimpilier
 		NumberExprAST(double Val) : Val(Val) {}
 		NumberExprAST(int Val) : Val(Val) { isInt = true; }
 		NumberExprAST(bool Val) : Val(Val) { isBool = true; }
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref)
 		{
 			if (DEBUGGING)
 				std::cout << Val;
@@ -70,7 +70,7 @@ namespace jimpilier
 
 	public:
 		StringExprAST(std::string val) : Val(val) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref)
 		{
 			if (DEBUGGING)
 				std::cout << Val;
@@ -87,7 +87,7 @@ namespace jimpilier
 
 	public:
 		VariableExprAST(const string &Name) : Name(Name) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (DEBUGGING)
 				std::cout << Name;
@@ -97,6 +97,7 @@ namespace jimpilier
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
+			if(autoDeref) return builder->CreateLoad(V->getType()->getContainedType(0), V, "loadtmp");
 			return V;
 		}
 	};
@@ -111,7 +112,7 @@ namespace jimpilier
 	public:
 		DeclareExprAST(const std::string Name, llvm::Type *type, bool isLateInit = false, int ArrSize = 1) : name(Name), ty(type), size(ArrSize), lateinit(isLateInit) {}
 
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref)
 		{
 			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
 			variables.emplace(std::pair<std::string, llvm::Value *>(name, builder->CreateAlloca(ty, sizeval, name)));
@@ -135,13 +136,34 @@ namespace jimpilier
 	// TODO: Add pointer arithmatic
 	// TODO: Make strings safer
 	
+	class IncDecExprAST : public ExprAST{
+		std::unique_ptr<ExprAST> val; 
+		bool prefix, decrement;
+		public: 
+		IncDecExprAST(bool isPrefix, bool isDecrement, std::unique_ptr<ExprAST>& uniary) : prefix(isPrefix), decrement(isDecrement), val(std::move(uniary)) {}
+		llvm::Value *codegen(bool autoDeref = true){
+			llvm::Value *v = val->codegen(false); 
+			if(prefix){
+				llvm::Value* tmpval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp"); 
+				tmpval = builder->CreateAdd(tmpval, llvm::ConstantInt::get(tmpval->getType(), llvm::APInt(tmpval->getType()->getIntegerBitWidth(), decrement ? -1:1, true))); 
+				builder->CreateStore(tmpval, v); 
+				return tmpval;
+			}else{
+				llvm::Value *oldval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp"); 
+				llvm::Value *tmpval = builder->CreateAdd(oldval, llvm::ConstantInt::get(oldval->getType(), llvm::APInt(oldval->getType()->getIntegerBitWidth(), decrement ? -1:1, true))); 
+				builder->CreateStore(tmpval, v); 
+				return oldval;
+			}
+		}
+	};
+
 	class NotExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> val;
 
 	public:
 		NotExprAST(std::unique_ptr<ExprAST> Val) : val(std::move(Val)){};
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *v = val->codegen();
 			if (v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
@@ -161,10 +183,15 @@ namespace jimpilier
 
 	public:
 		DeRefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref)
 		{
 			llvm::Value *v = val->codegen();
-			return builder->CreateLoad(v->getType()->getNonOpaquePointerElementType(), v, "derefrencetmp");
+			if(v->getType()->isPointerTy())
+				return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
+			else{
+				std::cout << "Attempt to derefrence non-pointer type found: Aborting..."<< endl; 
+				return NULL;
+			}
 		}
 	};
 
@@ -174,7 +201,7 @@ namespace jimpilier
 
 	public:
 		IndexExprAST(std::unique_ptr<ExprAST> &base, std::unique_ptr<ExprAST> &offset) : bas(std::move(base)), offs(std::move(offset)){};
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
 			if (!bsval->getType()->isPointerTy())
@@ -191,7 +218,9 @@ namespace jimpilier
 				return NULL;
 			}
 			llvm::Value *indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
-			return builder->CreateLoad(bsval->getType()->getContainedType(0), indextmp, "loadtmp");
+			if(autoDeref)
+				return builder->CreateLoad(bsval->getType()->getContainedType(0), indextmp, "loadtmp");
+			return indextmp; 
 		}
 	};
 	class TypeCastExprAST : public ExprAST
@@ -202,7 +231,7 @@ namespace jimpilier
 	public:
 		TypeCastExprAST(std::unique_ptr<ExprAST> &fromval, llvm::Type *toVal) : from(std::move(fromval)), to(toVal){};
 
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *init = from->codegen();
 			llvm::Instruction::CastOps op;
@@ -296,7 +325,7 @@ namespace jimpilier
 	public:
 		std::vector<std::unique_ptr<ExprAST>> condition, body;
 		IfExprAST(std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod) : condition(std::move(cond)), body(std::move(bod)) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::BasicBlock *start, *end;
 			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction);
@@ -331,7 +360,7 @@ namespace jimpilier
 		int def;
 		bool autoBr;
 		SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak, int defaultLoc = -1) : condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak), def(defaultLoc) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			std::vector<llvm::BasicBlock *> bodBlocks;
 			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
@@ -372,7 +401,7 @@ namespace jimpilier
 
 	public:
 		BreakExprAST(string label = "") : labelVal(label) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (escapeBlock.empty())
 				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
@@ -392,7 +421,7 @@ namespace jimpilier
 
 	public:
 		ContinueExprAST(string label = "") : labelVal(label) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (escapeBlock.empty())
 				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
@@ -424,7 +453,7 @@ namespace jimpilier
 		 */
 		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod, bool isDoWhile = false) : condition(std::move(cond)), body(std::move(bod)), dowhile(isDoWhile) {}
 		// I have a feeling this function needs to be revamped.
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *retval;
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
@@ -464,7 +493,7 @@ namespace jimpilier
 		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args) : Contents(std::move(Args)) {}
 		ListExprAST() {}
 
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *ret = NULL;
 			if (DEBUGGING)
@@ -489,7 +518,7 @@ namespace jimpilier
 	public:
 		DebugPrintExprAST(std::unique_ptr<ExprAST> printval, int line) : val(std::move(printval)), ln(line) {}
 
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *data = val->codegen();
 			std::string placeholder = "Debug value (Line " + to_string(ln) + "): ";
@@ -545,7 +574,7 @@ namespace jimpilier
 
 	public:
 		RetStmtAST(unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (DEBUGGING)
 				std::cout << "return ";
@@ -570,11 +599,11 @@ namespace jimpilier
 		{
 		}
 
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *lval, *rval;
 			// std::cout << std::hex << LHS << RHS <<endl;
-			lval = lhs->codegen();
+			lval = lhs->codegen(false);
 			rval = rhs->codegen();
 			builder->CreateStore(rval, lval);
 			return rval;
@@ -594,19 +623,15 @@ namespace jimpilier
 	public:
 		BinaryStmtAST(string op, /* llvm::Type* type,*/ unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (DEBUGGING)
 				std::cout << Op << "( ";
 			llvm::Value *L = LHS->codegen();
-			if(L->getType()->isPointerTy())
-				L = builder->CreateLoad(L->getType()->getNonOpaquePointerElementType(), L); 
 			if (DEBUGGING)
 				std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
-			if(R->getType()->isPointerTy())
-				R = builder->CreateLoad(R->getType()->getNonOpaquePointerElementType(), R); 
-
+			
 			if (DEBUGGING)
 				std::cout << " )";
 
@@ -687,7 +712,7 @@ namespace jimpilier
 		PrintStmtAST(std::vector<std::unique_ptr<ExprAST>> &Args, bool isLn)
 			: Contents(std::move(Args)), isLine(isLn) {}
 
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			// Initialize values for the arguments and the types for the arguments
 			std::vector<llvm::Value *> vals;
@@ -759,7 +784,7 @@ namespace jimpilier
 		}
 
 		CodeBlockAST() {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *ret = NULL;
 			for (int i = 0; i < Contents.size(); i++)
@@ -783,7 +808,7 @@ namespace jimpilier
 		{
 		}
 		// : Callee(callee), Args(Arg) {}
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			// Look up the name in the global module table.
 			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
@@ -829,7 +854,7 @@ namespace jimpilier
 			: Name(name), Args(std::move(args)), Argt(std::move(argtypes)), retType(ret) {}
 
 		const std::string &getName() const { return Name; }
-		llvm::Function *codegen()
+		llvm::Function *codegen(bool autoDeref = true)
 		{
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(retType, Argt, false);
@@ -855,7 +880,7 @@ namespace jimpilier
 					std::unique_ptr<ExprAST> Body)
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
 
-		llvm::Value *codegen()
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (DEBUGGING)
 				std::cout << Proto->getName();
@@ -1130,9 +1155,9 @@ namespace jimpilier
 		if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)
 		{
 			Token t = tokens.next();
-			std::string op = &t.lex[0];
+			char op = t.lex[0];
 			LHS = std::move(typeAsExpr(tokens));
-			return std::make_unique<BinaryStmtAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
+			return std::make_unique<IncDecExprAST>(true, op == '-', LHS);
 		}
 		LHS = std::move(typeAsExpr(tokens));
 		if (LHS == NULL)
@@ -1142,8 +1167,8 @@ namespace jimpilier
 		if (tokens.peek() == INCREMENT || tokens.peek() == DECREMENT)
 		{
 			Token t = tokens.next();
-			std::string op = &t.lex[0];
-			return std::make_unique<BinaryStmtAST>(op, std::move(LHS), std::make_unique<NumberExprAST>(1));
+			char op = t.lex[0];
+			return std::make_unique<IncDecExprAST>(false, op == '-', LHS);
 		}
 		return LHS;
 	}
