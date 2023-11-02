@@ -196,7 +196,7 @@ namespace jimpilier
 		DeRefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
 		llvm::Value *codegen(bool autoDeref = true)
 		{
-			llvm::Value *v = val->codegen();
+			llvm::Value *v = val->codegen(autoDeref);
 			if(v->getType()->isPointerTy())
 				return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
 			else{
@@ -1994,11 +1994,6 @@ namespace jimpilier
 			return std::move(jimpilier::construct(tokens));
 		case DESTRUCTOR:
 			return std::move(jimpilier::destruct(tokens));
-		case RPAREN:
-		case LPAREN:
-		case INCREMENT:
-		case DECREMENT:
-			return std::move(jimpilier::incDecExpr(tokens));
 		case SEMICOL:
 			tokens.next();
 			return NULL;
@@ -2018,45 +2013,8 @@ namespace jimpilier
 		case CONTINUE:
 			tokens.next();
 			return std::make_unique<ContinueExprAST>();
-		case INT:
-		case SHORT:
-		case POINTER:
-		case LONG:
-		case FLOAT:
-		case DOUBLE:
-		case STRING:
-		case CHAR:
-		case BOOL:
-		case BYTE:
-		case PUBLIC:
-		case PRIVATE:
-		case PROTECTED:
-		case SINGULAR:
-		case CONST:
-			return std::move(assignStmt(tokens));
-		case IDENT:
-		{
-			std::unique_ptr<ExprAST> retval = std::move(assignStmt(tokens));
-			if (retval == NULL)
-			{
-				llvm::Function *functionExists = GlobalVarsAndFunctions->getFunction(tokens.peek().lex);
-				if (!functionExists)
-				{
-					logError("Unknown function here:", tokens.peek());
-					return NULL;
-				}
-				else
-				{
-					return std::move(listExpr(tokens));
-				}
-				return NULL;
-			}
-			return retval;
-		}
 		default:
-			logError("Unknown token:", tokens.peek());
-			tokens.go_back(1);
-			return NULL;
+			return std::move(assignStmt(tokens));
 		}
 		logError("Returning null on error?", tokens.currentToken());
 		return NULL;
