@@ -52,7 +52,7 @@ namespace jimpilier
 		NumberExprAST(double Val) : Val(Val) {}
 		NumberExprAST(int Val) : Val(Val) { isInt = true; }
 		NumberExprAST(bool Val) : Val(Val) { isBool = true; }
-		llvm::Value *codegen(bool autoDeref)
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (DEBUGGING)
 				std::cout << Val;
@@ -70,7 +70,7 @@ namespace jimpilier
 
 	public:
 		StringExprAST(std::string val) : Val(val) {}
-		llvm::Value *codegen(bool autoDeref)
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			if (DEBUGGING)
 				std::cout << Val;
@@ -97,7 +97,7 @@ namespace jimpilier
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
-			if(autoDeref) return builder->CreateLoad(V->getType()->getContainedType(0), V, "loadtmp");
+			if(autoDeref) return builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
 			return V;
 		}
 	};
@@ -112,7 +112,7 @@ namespace jimpilier
 	public:
 		DeclareExprAST(const std::string Name, llvm::Type *type, bool isLateInit = false, int ArrSize = 1) : name(Name), ty(type), size(ArrSize), lateinit(isLateInit) {}
 
-		llvm::Value *codegen(bool autoDeref)
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
 			variables.emplace(std::pair<std::string, llvm::Value *>(name, builder->CreateAlloca(ty, sizeval, name)));
@@ -131,8 +131,6 @@ namespace jimpilier
 	// TODO: Add a way to delete things from the heap
 	// TODO: Add other modifier keywords (volatile, extern, etc...)
 	// TODO: Make "auto" keyword work like C/C++
-	// TODO: Revamp assignment function to take a LHS & RHS properly
-	// TODO: Fix(?) pointerTo operator
 	// TODO: Add pointer arithmatic
 	// TODO: Make strings safer
 	
@@ -177,13 +175,26 @@ namespace jimpilier
 		}
 	};
 
+	class RefrenceExprAST : public ExprAST{
+		std::unique_ptr<ExprAST> val;
+
+	public:
+		RefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
+		llvm::Value *codegen(bool autoDeref = false)
+		{
+			return val->codegen(false); 
+		}
+		
+	};
+
+
 	class DeRefrenceExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> val;
 
 	public:
 		DeRefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
-		llvm::Value *codegen(bool autoDeref)
+		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *v = val->codegen();
 			if(v->getType()->isPointerTy())
@@ -219,7 +230,7 @@ namespace jimpilier
 			}
 			llvm::Value *indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
 			if(autoDeref)
-				return builder->CreateLoad(bsval->getType()->getContainedType(0), indextmp, "loadtmp");
+				return builder->CreateLoad(bsval->getType()->getNonOpaquePointerElementType(), indextmp, "loadtmp");
 			return indextmp; 
 		}
 	};
@@ -1001,7 +1012,6 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> term(Stack<Token> &tokens)
 	{
-		bool isPointerTo = false;
 		std::unique_ptr<ExprAST> LHS;
 		Token s;
 		string x;
@@ -1013,16 +1023,6 @@ namespace jimpilier
 			{
 				tokens.next();
 				return LHS;
-			}
-		}
-		else if (tokens.peek() == POINTERTO)
-		{
-			tokens.next();
-			isPointerTo = true;
-			if (tokens.peek() != IDENT)
-			{
-				logError("Error while trying to get a pointer to something: We can only take pointers to variables, because temporary constants are not stored in memory!", tokens.peek());
-				return NULL;
 			}
 		}
 		switch (tokens.peek().token)
@@ -1109,11 +1109,22 @@ namespace jimpilier
 			return std::make_unique<IndexExprAST>(base, index);
 	}
 
+	std::unique_ptr<ExprAST> pointerToExpr(Stack<Token> &tokens)
+	{
+		if(tokens.peek() != POINTERTO){
+			return std::move(indexExpr(tokens)); 
+		}
+		tokens.next(); 
+		std::unique_ptr<ExprAST> refval;
+		refval = std::move(indexExpr(tokens)); 
+		return std::make_unique<RefrenceExprAST>(refval); 
+	}
+
 	std::unique_ptr<ExprAST> valueAtExpr(Stack<Token> &tokens)
 	{
 		if (tokens.peek() != REFRENCETO)
 		{
-			return std::move(indexExpr(tokens));
+			return std::move(pointerToExpr(tokens));
 		}
 		tokens.next();
 		std::unique_ptr<ExprAST> drefval;
@@ -1123,7 +1134,7 @@ namespace jimpilier
 		}
 		else
 		{
-			drefval = std::move(indexExpr(tokens));
+			drefval = std::move(pointerToExpr(tokens));
 		}
 		return std::make_unique<DeRefrenceExprAST>(drefval);
 	}
