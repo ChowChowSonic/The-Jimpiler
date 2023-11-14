@@ -12,7 +12,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/FileCheck/FileCheck.h"
 namespace jimpilier
-{  
+{
 	/*
 	 * General Naming rule:
 	 * "___Stmt" = anything that does more than it may appear on the back end
@@ -22,6 +22,7 @@ namespace jimpilier
 	std::unique_ptr<llvm::IRBuilder<>> builder;
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
+	std::map<std::string, llvm::Type *> structTypes;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	/**
@@ -97,7 +98,8 @@ namespace jimpilier
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
-			if(autoDeref) return builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
+			if (autoDeref)
+				return builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
 			return V;
 		}
 	};
@@ -133,23 +135,29 @@ namespace jimpilier
 	// TODO: Make "auto" keyword work like C/C++
 	// TODO: Add pointer arithmatic
 	// TODO: Make strings safer
-	
-	class IncDecExprAST : public ExprAST{
-		std::unique_ptr<ExprAST> val; 
+
+	class IncDecExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> val;
 		bool prefix, decrement;
-		public: 
-		IncDecExprAST(bool isPrefix, bool isDecrement, std::unique_ptr<ExprAST>& uniary) : prefix(isPrefix), decrement(isDecrement), val(std::move(uniary)) {}
-		llvm::Value *codegen(bool autoDeref = true){
-			llvm::Value *v = val->codegen(false); 
-			if(prefix){
-				llvm::Value* tmpval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp"); 
-				tmpval = builder->CreateAdd(tmpval, llvm::ConstantInt::get(tmpval->getType(), llvm::APInt(tmpval->getType()->getIntegerBitWidth(), decrement ? -1:1, true))); 
-				builder->CreateStore(tmpval, v); 
+
+	public:
+		IncDecExprAST(bool isPrefix, bool isDecrement, std::unique_ptr<ExprAST> &uniary) : prefix(isPrefix), decrement(isDecrement), val(std::move(uniary)) {}
+		llvm::Value *codegen(bool autoDeref = true)
+		{
+			llvm::Value *v = val->codegen(false);
+			if (prefix)
+			{
+				llvm::Value *tmpval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
+				tmpval = builder->CreateAdd(tmpval, llvm::ConstantInt::get(tmpval->getType(), llvm::APInt(tmpval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)));
+				builder->CreateStore(tmpval, v);
 				return tmpval;
-			}else{
-				llvm::Value *oldval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp"); 
-				llvm::Value *tmpval = builder->CreateAdd(oldval, llvm::ConstantInt::get(oldval->getType(), llvm::APInt(oldval->getType()->getIntegerBitWidth(), decrement ? -1:1, true))); 
-				builder->CreateStore(tmpval, v); 
+			}
+			else
+			{
+				llvm::Value *oldval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
+				llvm::Value *tmpval = builder->CreateAdd(oldval, llvm::ConstantInt::get(oldval->getType(), llvm::APInt(oldval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)));
+				builder->CreateStore(tmpval, v);
 				return oldval;
 			}
 		}
@@ -175,18 +183,17 @@ namespace jimpilier
 		}
 	};
 
-	class RefrenceExprAST : public ExprAST{
+	class RefrenceExprAST : public ExprAST
+	{
 		std::unique_ptr<ExprAST> val;
 
 	public:
 		RefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
 		llvm::Value *codegen(bool autoDeref = false)
 		{
-			return val->codegen(false); 
+			return val->codegen(false);
 		}
-		
 	};
-
 
 	class DeRefrenceExprAST : public ExprAST
 	{
@@ -197,10 +204,11 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true)
 		{
 			llvm::Value *v = val->codegen(autoDeref);
-			if(v->getType()->isPointerTy())
+			if (v->getType()->isPointerTy())
 				return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
-			else{
-				std::cout << "Attempt to derefrence non-pointer type found: Aborting..."<< endl; 
+			else
+			{
+				std::cout << "Attempt to derefrence non-pointer type found: Aborting..." << endl;
 				return NULL;
 			}
 		}
@@ -229,9 +237,9 @@ namespace jimpilier
 				return NULL;
 			}
 			llvm::Value *indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
-			if(autoDeref)
+			if (autoDeref)
 				return builder->CreateLoad(bsval->getType()->getNonOpaquePointerElementType(), indextmp, "loadtmp");
-			return indextmp; 
+			return indextmp;
 		}
 	};
 	class TypeCastExprAST : public ExprAST
@@ -642,7 +650,7 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << ", ";
 			llvm::Value *R = RHS->codegen();
-			
+
 			if (DEBUGGING)
 				std::cout << " )";
 
@@ -850,6 +858,27 @@ namespace jimpilier
 		}
 	};
 
+	class ObjectExprAST : public ExprAST
+	{
+		std::string name;
+		std::vector<std::pair<std::string, llvm::Type *>> vars;
+
+	public:
+		ObjectExprAST(std::string name, std::vector<std::pair<std::string, llvm::Type *>> &varArg) : name(name), vars(std::move(varArg)){};
+
+		llvm::Value *codegen(bool autoDeref = true)
+		{
+			std::vector<llvm::Type *> types;
+			for (auto x : vars)
+			{
+				types.push_back(x.second);
+			}
+			llvm::Type *ty = llvm::StructType::create(*ctxt, types, name);
+			structTypes[name] = ty;
+			return NULL;
+		}
+	};
+
 	/// PrototypeAST - This class represents the "prototype" for a function,
 	/// which captures its name, and its argument names (thus implicitly the number
 	/// of arguments the function takes).
@@ -994,7 +1023,8 @@ namespace jimpilier
 		// }
 		return b;
 	}
-
+	std::map<KeyToken, bool> variableModStmt(Stack<Token> &tokens);
+	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
@@ -1111,13 +1141,14 @@ namespace jimpilier
 
 	std::unique_ptr<ExprAST> pointerToExpr(Stack<Token> &tokens)
 	{
-		if(tokens.peek() != POINTERTO){
-			return std::move(indexExpr(tokens)); 
+		if (tokens.peek() != POINTERTO)
+		{
+			return std::move(indexExpr(tokens));
 		}
-		tokens.next(); 
+		tokens.next();
 		std::unique_ptr<ExprAST> refval;
-		refval = std::move(indexExpr(tokens)); 
-		return std::make_unique<RefrenceExprAST>(refval); 
+		refval = std::move(indexExpr(tokens));
+		return std::make_unique<RefrenceExprAST>(refval);
 	}
 
 	std::unique_ptr<ExprAST> valueAtExpr(Stack<Token> &tokens)
@@ -1456,68 +1487,89 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
 	{
-		if (tokens.next().token != IDENT)
+		Token objName;
+		std::vector<std::pair<std::string, llvm::Type *>> objVars;
+		if (tokens.peek() == OBJECT)
+			tokens.next();
+		if (tokens.peek() != IDENT)
 		{
-			logError("Not an identifier", tokens.currentToken());
+			logError("Expected object name at this token:", tokens.peek());
 			return NULL;
 		}
-		logError("Error parsing a term in obj", tokens.peek());
-		return NULL;
+		objName = tokens.next();
+		if (tokens.next() != OPENCURL)
+		{
+			logError("Curly braces are required for object declarations. Please put a brace before this token:", tokens.currentToken());
+			return NULL;
+		}
+		while (tokens.peek() != CLOSECURL)
+		{
+			llvm::Type *ty = variableTypeStmt(tokens);
+			if (ty == NULL)
+			{
+				logError("Invalid variable declaration found here:", tokens.peek());
+				return NULL;
+			}
+			Token name = tokens.peek();
+			if (name != IDENT)
+			{
+				logError("Expected identifier at this token:", name);
+				return NULL;
+			}
+			tokens.next();
+			if (tokens.peek() == SEMICOL)
+				tokens.next();
+			objVars.push_back(std::pair<std::string, llvm::Type *>(name.lex, ty));
+		}
+		tokens.next();
+		return std::make_unique<ObjectExprAST>(objName.lex, objVars);
 	}
 	llvm::Type *variableTypeStmt(Stack<Token> &tokens)
 	{
 		Token t = tokens.peek();
 		llvm::Type *type = NULL;
-		if (t.token < INT)
-		{
-			return NULL;
-		}
-		while (t.token >= INT)
+		if (t.token >= INT || structTypes[t.lex] != NULL)
 		{
 			t = tokens.next();
-			if (t.token >= INT)
+			switch (t.token)
 			{
-				switch (t.token)
-				{
-				case INT:
-					type = llvm::Type::getInt32Ty(*ctxt);
-					break;
-				case SHORT:
-					type = llvm::Type::getInt16Ty(*ctxt);
-					break;
-				case LONG:
-					type = llvm::Type::getInt64Ty(*ctxt);
-					break;
-				case FLOAT:
-					type = llvm::Type::getFloatTy(*ctxt);
-					break;
-				case DOUBLE:
-					type = llvm::Type::getDoubleTy(*ctxt);
-					break;
-				case STRING:
-					type = llvm::Type::getInt8PtrTy(*ctxt);
-					break;
-				case BOOL:
-					type = llvm::Type::getInt1Ty(*ctxt);
-					break;
-				case CHAR:
-				case BYTE:
-					type = llvm::Type::getInt8Ty(*ctxt);
-					break;
-				default:
-					tokens.go_back();
+			case INT:
+				type = llvm::Type::getInt32Ty(*ctxt);
+				break;
+			case SHORT:
+				type = llvm::Type::getInt16Ty(*ctxt);
+				break;
+			case LONG:
+				type = llvm::Type::getInt64Ty(*ctxt);
+				break;
+			case FLOAT:
+				type = llvm::Type::getFloatTy(*ctxt);
+				break;
+			case DOUBLE:
+				type = llvm::Type::getDoubleTy(*ctxt);
+				break;
+			case STRING:
+				type = llvm::Type::getInt8PtrTy(*ctxt);
+				break;
+			case BOOL:
+				type = llvm::Type::getInt1Ty(*ctxt);
+				break;
+			case CHAR:
+			case BYTE:
+				type = llvm::Type::getInt8Ty(*ctxt);
+				break;
+			default:
+				type = structTypes[t.lex];
+				if (type == NULL)
 					return NULL;
-				}
-				while (tokens.peek() == POINTER)
-				{
-					tokens.next();
-					type = type->getPointerTo();
-				}
-				return type;
 			}
-			// Operators.push_back(t) //Add this to the variable modifier memory
-		} //*/
-		return NULL;
+			while (tokens.peek() == POINTER)
+			{
+				tokens.next();
+				type = type->getPointerTo();
+			}
+		}
+		return type;
 	}
 	/**
 	 * @brief Called whenever a modifier keyword are seen.
