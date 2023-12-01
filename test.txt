@@ -10,11 +10,21 @@ public singular int x = 0 //equivalent of Java's Static modifier
 
 //All code blocks have optional curly braces,
 //but they only accept 1 statement if you don't enclose them
+
+object vector{ 
+    int length
+    int pointer val
+    constructor(){
+        println "inside the vector constructor"
+    }
+}
+
 int test(int a, int b) 
     return a*b
 
 int main(int args, string pointer argv)
 {
+    vector array = vector_constructor(array)
     int temp //By default initialized to zero
     int pointer x = ->args
     println "output of:", @argv

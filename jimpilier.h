@@ -608,7 +608,6 @@ namespace jimpilier
 		}
 	};
 
-
 	class AssignStmtAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> lhs, rhs;
@@ -859,42 +858,102 @@ namespace jimpilier
 		}
 	};
 
-	class ObjectHeaderAST  {
+	class ObjectHeaderExpr
+	{
+	public:
 		std::string name;
-		public: 
-		ObjectHeaderAST(std::string nameval) : name(nameval) {}
+		ObjectHeaderExpr(std::string nameval) : name(nameval) {}
 
-		llvm::StructType* codegen(bool autoderef = false){ 
-			return llvm::StructType::create(*ctxt, NULL, name);
+		llvm::StructType *codegen(bool autoderef = false)
+		{
+			// TODO: This could cause bugs later. Find a better (non-bandaid) solution
+			llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
+			return ty == NULL ? llvm::StructType::create(*ctxt, NULL, name) : ty;
 		}
-	}; 
+	};
+	class ConstructorExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> bod;
+		std::pair<std::vector<std::string>, std::vector<llvm::Type *>> args;
+		std::string objName;
+
+	public:
+		ConstructorExprAST(
+			std::pair<std::vector<std::string>, std::vector<llvm::Type *>> argList,
+			std::unique_ptr<ExprAST> &body,
+			std::string objName) : bod(std::move(body)), args(argList), objName(objName){};
+
+		llvm::Value *codegen(bool autoderef = false)
+		{
+			llvm::Type *retType = llvm::StructType::getTypeByName(*ctxt, objName);
+			args.first.emplace(args.first.begin(), "this");
+			args.second.emplace(args.second.begin(), retType);
+
+			llvm::FunctionType *FT =
+				llvm::FunctionType::get(retType, args.second, false);
+
+			llvm::Function * thisfunc =
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName+"_constructor", GlobalVarsAndFunctions.get());
+			unsigned Idx = 0;
+			for (auto &Arg : thisfunc->args())
+				Arg.setName(args.first[Idx++]);
+
+			llvm::Function *lastfunc = currentFunction;
+			currentFunction = thisfunc;
+			llvm::BasicBlock *entry = llvm::BasicBlock::Create(*ctxt, "entry", thisfunc);
+
+			builder->SetInsertPoint(entry);
+			if (
+				llvm::Value *RetVal = bod->codegen())
+			{
+				builder->CreateRet(currentFunction->args().begin()); 
+				// Validate the generated code, checking for consistency.
+				verifyFunction(*currentFunction);
+				if (DEBUGGING)
+					std::cout << "//end of " << objName << "'s constructor" << endl;
+				// remove the arguments now that they're out of scope
+				for (auto &Arg : currentFunction->args())
+				{
+					variables[std::string(Arg.getName())] = NULL;
+					// dtypes[std::string(Arg.getName())] = NULL;
+				}
+				currentFunction = lastfunc;
+				return currentFunction;
+			}
+			else
+				std::cout << "Error in body of function constructor for " << objName << endl;
+			currentFunction->eraseFromParent();
+			currentFunction = lastfunc;
+			return nullptr;
+		}
+	};
 
 	class ObjectExprAST : public ExprAST
 	{
-		ObjectHeaderAST base; 
+		ObjectHeaderExpr base;
 		std::vector<std::pair<std::string, llvm::Type *>> vars;
 		std::vector<std::unique_ptr<ExprAST>> functions;
 
 	public:
-		ObjectExprAST(ObjectHeaderAST name, 
-		std::vector<std::pair<std::string, llvm::Type *>> &varArg, 
-		std::vector<std::unique_ptr<ExprAST>> &funcList) :
-		 base(name), vars(std::move(varArg)), functions(std::move(funcList)){};
+		ObjectExprAST(ObjectHeaderExpr name,
+					  std::vector<std::pair<std::string, llvm::Type *>> &varArg,
+					  std::vector<std::unique_ptr<ExprAST>> &funcList) : base(name), vars(std::move(varArg)), functions(std::move(funcList)){};
 
 		llvm::Value *codegen(bool autoDeref = true)
 		{
-			llvm::StructType *ty = base.codegen(); 
+			llvm::StructType *ty = base.codegen();
 			std::vector<llvm::Type *> types;
 			for (auto x : vars)
 			{
 				types.push_back(x.second);
-				//Do something here to keep track of member positions later
+				// Do something here to keep track of member positions later
 			}
-			ty->setBody(types); 
+			ty->setBody(types);
 			structTypes[(std::string)ty->getName()] = ty;
-			for(auto &func : functions) {
+			for (auto &func : functions)
+			{
 				func->codegen();
-			} 
+			}
 			return NULL;
 		}
 	};
@@ -1012,8 +1071,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens);
 	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
-	std::pair<std::vector<std::string>, std::vector<llvm::Type*>> functionArgList(Stack<Token> &tokens);
-
+	std::pair<std::vector<std::string>, std::vector<llvm::Type *>> functionArgList(Stack<Token> &tokens);
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
@@ -1508,30 +1566,31 @@ namespace jimpilier
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens, std::string obj)
 	{
 		Token t = tokens.next();
-		if(t != CONSTRUCTOR){
-			logError("Expected a constructor token here:", t); 
-			 return NULL;
+		if (t != CONSTRUCTOR)
+		{
+			logError("Expected a constructor token here:", t);
+			return NULL;
 		}
-		t = tokens.next(); 
+		t = tokens.next();
 		if (t != LPAREN)
 		{
 			tokens.go_back(1);
 			logError("Expecting a Left Parenthesis at this token:", t);
 			return NULL;
 		}
-		std::pair<std::vector<std::string>, std::vector<llvm::Type*>> args = functionArgList(tokens); 
-		t = tokens.next(); 
+		std::pair<std::vector<std::string>, std::vector<llvm::Type *>> args = functionArgList(tokens);
+		t = tokens.next();
 		if (t != RPAREN)
 		{
 			tokens.go_back(1);
 			logError("Expecting a right parenthesis at this token:", t);
 			return NULL;
-		}		
-		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
-		return NULL; 
+		}
+		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+		return std::make_unique<ConstructorExprAST>(args, body, obj);
 	}
 	// TODO: Get this fuction off the ground
 	/**
@@ -1560,7 +1619,7 @@ namespace jimpilier
 		logError("Error in destruct()", t);
 		return NULL;
 	}
-	
+
 	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses an object/class blueprint
@@ -1580,7 +1639,7 @@ namespace jimpilier
 			logError("Expected object name at this token:", tokens.peek());
 			return NULL;
 		}
-		ObjectHeaderAST objName(tokens.next().lex);
+		ObjectHeaderExpr objName(tokens.next().lex);
 		if (tokens.next() != OPENCURL)
 		{
 			logError("Curly braces are required for object declarations. Please put a brace before this token:", tokens.currentToken());
@@ -1588,9 +1647,10 @@ namespace jimpilier
 		}
 		while (tokens.peek() != CLOSECURL)
 		{
-			if(tokens.peek() == CONSTRUCTOR) {
-				std::unique_ptr<ExprAST> constructorast = std::move(construct(tokens)); 
-				objFunctions.push_back(std::move(constructorast)); 
+			if (tokens.peek() == CONSTRUCTOR)
+			{
+				std::unique_ptr<ExprAST> constructorast = std::move(construct(tokens, objName.name));
+				objFunctions.push_back(std::move(constructorast));
 				continue;
 			}
 			llvm::Type *ty = variableTypeStmt(tokens);
@@ -1740,25 +1800,27 @@ namespace jimpilier
 		return std::make_unique<AssignStmtAST>(LHS, RHS);
 	}
 
-	std::pair<std::vector<std::string>, std::vector<llvm::Type*>> functionArgList(Stack<Token> &tokens){
+	std::pair<std::vector<std::string>, std::vector<llvm::Type *>> functionArgList(Stack<Token> &tokens)
+	{
 		std::vector<std::string> argnames;
 		std::vector<llvm::Type *> argtypes;
-			do
+		do
+		{
+			llvm::Type *dtype = jimpilier::variableTypeStmt(tokens);
+			if (dtype == NULL)
 			{
-				llvm::Type *dtype = jimpilier::variableTypeStmt(tokens);
-				if (dtype == NULL)
-				{
-					break; 
-				}else if (tokens.peek() != IDENT)
-				{
-					logError("Expected identifier after variable type here:", tokens.currentToken());
-					break;
-				}
-				Token t = tokens.next();
-				argnames.push_back(t.lex);
-				argtypes.push_back(dtype);
-			} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
-		return std::pair<std::vector<std::string>, std::vector<llvm::Type*>>(argnames, argtypes); 
+				break;
+			}
+			else if (tokens.peek() != IDENT)
+			{
+				logError("Expected identifier after variable type here:", tokens.currentToken());
+				break;
+			}
+			Token t = tokens.next();
+			argnames.push_back(t.lex);
+			argtypes.push_back(dtype);
+		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
+		return std::pair<std::vector<std::string>, std::vector<llvm::Type *>>(argnames, argtypes);
 	}
 
 	/**
@@ -1769,15 +1831,16 @@ namespace jimpilier
 	 */
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name)
 	{
-		
+
 		std::vector<std::string> argnames;
 		std::vector<llvm::Type *> argtypes;
 
 		tokens.next();
-		if (tokens.peek().token >= INT){
-			std::pair<std::vector<std::string>, std::vector<llvm::Type*>> retval = functionArgList(tokens); 
-			argnames = retval.first; 
-			argtypes = retval.second; 
+		if (tokens.peek().token >= INT)
+		{
+			std::pair<std::vector<std::string>, std::vector<llvm::Type *>> retval = functionArgList(tokens);
+			argnames = retval.first;
+			argtypes = retval.second;
 		}
 
 		if (tokens.peek() == RPAREN)
@@ -2087,10 +2150,6 @@ namespace jimpilier
 			return std::move(jimpilier::caseStmt(tokens));
 		case OBJECT:
 			return obj(tokens);
-		case CONSTRUCTOR:
-			return std::move(jimpilier::construct(tokens));
-		case DESTRUCTOR:
-			return std::move(jimpilier::destruct(tokens));
 		case SEMICOL:
 			tokens.next();
 			return NULL;
