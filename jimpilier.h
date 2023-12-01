@@ -608,6 +608,7 @@ namespace jimpilier
 		}
 	};
 
+
 	class AssignStmtAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> lhs, rhs;
@@ -858,23 +859,42 @@ namespace jimpilier
 		}
 	};
 
+	class ObjectHeaderAST  {
+		std::string name;
+		public: 
+		ObjectHeaderAST(std::string nameval) : name(nameval) {}
+
+		llvm::StructType* codegen(bool autoderef = false){ 
+			return llvm::StructType::create(*ctxt, NULL, name);
+		}
+	}; 
+
 	class ObjectExprAST : public ExprAST
 	{
-		std::string name;
+		ObjectHeaderAST base; 
 		std::vector<std::pair<std::string, llvm::Type *>> vars;
+		std::vector<std::unique_ptr<ExprAST>> functions;
 
 	public:
-		ObjectExprAST(std::string name, std::vector<std::pair<std::string, llvm::Type *>> &varArg) : name(name), vars(std::move(varArg)){};
+		ObjectExprAST(ObjectHeaderAST name, 
+		std::vector<std::pair<std::string, llvm::Type *>> &varArg, 
+		std::vector<std::unique_ptr<ExprAST>> &funcList) :
+		 base(name), vars(std::move(varArg)), functions(std::move(funcList)){};
 
 		llvm::Value *codegen(bool autoDeref = true)
 		{
+			llvm::StructType *ty = base.codegen(); 
 			std::vector<llvm::Type *> types;
 			for (auto x : vars)
 			{
 				types.push_back(x.second);
+				//Do something here to keep track of member positions later
 			}
-			llvm::Type *ty = llvm::StructType::create(*ctxt, types, name);
-			structTypes[name] = ty;
+			ty->setBody(types); 
+			structTypes[(std::string)ty->getName()] = ty;
+			for(auto &func : functions) {
+				func->codegen();
+			} 
 			return NULL;
 		}
 	};
@@ -992,6 +1012,8 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens);
 	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
+	std::pair<std::vector<std::string>, std::vector<llvm::Type*>> functionArgList(Stack<Token> &tokens);
+
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
@@ -1477,6 +1499,68 @@ namespace jimpilier
 		tokens.next();
 		return std::move(std::make_unique<CodeBlockAST>(contents)); //*/
 	}
+
+	// TODO: Get this function off the ground
+	/**
+	 * @brief Parses a constructor for this class
+	 *
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
+	 */
+	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens)
+	{
+		Token t = tokens.next();
+		if(t != CONSTRUCTOR){
+			logError("Expected a constructor token here:", t); 
+			 return NULL;
+		}
+		t = tokens.next(); 
+		if (t != LPAREN)
+		{
+			tokens.go_back(1);
+			logError("Expecting a Left Parenthesis at this token:", t);
+			return NULL;
+		}
+		std::pair<std::vector<std::string>, std::vector<llvm::Type*>> args = functionArgList(tokens); 
+		t = tokens.next(); 
+		if (t != RPAREN)
+		{
+			tokens.go_back(1);
+			logError("Expecting a right parenthesis at this token:", t);
+			return NULL;
+		}		
+		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
+		return NULL; 
+	}
+	// TODO: Get this fuction off the ground
+	/**
+	 * @brief Parses a destructor for a class
+	 *
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
+	 */
+	std::unique_ptr<ExprAST> destruct(Stack<Token> &tokens)
+	{
+		Token t = tokens.next();
+		if (t != LPAREN)
+		{
+			tokens.go_back(1);
+			logError("Expecting a left parenthesis at this token:", t);
+			return NULL;
+		}
+		t = tokens.next();
+		if (t != RPAREN)
+		{
+			tokens.go_back(1);
+			logError("Expecting a right parenthesis at this token:", t);
+			return NULL;
+		}
+		logError("Error in destruct()", t);
+		return NULL;
+	}
+	
 	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses an object/class blueprint
@@ -1487,8 +1571,8 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
 	{
-		Token objName;
 		std::vector<std::pair<std::string, llvm::Type *>> objVars;
+		std::vector<std::unique_ptr<ExprAST>> objFunctions;
 		if (tokens.peek() == OBJECT)
 			tokens.next();
 		if (tokens.peek() != IDENT)
@@ -1496,7 +1580,7 @@ namespace jimpilier
 			logError("Expected object name at this token:", tokens.peek());
 			return NULL;
 		}
-		objName = tokens.next();
+		ObjectHeaderAST objName(tokens.next().lex);
 		if (tokens.next() != OPENCURL)
 		{
 			logError("Curly braces are required for object declarations. Please put a brace before this token:", tokens.currentToken());
@@ -1504,6 +1588,11 @@ namespace jimpilier
 		}
 		while (tokens.peek() != CLOSECURL)
 		{
+			if(tokens.peek() == CONSTRUCTOR) {
+				std::unique_ptr<ExprAST> constructorast = std::move(construct(tokens)); 
+				objFunctions.push_back(std::move(constructorast)); 
+				continue;
+			}
 			llvm::Type *ty = variableTypeStmt(tokens);
 			if (ty == NULL)
 			{
@@ -1522,7 +1611,7 @@ namespace jimpilier
 			objVars.push_back(std::pair<std::string, llvm::Type *>(name.lex, ty));
 		}
 		tokens.next();
-		return std::make_unique<ObjectExprAST>(objName.lex, objVars);
+		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions);
 	}
 	llvm::Type *variableTypeStmt(Stack<Token> &tokens)
 	{
@@ -1651,6 +1740,27 @@ namespace jimpilier
 		return std::make_unique<AssignStmtAST>(LHS, RHS);
 	}
 
+	std::pair<std::vector<std::string>, std::vector<llvm::Type*>> functionArgList(Stack<Token> &tokens){
+		std::vector<std::string> argnames;
+		std::vector<llvm::Type *> argtypes;
+			do
+			{
+				llvm::Type *dtype = jimpilier::variableTypeStmt(tokens);
+				if (dtype == NULL)
+				{
+					break; 
+				}else if (tokens.peek() != IDENT)
+				{
+					logError("Expected identifier after variable type here:", tokens.currentToken());
+					break;
+				}
+				Token t = tokens.next();
+				argnames.push_back(t.lex);
+				argtypes.push_back(dtype);
+			} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
+		return std::pair<std::vector<std::string>, std::vector<llvm::Type*>>(argnames, argtypes); 
+	}
+
 	/**
 	 * @brief Parses the declaration for a function, from a stack of tokens,
 	 * including the header prototype and argument list.
@@ -1659,27 +1769,17 @@ namespace jimpilier
 	 */
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name)
 	{
+		
 		std::vector<std::string> argnames;
 		std::vector<llvm::Type *> argtypes;
+
 		tokens.next();
-		if (tokens.peek().token >= INT)
-			do
-			{
-				llvm::Type *dtype = jimpilier::variableTypeStmt(tokens);
-				if (tokens.peek() != IDENT)
-				{
-					logError("Expected identifier here:", tokens.currentToken());
-					return NULL;
-				}
-				else if (dtype == NULL)
-				{
-					logError("Invalid identifier modifiers here:", tokens.currentToken());
-					return NULL;
-				}
-				Token t = tokens.next();
-				argnames.push_back(t.lex);
-				argtypes.push_back(dtype);
-			} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
+		if (tokens.peek().token >= INT){
+			std::pair<std::vector<std::string>, std::vector<llvm::Type*>> retval = functionArgList(tokens); 
+			argnames = retval.first; 
+			argtypes = retval.second; 
+		}
+
 		if (tokens.peek() == RPAREN)
 		{
 			tokens.next();
@@ -1695,61 +1795,6 @@ namespace jimpilier
 			return func;
 		}
 		logError("Expected a closing parenthesis here:", tokens.currentToken());
-		return NULL;
-	}
-	// TODO: Get this function off the ground
-	/**
-	 * @brief Parses a constructor for this class
-	 *
-	 *
-	 * @param tokens
-	 * @return std::unique_ptr<ExprAST>
-	 */
-	std::unique_ptr<ExprAST> construct(Stack<Token> &tokens)
-	{
-		Token t = tokens.next();
-		if (t != LPAREN)
-		{
-			tokens.go_back(1);
-			logError("Expecting a Left Parenthesis at this token:", t);
-			return NULL;
-		}
-		t = tokens.next();
-		if (t != RPAREN)
-		{
-			tokens.go_back(1);
-			logError("Expecting a right parenthesis at this token:", t);
-			return NULL;
-		}
-		logError("Error parsing a term in construct ", t);
-		return NULL;
-		// Need to handle closing curly bracket
-	}
-	// TODO: Get this fuction off the ground
-	/**
-	 * @brief Parses a destructor for a class
-	 *
-	 *
-	 * @param tokens
-	 * @return std::unique_ptr<ExprAST>
-	 */
-	std::unique_ptr<ExprAST> destruct(Stack<Token> &tokens)
-	{
-		Token t = tokens.next();
-		if (t != LPAREN)
-		{
-			tokens.go_back(1);
-			logError("Expecting a left parenthesis at this token:", t);
-			return NULL;
-		}
-		t = tokens.next();
-		if (t != RPAREN)
-		{
-			tokens.go_back(1);
-			logError("Expecting a right parenthesis at this token:", t);
-			return NULL;
-		}
-		logError("Error in destruct()", t);
 		return NULL;
 	}
 	std::unique_ptr<ExprAST> doWhileStmt(Stack<Token> &tokens)

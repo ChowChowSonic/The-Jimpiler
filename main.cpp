@@ -18,7 +18,6 @@ g++ unlinked_exe $(llvm-config --ldflags --libs) -lpthread -o jmb && ./jmb
 #include "Stack.cpp"
 #include "analyzer.cpp"
 #include "jimpilier.h"
-//#include "compilierbeta.cpp" 
 
 using namespace std; 
 int main(int argc, char**args){
