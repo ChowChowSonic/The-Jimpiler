@@ -39,7 +39,7 @@ namespace jimpilier
 	{
 	public:
 		virtual ~ExprAST(){};
-		virtual llvm::Value *codegen(bool autoDeref = true) = 0;
+		virtual llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL) = 0;
 	};
 
 	/// NumberExprAST - Expression class for numeric literals like "1.0".
@@ -53,7 +53,7 @@ namespace jimpilier
 		NumberExprAST(double Val) : Val(Val) {}
 		NumberExprAST(int Val) : Val(Val) { isInt = true; }
 		NumberExprAST(bool Val) : Val(Val) { isBool = true; }
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (DEBUGGING)
 				std::cout << Val;
@@ -71,7 +71,7 @@ namespace jimpilier
 
 	public:
 		StringExprAST(std::string val) : Val(val) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (DEBUGGING)
 				std::cout << Val;
@@ -88,7 +88,7 @@ namespace jimpilier
 
 	public:
 		VariableExprAST(const string &Name) : Name(Name) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (DEBUGGING)
 				std::cout << Name;
@@ -114,7 +114,7 @@ namespace jimpilier
 	public:
 		DeclareExprAST(const std::string Name, llvm::Type *type, bool isLateInit = false, int ArrSize = 1) : name(Name), ty(type), size(ArrSize), lateinit(isLateInit) {}
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
 			variables.emplace(std::pair<std::string, llvm::Value *>(name, builder->CreateAlloca(ty, sizeval, name)));
@@ -143,7 +143,7 @@ namespace jimpilier
 
 	public:
 		IncDecExprAST(bool isPrefix, bool isDecrement, std::unique_ptr<ExprAST> &uniary) : prefix(isPrefix), decrement(isDecrement), val(std::move(uniary)) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen(false);
 			if (prefix)
@@ -169,7 +169,7 @@ namespace jimpilier
 
 	public:
 		NotExprAST(std::unique_ptr<ExprAST> Val) : val(std::move(Val)){};
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen();
 			if (v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
@@ -189,7 +189,7 @@ namespace jimpilier
 
 	public:
 		RefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
-		llvm::Value *codegen(bool autoDeref = false)
+		llvm::Value *codegen(bool autoDeref = false, llvm::Value *other = NULL)
 		{
 			return val->codegen(false);
 		}
@@ -201,7 +201,7 @@ namespace jimpilier
 
 	public:
 		DeRefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)){};
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen(autoDeref);
 			if (v->getType()->isPointerTy())
@@ -220,7 +220,7 @@ namespace jimpilier
 
 	public:
 		IndexExprAST(std::unique_ptr<ExprAST> &base, std::unique_ptr<ExprAST> &offset) : bas(std::move(base)), offs(std::move(offset)){};
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
 			if (!bsval->getType()->isPointerTy())
@@ -250,7 +250,7 @@ namespace jimpilier
 	public:
 		TypeCastExprAST(std::unique_ptr<ExprAST> &fromval, llvm::Type *toVal) : from(std::move(fromval)), to(toVal){};
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *init = from->codegen();
 			llvm::Instruction::CastOps op;
@@ -344,7 +344,7 @@ namespace jimpilier
 	public:
 		std::vector<std::unique_ptr<ExprAST>> condition, body;
 		IfExprAST(std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod) : condition(std::move(cond)), body(std::move(bod)) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::BasicBlock *start, *end;
 			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction);
@@ -379,7 +379,7 @@ namespace jimpilier
 		int def;
 		bool autoBr;
 		SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak, int defaultLoc = -1) : condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak), def(defaultLoc) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			std::vector<llvm::BasicBlock *> bodBlocks;
 			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
@@ -420,7 +420,7 @@ namespace jimpilier
 
 	public:
 		BreakExprAST(string label = "") : labelVal(label) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (escapeBlock.empty())
 				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
@@ -440,7 +440,7 @@ namespace jimpilier
 
 	public:
 		ContinueExprAST(string label = "") : labelVal(label) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (escapeBlock.empty())
 				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
@@ -472,7 +472,7 @@ namespace jimpilier
 		 */
 		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod, bool isDoWhile = false) : condition(std::move(cond)), body(std::move(bod)), dowhile(isDoWhile) {}
 		// I have a feeling this function needs to be revamped.
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *retval;
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
@@ -512,7 +512,7 @@ namespace jimpilier
 		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args) : Contents(std::move(Args)) {}
 		ListExprAST() {}
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *ret = NULL;
 			if (DEBUGGING)
@@ -537,7 +537,7 @@ namespace jimpilier
 	public:
 		DebugPrintExprAST(std::unique_ptr<ExprAST> printval, int line) : val(std::move(printval)), ln(line) {}
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *data = val->codegen();
 			std::string placeholder = "Debug value (Line " + to_string(ln) + "): ";
@@ -593,7 +593,7 @@ namespace jimpilier
 
 	public:
 		RetStmtAST(unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (DEBUGGING)
 				std::cout << "return ";
@@ -618,12 +618,12 @@ namespace jimpilier
 		{
 		}
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *lval, *rval;
 			// std::cout << std::hex << LHS << RHS <<endl;
 			lval = lhs->codegen(false);
-			rval = rhs->codegen();
+			rval = rhs->codegen(true, lval);
 			builder->CreateStore(rval, lval);
 			return rval;
 		}
@@ -642,7 +642,7 @@ namespace jimpilier
 	public:
 		BinaryStmtAST(string op, /* llvm::Type* type,*/ unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (DEBUGGING)
 				std::cout << Op << "( ";
@@ -731,7 +731,7 @@ namespace jimpilier
 		PrintStmtAST(std::vector<std::unique_ptr<ExprAST>> &Args, bool isLn)
 			: Contents(std::move(Args)), isLine(isLn) {}
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			// Initialize values for the arguments and the types for the arguments
 			std::vector<llvm::Value *> vals;
@@ -803,7 +803,7 @@ namespace jimpilier
 		}
 
 		CodeBlockAST() {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *ret = NULL;
 			for (int i = 0; i < Contents.size(); i++)
@@ -827,7 +827,7 @@ namespace jimpilier
 		{
 		}
 		// : Callee(callee), Args(Arg) {}
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			// Look up the name in the global module table.
 			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
@@ -858,13 +858,75 @@ namespace jimpilier
 		}
 	};
 
+	class MemberAccessExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> base, offs;
+
+	public:
+		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::unique_ptr<ExprAST> &offset) : base(std::move(base)), offs(std::move(offset)) {}
+
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value* other); 
+	};
+
+	/**
+	 * @brief ObjectFunctionCallExprAST - Expression class for function calls from objects. This acts just like regular function calls,
+	 * but this adds an implicit pointer to the object refrencing the call, so it needs its own ExprAST to function properly
+	 * @example vector<T> obj;
+	 * obj.push_back(x); //"obj" is the object refrencing the call, so push_back() becomes: push_back(&obj, x)
+	 */
+	class ObjectFunctionCallExprAST : public ExprAST
+	{
+		string Callee;
+		vector<std::unique_ptr<ExprAST>> Args;
+
+	public:
+		ObjectFunctionCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
+		{
+		}
+		// : Callee(callee), Args(Arg) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			if (other == NULL)
+			{
+				std::cout << "WARNING: An object constructor was called but never assigned; Please try to avoid using side-effects in constructors if possible, thanks!" << endl;
+			}
+			// Look up the name in the global module table.
+			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
+			if (!CalleeF)
+			{
+				std::cout << "Unknown function referenced:" << Callee << endl;
+				return NULL;
+			}
+			// If argument mismatch error.
+			if (CalleeF->arg_size() + 1 != Args.size())
+			{
+				std::cout << "Incorrect Argument count from function: " << Callee << endl;
+				return NULL;
+			}
+
+			std::vector<llvm::Value *> ArgsV;
+			ArgsV.push_back(other);
+			for (unsigned i = 0, e = Args.size(); i != e; ++i)
+			{
+				ArgsV.push_back(Args[i]->codegen());
+				if (!ArgsV.back())
+				{
+					std::cout << "Error saving function args";
+					return nullptr;
+				}
+			}
+
+			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
+		}
+	};
+
 	class ObjectHeaderExpr
 	{
 	public:
 		std::string name;
 		ObjectHeaderExpr(std::string nameval) : name(nameval) {}
 
-		llvm::StructType *codegen(bool autoderef = false)
+		llvm::StructType *codegen(bool autoderef = false, llvm::Value *other = NULL)
 		{
 			// TODO: This could cause bugs later. Find a better (non-bandaid) solution
 			llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
@@ -883,48 +945,48 @@ namespace jimpilier
 			std::unique_ptr<ExprAST> &body,
 			std::string objName) : bod(std::move(body)), args(argList), objName(objName){};
 
-		llvm::Value *codegen(bool autoderef = false)
+		llvm::Value *codegen(bool autoderef = false, llvm::Value *other = NULL)
 		{
 			llvm::Type *retType = llvm::StructType::getTypeByName(*ctxt, objName);
 			args.first.emplace(args.first.begin(), "this");
-			args.second.emplace(args.second.begin(), retType);
+			args.second.emplace(args.second.begin(), retType->getPointerTo());
 
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(retType, args.second, false);
-
-			llvm::Function * thisfunc =
-				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName+"_constructor", GlobalVarsAndFunctions.get());
-			unsigned Idx = 0;
-			for (auto &Arg : thisfunc->args())
-				Arg.setName(args.first[Idx++]);
+			llvm::Function *thisfunc =
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName + "_constructor", GlobalVarsAndFunctions.get());
 
 			llvm::Function *lastfunc = currentFunction;
 			currentFunction = thisfunc;
 			llvm::BasicBlock *entry = llvm::BasicBlock::Create(*ctxt, "entry", thisfunc);
-
 			builder->SetInsertPoint(entry);
-			if (
-				llvm::Value *RetVal = bod->codegen())
+
+			unsigned Idx = 0;
+			for (auto &Arg : thisfunc->args())
 			{
-				builder->CreateRet(currentFunction->args().begin()); 
-				// Validate the generated code, checking for consistency.
-				verifyFunction(*currentFunction);
-				if (DEBUGGING)
-					std::cout << "//end of " << objName << "'s constructor" << endl;
-				// remove the arguments now that they're out of scope
-				for (auto &Arg : currentFunction->args())
-				{
-					variables[std::string(Arg.getName())] = NULL;
-					// dtypes[std::string(Arg.getName())] = NULL;
-				}
-				currentFunction = lastfunc;
-				return currentFunction;
+				std::string name = args.first[Idx++];
+				Arg.setName(name);
+				variables[name] = &Arg;
+				if (name == "this")
+					continue;
+				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
+				builder->CreateStore(&Arg, storedvar);
+				variables[name] = storedvar;
 			}
-			else
-				std::cout << "Error in body of function constructor for " << objName << endl;
-			currentFunction->eraseFromParent();
+			llvm::Value *RetVal = bod->codegen();
+			builder->CreateRet(builder->CreateLoad(retType, currentFunction->args().begin(), "loadtmp"));
+			// Validate the generated code, checking for consistency.
+			verifyFunction(*currentFunction);
+			if (DEBUGGING)
+				std::cout << "//end of " << objName << "'s constructor" << endl;
+			// remove the arguments now that they're out of scope
+			for (auto &Arg : currentFunction->args())
+			{
+				variables[std::string(Arg.getName())] = NULL;
+				// dtypes[std::string(Arg.getName())] = NULL;
+			}
 			currentFunction = lastfunc;
-			return nullptr;
+			return currentFunction;
 		}
 	};
 
@@ -939,7 +1001,7 @@ namespace jimpilier
 					  std::vector<std::pair<std::string, llvm::Type *>> &varArg,
 					  std::vector<std::unique_ptr<ExprAST>> &funcList) : base(name), vars(std::move(varArg)), functions(std::move(funcList)){};
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::StructType *ty = base.codegen();
 			std::vector<llvm::Type *> types;
@@ -973,7 +1035,7 @@ namespace jimpilier
 			: Name(name), Args(std::move(args)), Argt(std::move(argtypes)), retType(ret) {}
 
 		const std::string &getName() const { return Name; }
-		llvm::Function *codegen(bool autoDeref = true)
+		llvm::Function *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(retType, Argt, false);
@@ -999,7 +1061,7 @@ namespace jimpilier
 					std::unique_ptr<ExprAST> Body)
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
 
-		llvm::Value *codegen(bool autoDeref = true)
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			if (DEBUGGING)
 				std::cout << Proto->getName();
@@ -1120,8 +1182,10 @@ namespace jimpilier
 	 * @return true if the syntax is valid
 	 * @return NULL if syntax is not valid
 	 */
-	std::unique_ptr<ExprAST> term(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> term(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL)
 	{
+		if (memberAccessParent != NULL)
+			return std::make_unique<MemberAccessExprAST>();
 		std::unique_ptr<ExprAST> LHS;
 		Token s;
 		string x;
@@ -1163,13 +1227,13 @@ namespace jimpilier
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL)
 	{
 		Token t = tokens.next();
 		if (t != IDENT || GlobalVarsAndFunctions->getFunction(t.lex) == NULL)
 		{
 			tokens.go_back();
-			return std::move(term(tokens));
+			return std::move(term(tokens, std::move(memberAccessParent)));
 		}
 		std::vector<std::unique_ptr<ExprAST>> params;
 		if (tokens.next() != LPAREN)
@@ -1193,13 +1257,22 @@ namespace jimpilier
 			logError("Expected a closing parethesis '(' here:", tokens.currentToken());
 			return NULL;
 		}
-		return std::make_unique<CallExprAST>(t.lex, params);
+		std::unique_ptr<ExprAST> retval;
+		if (memberAccessParent == NULL)
+		{
+			retval = std::make_unique<CallExprAST>(t.lex, params);
+		}
+		else
+		{
+			retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, std::move(params));
+		}
+		return retval;
 	}
 
-	std::unique_ptr<ExprAST> indexExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL)
+	std::unique_ptr<ExprAST> indexExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL, std::unique_ptr<ExprAST> memberAccessParent = NULL)
 	{
 		if (base == NULL)
-			base = std::move(functionCallExpr(tokens));
+			base = std::move(functionCallExpr(tokens, std::move(memberAccessParent)));
 		if (tokens.peek() != OPENSQUARE)
 			return base;
 		tokens.next();
@@ -1212,22 +1285,41 @@ namespace jimpilier
 		tokens.next();
 		if (tokens.peek() == OPENSQUARE)
 		{
-			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index);
-			return std::move(indexExpr(tokens, std::move(thisval)));
+			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index, std::move(memberAccessParent));
+			return std::move(indexExpr(tokens, std::move(thisval), std::move(memberAccessParent)));
 		}
 		else
 			return std::make_unique<IndexExprAST>(base, index);
+	}
+	/**
+	 * @brief function responsible for parsing dot expressions; for example: "vector.length()"
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
+	 */
+	std::unique_ptr<ExprAST> memberAccessExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL)
+	{
+		if (base == NULL)
+			base = std::move(indexExpr(tokens, NULL, NULL));
+		if (tokens.peek() != PERIOD)
+			return base;
+		tokens.next();
+		std::unique_ptr<ExprAST> member = std::move(indexExpr(tokens, NULL, std::move(base)));
+		// member = std::make_unique<MemberAccessExprAST>(base, member);
+		if (tokens.peek() == PERIOD)
+			return std::move(memberAccessExpr(tokens, std::move(member)));
+		return member;
 	}
 
 	std::unique_ptr<ExprAST> pointerToExpr(Stack<Token> &tokens)
 	{
 		if (tokens.peek() != POINTERTO)
 		{
-			return std::move(indexExpr(tokens));
+			return std::move(memberAccessExpr(tokens));
 		}
 		tokens.next();
 		std::unique_ptr<ExprAST> refval;
-		refval = std::move(indexExpr(tokens));
+		refval = std::move(memberAccessExpr(tokens));
 		return std::make_unique<RefrenceExprAST>(refval);
 	}
 
