@@ -860,12 +860,16 @@ namespace jimpilier
 
 	class MemberAccessExprAST : public ExprAST
 	{
-		std::unique_ptr<ExprAST> base, offs;
+		std::string member;
+		std::unique_ptr<ExprAST> base;
 
 	public:
-		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::unique_ptr<ExprAST> &offset) : base(std::move(base)), offs(std::move(offset)) {}
+		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset) : base(std::move(base)), member(offset) {}
 
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value* other); 
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
+			return NULL; 
+			// builder->CreateGEP(objElements[base->getType()][member]->getType(), base->codegen(false), objElements[base->getType()][member], "memberaccess");
+		}
 	};
 
 	/**
@@ -1185,7 +1189,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> term(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL)
 	{
 		if (memberAccessParent != NULL)
-			return std::make_unique<MemberAccessExprAST>();
+			return std::make_unique<MemberAccessExprAST>(memberAccessParent, tokens.next().lex);
 		std::unique_ptr<ExprAST> LHS;
 		Token s;
 		string x;
@@ -1264,7 +1268,7 @@ namespace jimpilier
 		}
 		else
 		{
-			retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, std::move(params));
+			retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params);
 		}
 		return retval;
 	}
@@ -1285,7 +1289,7 @@ namespace jimpilier
 		tokens.next();
 		if (tokens.peek() == OPENSQUARE)
 		{
-			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index, std::move(memberAccessParent));
+			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index);
 			return std::move(indexExpr(tokens, std::move(thisval), std::move(memberAccessParent)));
 		}
 		else
