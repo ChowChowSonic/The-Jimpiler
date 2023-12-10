@@ -11,6 +11,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/FileCheck/FileCheck.h"
+#include "./AliasManager.cpp"
 namespace jimpilier
 {
 	/*
@@ -23,6 +24,7 @@ namespace jimpilier
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
 	std::map<std::string, llvm::Type *> structTypes;
+	AliasManager functionAliases;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	/**
@@ -829,29 +831,32 @@ namespace jimpilier
 		// : Callee(callee), Args(Arg) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			// Look up the name in the global module table.
-			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
-			if (!CalleeF)
+			if (!functionAliases.hasAlias(Callee))
 			{
-				std::cout << "Unknown function referenced:" << Callee << endl;
+				std::cout << "A function was never declared: " << Callee << endl;
 				return NULL;
 			}
-			// If argument mismatch error.
-			if (CalleeF->arg_size() != Args.size())
-			{
-				std::cout << "Incorrect Argument count from function: " << Callee << endl;
-				return NULL;
-			}
-
 			std::vector<llvm::Value *> ArgsV;
+			std::vector<llvm::Type *> ArgsT;
 			for (unsigned i = 0, e = Args.size(); i != e; ++i)
 			{
 				ArgsV.push_back(Args[i]->codegen());
 				if (!ArgsV.back())
 				{
-					std::cout << "Error saving function args";
+					std::cout << "Error saving function args" << endl;
 					return nullptr;
 				}
+				ArgsT.push_back(ArgsV.back()->getType());
+			}
+
+			// Look up the name in the global module table.
+
+			llvm::Function *CalleeF = functionAliases.getFunction(Callee, ArgsT);
+			if (!CalleeF)
+			{
+
+				std::cout << "Unknown function referenced, or incorrect arg types passed: " << Callee << endl;
+				return NULL;
 			}
 
 			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
@@ -866,8 +871,9 @@ namespace jimpilier
 	public:
 		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset) : base(std::move(base)), member(offset) {}
 
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
-			return NULL; 
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			return NULL;
 			// builder->CreateGEP(objElements[base->getType()][member]->getType(), base->codegen(false), objElements[base->getType()][member], "memberaccess");
 		}
 	};
@@ -890,26 +896,18 @@ namespace jimpilier
 		// : Callee(callee), Args(Arg) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
+			std::vector<llvm::Value *> ArgsV;
+			std::vector<llvm::Type *> ArgsT;
 			if (other == NULL)
 			{
 				std::cout << "WARNING: An object constructor was called but never assigned; Please try to avoid using side-effects in constructors if possible, thanks!" << endl;
 			}
+			else
+			{
+				ArgsV.push_back(other);
+				ArgsT.push_back(other->getType());
+			}
 			// Look up the name in the global module table.
-			llvm::Function *CalleeF = GlobalVarsAndFunctions->getFunction(Callee);
-			if (!CalleeF)
-			{
-				std::cout << "Unknown function referenced:" << Callee << endl;
-				return NULL;
-			}
-			// If argument mismatch error.
-			if (CalleeF->arg_size() + 1 != Args.size())
-			{
-				std::cout << "Incorrect Argument count from function: " << Callee << endl;
-				return NULL;
-			}
-
-			std::vector<llvm::Value *> ArgsV;
-			ArgsV.push_back(other);
 			for (unsigned i = 0, e = Args.size(); i != e; ++i)
 			{
 				ArgsV.push_back(Args[i]->codegen());
@@ -918,6 +916,14 @@ namespace jimpilier
 					std::cout << "Error saving function args";
 					return nullptr;
 				}
+				ArgsT.push_back(ArgsV.back()->getType());
+			}
+
+			llvm::Function *CalleeF = functionAliases.getFunction(Callee, ArgsT);
+			if (!CalleeF)
+			{
+				std::cout << "Unknown object function referenced, or incorrect arg types were passed:" << Callee << endl;
+				return NULL;
 			}
 
 			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
@@ -989,8 +995,9 @@ namespace jimpilier
 				variables[std::string(Arg.getName())] = NULL;
 				// dtypes[std::string(Arg.getName())] = NULL;
 			}
+			functionAliases.addFunction(objName, thisfunc, args.second);
 			currentFunction = lastfunc;
-			return currentFunction;
+			return thisfunc;
 		}
 	};
 
@@ -1049,7 +1056,7 @@ namespace jimpilier
 			unsigned Idx = 0;
 			for (auto &Arg : F->args())
 				Arg.setName(Args[Idx++]);
-
+			functionAliases.addFunction(Name, F, Argt);
 			return F;
 		}
 	};
@@ -1234,43 +1241,40 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL)
 	{
 		Token t = tokens.next();
-		if (t != IDENT || GlobalVarsAndFunctions->getFunction(t.lex) == NULL)
+		if (tokens.peek() == LPAREN)
 		{
-			tokens.go_back();
-			return std::move(term(tokens, std::move(memberAccessParent)));
-		}
-		std::vector<std::unique_ptr<ExprAST>> params;
-		if (tokens.next() != LPAREN)
-		{
-			logError("Expected an opening parethesis '(' here:", tokens.currentToken());
-			return NULL;
-		}
-		if (tokens.peek() != RPAREN)
-			do
-			{
-				std::unique_ptr<ExprAST> param = std::move(jimpilier::assignStmt(tokens));
-				if (param == NULL)
+			tokens.next();
+			std::vector<std::unique_ptr<ExprAST>> params;
+			if (tokens.peek() != RPAREN)
+				do
 				{
-					logError("Invalid parameter passed to function", t);
-					return NULL;
-				}
-				params.push_back(std::move(param));
-			} while (!errored && (tokens.peek() == COMMA && tokens.next() == COMMA));
-		if (tokens.next() != RPAREN)
-		{
-			logError("Expected a closing parethesis '(' here:", tokens.currentToken());
-			return NULL;
+					std::unique_ptr<ExprAST> param = std::move(jimpilier::assignStmt(tokens));
+					if (param == NULL)
+					{
+						logError("Invalid parameter passed to function", t);
+						return NULL;
+					}
+					params.push_back(std::move(param));
+				} while (!errored && (tokens.peek() == COMMA && tokens.next() == COMMA));
+
+			if (tokens.next() != RPAREN)
+			{
+				logError("Expected a closing parethesis '(' here:", tokens.currentToken());
+				return NULL;
+			}
+			std::unique_ptr<ExprAST> retval;
+			if (memberAccessParent == NULL && structTypes[t.lex] == NULL)
+			{
+				retval = std::make_unique<CallExprAST>(t.lex, params);
+			}
+			else
+			{
+				retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params);
+			}
+			return retval;
 		}
-		std::unique_ptr<ExprAST> retval;
-		if (memberAccessParent == NULL)
-		{
-			retval = std::make_unique<CallExprAST>(t.lex, params);
-		}
-		else
-		{
-			retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params);
-		}
-		return retval;
+		tokens.go_back();
+		return std::move(term(tokens, std::move(memberAccessParent)));
 	}
 
 	std::unique_ptr<ExprAST> indexExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL, std::unique_ptr<ExprAST> memberAccessParent = NULL)
@@ -1865,8 +1869,8 @@ namespace jimpilier
 		Token name = tokens.peek();
 		if (name != IDENT)
 		{
-			logError("Expected identifier for new variable in place of this token:", tokens.peek());
-			return NULL;
+			tokens.go_back();
+			return std::move(listExpr(tokens));
 		}
 		tokens.next();
 		if (tokens.peek() == LPAREN)

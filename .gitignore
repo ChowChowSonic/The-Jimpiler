@@ -1,5 +1,5 @@
 *.ll
 *.exe
-test.txt
+test.cpp
 postfix.cpp
 jmb
