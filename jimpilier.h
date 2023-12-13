@@ -24,7 +24,7 @@ namespace jimpilier
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::map<std::string, llvm::Value *> variables;
 	std::map<std::string, llvm::Type *> structTypes;
-	AliasManager functionAliases;
+	AliasManager AliasMgr;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	/**
@@ -467,7 +467,7 @@ namespace jimpilier
 				   std::unique_ptr<ExprAST> bod,
 				   std::vector<std::unique_ptr<ExprAST>> &edit, bool isdoWhile = false) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)), dowhile(isdoWhile) {}
 		/**
-		 * @brief Construct a ForExprAST object, but with no bound variable or modifier; I.E. A while loop rather than a for loop
+		 * @brief Construct a ForExprAST, but with no bound variable or modifier; I.E. A while loop rather than a for loop
 		 *
 		 * @param cond
 		 * @param bod
@@ -831,7 +831,7 @@ namespace jimpilier
 		// : Callee(callee), Args(Arg) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			if (!functionAliases.hasAlias(Callee))
+			if (!AliasMgr.hasAlias(Callee))
 			{
 				std::cout << "A function was never declared: " << Callee << endl;
 				return NULL;
@@ -851,7 +851,7 @@ namespace jimpilier
 
 			// Look up the name in the global module table.
 
-			llvm::Function *CalleeF = functionAliases.getFunction(Callee, ArgsT);
+			llvm::Function *CalleeF = AliasMgr.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
 
@@ -873,8 +873,18 @@ namespace jimpilier
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			return NULL;
-			// builder->CreateGEP(objElements[base->getType()][member]->getType(), base->codegen(false), objElements[base->getType()][member], "memberaccess");
+			// return NULL;
+			llvm::Value* lhs = base->codegen(false); 
+			std::pair<int, llvm::Type*> returnTy = AliasMgr.getObjMember(lhs->getType()->getContainedType(0), member); 
+			if(returnTy.first == -1){
+				std::cout << "No object member or function with name " << member <<endl; 
+				errored = true; 
+				return NULL; 
+			}
+			llvm::Constant* offset = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, returnTy.first)); 
+			llvm::Constant* objIndex = llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, false));
+			llvm::Value* gep = builder->CreateInBoundsGEP(lhs->getType()->getContainedType(0), lhs, llvm::ArrayRef<llvm::Value*>({objIndex, offset}), "memberaccess");
+			return autoDeref? builder->CreateLoad(returnTy.second, gep, "LoadTmp") : gep; 
 		}
 	};
 
@@ -900,7 +910,8 @@ namespace jimpilier
 			std::vector<llvm::Type *> ArgsT;
 			if (other == NULL)
 			{
-				std::cout << "WARNING: An object constructor was called but never assigned; Please try to avoid using side-effects in constructors if possible, thanks!" << endl;
+				// Idedally this should never happen, but I'll account for it anyway for debugging purposes
+				std::cout << "WARNING: An object function was called but never assigned to an object; Please try to avoid using side-effects in constructors if possible, thanks!" << endl;
 			}
 			else
 			{
@@ -919,7 +930,7 @@ namespace jimpilier
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
 
-			llvm::Function *CalleeF = functionAliases.getFunction(Callee, ArgsT);
+			llvm::Function *CalleeF = AliasMgr.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
 				std::cout << "Unknown object function referenced, or incorrect arg types were passed:" << Callee << endl;
@@ -927,6 +938,76 @@ namespace jimpilier
 			}
 
 			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
+		}
+	};
+
+	class ConstructorExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> bod;
+		std::pair<std::vector<std::string>, std::vector<llvm::Type *>> args;
+		std::string objName;
+
+	public:
+		ConstructorExprAST(
+			std::pair<std::vector<std::string>, std::vector<llvm::Type *>> argList,
+			std::unique_ptr<ExprAST> &body,
+			std::string objName) : bod(std::move(body)), args(argList), objName(objName){};
+
+		llvm::Value *codegen(bool autoderef = false, llvm::Value *other = NULL)
+		{
+			llvm::StructType *retType = llvm::StructType::getTypeByName(*ctxt, objName);
+			args.first.emplace(args.first.begin(), "this");
+			args.second.emplace(args.second.begin(), retType->getPointerTo());
+
+			llvm::FunctionType *FT =
+				llvm::FunctionType::get(retType, args.second, false);
+			llvm::Function *thisfunc =
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName + "_constructor", GlobalVarsAndFunctions.get());
+
+			llvm::Function *lastfunc = currentFunction;
+			currentFunction = thisfunc;
+			llvm::BasicBlock *entry = llvm::BasicBlock::Create(*ctxt, "entry", thisfunc);
+			builder->SetInsertPoint(entry);
+
+			// for (auto x : AliasMgr.structTypes[objName].members)
+			// {
+			// 	llvm::Type *longty = llvm::Type::getInt64Ty(*ctxt);
+			// 	llvm::Constant *offset = llvm::ConstantInt::get(longty, llvm::APInt(64, x.second.first, false));
+			// 	variables[x.first] = builder->CreateGEP(x.second.second, thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
+			// }
+
+			unsigned Idx = 0;
+			for (auto &Arg : thisfunc->args())
+			{
+				std::string name = args.first[Idx++];
+				Arg.setName(name);
+				variables[name] = &Arg;
+				if (name == "this")
+					continue;
+				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
+				builder->CreateStore(&Arg, storedvar);
+				variables[name] = storedvar;
+			}
+
+			llvm::Value *RetVal = bod->codegen();
+			builder->CreateRet(builder->CreateLoad(retType, currentFunction->args().begin(), "loadtmp"));
+			// Validate the generated code, checking for consistency.
+			verifyFunction(*currentFunction);
+			if (DEBUGGING)
+				std::cout << "//end of " << objName << "'s constructor" << endl;
+			// remove the arguments now that they're out of scope
+			for (auto &Arg : currentFunction->args())
+			{
+				variables[std::string(Arg.getName())] = NULL;
+				// dtypes[std::string(Arg.getName())] = NULL;
+			}
+			// for (auto x : AliasMgr.structTypes[objName].members)
+			// {
+			// 	variables[x.first] = NULL; //builder->CreateGEP(x.second.second, (llvm::Value *)thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
+			// }
+			AliasMgr.addFunction(objName, thisfunc, args.second);
+			currentFunction = lastfunc;
+			return thisfunc;
 		}
 	};
 
@@ -943,64 +1024,9 @@ namespace jimpilier
 			return ty == NULL ? llvm::StructType::create(*ctxt, NULL, name) : ty;
 		}
 	};
-	class ConstructorExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> bod;
-		std::pair<std::vector<std::string>, std::vector<llvm::Type *>> args;
-		std::string objName;
-
-	public:
-		ConstructorExprAST(
-			std::pair<std::vector<std::string>, std::vector<llvm::Type *>> argList,
-			std::unique_ptr<ExprAST> &body,
-			std::string objName) : bod(std::move(body)), args(argList), objName(objName){};
-
-		llvm::Value *codegen(bool autoderef = false, llvm::Value *other = NULL)
-		{
-			llvm::Type *retType = llvm::StructType::getTypeByName(*ctxt, objName);
-			args.first.emplace(args.first.begin(), "this");
-			args.second.emplace(args.second.begin(), retType->getPointerTo());
-
-			llvm::FunctionType *FT =
-				llvm::FunctionType::get(retType, args.second, false);
-			llvm::Function *thisfunc =
-				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName + "_constructor", GlobalVarsAndFunctions.get());
-
-			llvm::Function *lastfunc = currentFunction;
-			currentFunction = thisfunc;
-			llvm::BasicBlock *entry = llvm::BasicBlock::Create(*ctxt, "entry", thisfunc);
-			builder->SetInsertPoint(entry);
-
-			unsigned Idx = 0;
-			for (auto &Arg : thisfunc->args())
-			{
-				std::string name = args.first[Idx++];
-				Arg.setName(name);
-				variables[name] = &Arg;
-				if (name == "this")
-					continue;
-				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
-				builder->CreateStore(&Arg, storedvar);
-				variables[name] = storedvar;
-			}
-			llvm::Value *RetVal = bod->codegen();
-			builder->CreateRet(builder->CreateLoad(retType, currentFunction->args().begin(), "loadtmp"));
-			// Validate the generated code, checking for consistency.
-			verifyFunction(*currentFunction);
-			if (DEBUGGING)
-				std::cout << "//end of " << objName << "'s constructor" << endl;
-			// remove the arguments now that they're out of scope
-			for (auto &Arg : currentFunction->args())
-			{
-				variables[std::string(Arg.getName())] = NULL;
-				// dtypes[std::string(Arg.getName())] = NULL;
-			}
-			functionAliases.addFunction(objName, thisfunc, args.second);
-			currentFunction = lastfunc;
-			return thisfunc;
-		}
-	};
-
+	/**
+	 * The class definition for an object (struct) in memory
+	 */
 	class ObjectExprAST : public ExprAST
 	{
 		ObjectHeaderExpr base;
@@ -1016,12 +1042,14 @@ namespace jimpilier
 		{
 			llvm::StructType *ty = base.codegen();
 			std::vector<llvm::Type *> types;
+			std::vector<std::string> names;
 			for (auto x : vars)
 			{
 				types.push_back(x.second);
-				// Do something here to keep track of member positions later
+				names.push_back(x.first);
 			}
 			ty->setBody(types);
+			AliasMgr.addObject(base.name, ty, types, names);
 			structTypes[(std::string)ty->getName()] = ty;
 			for (auto &func : functions)
 			{
@@ -1056,7 +1084,7 @@ namespace jimpilier
 			unsigned Idx = 0;
 			for (auto &Arg : F->args())
 				Arg.setName(Args[Idx++]);
-			functionAliases.addFunction(Name, F, Argt);
+			AliasMgr.addFunction(Name, F, Argt);
 			return F;
 		}
 	};
@@ -1121,7 +1149,7 @@ namespace jimpilier
 					// dtypes[std::string(Arg.getName())] = NULL;
 				}
 				currentFunction = prevFunction;
-				return currentFunction;
+				return GlobalVarsAndFunctions->getFunction(Proto->getName());
 			}
 			else
 				std::cout << "Error in body of function " << Proto->getName() << endl;
