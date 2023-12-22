@@ -129,7 +129,7 @@ namespace jimpilier
 	// TODO: Add implicit type casting (maybe)
 	// TODO: Completely revamp data type system to be almost exclusively front-end
 	// TODO: Find a better way to differentiate between char* and string (use structs maybe?)
-	// TODO: Add objects (God help me)
+	// TODO: Add Template objects (God help me)
 	// TODO: Add arrays (God help me)
 	// TODO: Add a way to put things on the heap
 	// TODO: Add a way to delete things from the heap
@@ -633,7 +633,6 @@ namespace jimpilier
 	// TODO: Fix type management with the BinaryStmtAST::codegen() function
 	/** BinaryStmtAST - Expression class for a binary operator.
 	 *
-	 * "x AS string"
 	 *
 	 */
 	class BinaryStmtAST : public ExprAST
@@ -888,36 +887,72 @@ namespace jimpilier
 		}
 	};
 
-	/**
-	 * @brief ObjectFunctionCallExprAST - Expression class for function calls from objects. This acts just like regular function calls,
+/**
+	 * @brief ObjectFunctionCallExprAST - Expression class for constructor calls from objects. This acts just like regular function calls,
 	 * but this adds an implicit pointer to the object refrencing the call, so it needs its own ExprAST to function properly
 	 * @example vector<T> obj;
 	 * obj.push_back(x); //"obj" is the object refrencing the call, so push_back() becomes: push_back(&obj, x)
 	 */
 	class ObjectFunctionCallExprAST : public ExprAST
 	{
-		string Callee;
+		string Callee; 
+		vector<std::unique_ptr<ExprAST>> Args;
+		std::unique_ptr<ExprAST> parent; 
+	public:
+		ObjectFunctionCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST>& parent) : Callee(callee), Args(std::move(Arg)), parent(std::move(parent))
+		{
+		}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			llvm::Value* parval = parent->codegen(false); 
+			std::vector<llvm::Value *> ArgsV;
+			std::vector<llvm::Type *> ArgsT;
+			ArgsV.push_back(parval);
+			ArgsT.push_back(parval->getType());
+
+			for (unsigned i = 0, e = Args.size(); i != e; ++i)
+			{
+				ArgsV.push_back(Args[i]->codegen());
+				if (!ArgsV.back())
+				{
+					std::cout << "Error saving function args";
+					return nullptr;
+				}
+				ArgsT.push_back(ArgsV.back()->getType());
+			}
+
+			llvm::Function *CalleeF = AliasMgr.getFunction(Callee, ArgsT);
+			if (!CalleeF)
+			{
+				std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << Callee << endl;
+				return NULL;
+			}
+
+			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
+		}
+	};
+
+	/**
+	 * @brief ObjectConstructorCallExprAST - Expression class for constructor calls from objects. This acts just like regular function calls,
+	 * but this adds an implicit pointer to the object refrencing the call, so it needs its own ExprAST to function properly
+	 * @example vector<T> obj;
+	 * obj.push_back(x); //"obj" is the object refrencing the call, so push_back() becomes: push_back(&obj, x)
+	 */
+	class ObjectConstructorCallExprAST : public ExprAST
+	{
+		string Callee; 
 		vector<std::unique_ptr<ExprAST>> Args;
 
 	public:
-		ObjectFunctionCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
+		ObjectConstructorCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
 		{
 		}
-		// : Callee(callee), Args(Arg) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
-			if (other == NULL)
-			{
-				// Idedally this should never happen, but I'll account for it anyway for debugging purposes
-				std::cout << "WARNING: An object function was called but never assigned to an object; Please try to avoid using side-effects in constructors if possible, thanks!" << endl;
-			}
-			else
-			{
-				ArgsV.push_back(other);
-				ArgsT.push_back(other->getType());
-			}
+			ArgsV.push_back(other);
+			ArgsT.push_back(structTypes[Callee]->getPointerTo());
 			// Look up the name in the global module table.
 			for (unsigned i = 0, e = Args.size(); i != e; ++i)
 			{
@@ -933,7 +968,7 @@ namespace jimpilier
 			llvm::Function *CalleeF = AliasMgr.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
-				std::cout << "Unknown object function referenced, or incorrect arg types were passed:" << Callee << endl;
+				std::cout << "Unknown object constructor referenced, or incorrect arg types were passed: " << Callee << endl;
 				return NULL;
 			}
 
@@ -1065,17 +1100,23 @@ namespace jimpilier
 	class PrototypeAST
 	{
 	public:
-		std::string Name;
+		std::string Name, parent;
 		llvm::Type *retType;
 		std::vector<std::string> Args;
 		std::vector<llvm::Type *> Argt;
 
-		PrototypeAST(const std::string &name, std::vector<std::string> &args, std::vector<llvm::Type *> &argtypes, llvm::Type *ret)
-			: Name(name), Args(std::move(args)), Argt(std::move(argtypes)), retType(ret) {}
+		PrototypeAST(const std::string &name, 
+		std::vector<std::string> &args, std::vector<llvm::Type *> &argtypes, 
+		llvm::Type *ret, std::string parent = "")
+			: Name(name), Args(std::move(args)), Argt(std::move(argtypes)), retType(ret), parent(parent) {}
 
 		const std::string &getName() const { return Name; }
 		llvm::Function *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
+			if(structTypes[parent] != NULL){
+				Args.emplace(Args.begin(), "this");
+				Argt.emplace(Argt.begin(), structTypes[parent]->getPointerTo());
+			}
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(retType, Argt, false);
 			int ctr = 1; 
@@ -1093,7 +1134,7 @@ namespace jimpilier
 			return F;
 		}
 	};
-
+	//TODO: Improve object function solution. Current Implementation feels wrong
 	/// FunctionAST - This class represents a function definition itself.
 	class FunctionAST : public ExprAST
 	{
@@ -1102,7 +1143,7 @@ namespace jimpilier
 
 	public:
 		FunctionAST(std::unique_ptr<PrototypeAST> Proto,
-					std::unique_ptr<ExprAST> Body)
+					std::unique_ptr<ExprAST> Body, std::string parentType = "")
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
@@ -1130,10 +1171,14 @@ namespace jimpilier
 
 			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
 			builder->SetInsertPoint(BB);
-
 			// Record the function arguments in the Named Values map.
 			for (auto &Arg : currentFunction->args())
 			{
+				//TODO: Bandaid fix, find a better solution. This will cause bugs later 
+				if(Arg.getArgNo() == 0 && Proto->parent != ""){
+					variables[Arg.getName().str()] = &Arg; 
+					continue; 
+				}
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
@@ -1173,11 +1218,19 @@ namespace jimpilier
 	}
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
 
+	std::pair<std::vector<std::string>, std::vector<llvm::Type *>> functionArgList(Stack<Token> &tokens);
+	std::map<KeyToken, bool> variableModStmt(Stack<Token> &tokens);
+	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name, std::string objBase = "");
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
 	std::unique_ptr<ExprAST> getValidStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens);
 	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
-	std::pair<std::vector<std::string>, std::vector<llvm::Type *>> functionArgList(Stack<Token> &tokens);
+	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
+
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
@@ -1209,14 +1262,7 @@ namespace jimpilier
 		// }
 		return b;
 	}
-	std::map<KeyToken, bool> variableModStmt(Stack<Token> &tokens);
-	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
-	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
-	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
-	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
-	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens);
-	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name);
-	// TODO: Holy Fuckles It's Knuckles I need to revamp this function entirely.
+
 	/**
 	 * @brief using EBNF notation, a term is roughly defined as:
 	 *   <term> = (["+"|"-"]["++"|"--"] | "->" | "@")<IDENT>["++"|"--"] | "true" | "NULL" | "(" <expr> ")";
@@ -1265,7 +1311,7 @@ namespace jimpilier
 		logError("Invalid term:", tokens.peek());
 		return NULL;
 	}
-
+	//TODO: Fix this function
 	/**
 	 * @brief Parses a function call statement, returns std::move(term(tokens)) if it does not find one
 	 * @param tokens
@@ -1296,13 +1342,12 @@ namespace jimpilier
 				return NULL;
 			}
 			std::unique_ptr<ExprAST> retval;
-			if (memberAccessParent == NULL && structTypes[t.lex] == NULL)
-			{
+			if(structTypes[t.lex] != NULL){
+				retval = std::make_unique<ObjectConstructorCallExprAST>(t.lex,params);
+			}else if(memberAccessParent != NULL){
+				retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params, memberAccessParent); 
+			}else{
 				retval = std::make_unique<CallExprAST>(t.lex, params);
-			}
-			else
-			{
-				retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params);
 			}
 			return retval;
 		}
@@ -1691,7 +1736,6 @@ namespace jimpilier
 		return std::move(std::make_unique<CodeBlockAST>(contents)); //*/
 	}
 
-	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses a constructor for this class
 	 *
@@ -1753,7 +1797,6 @@ namespace jimpilier
 		return NULL;
 	}
 
-	// TODO: Get this function off the ground
 	/**
 	 * @brief Parses an object/class blueprint
 	 *
@@ -1799,6 +1842,11 @@ namespace jimpilier
 				return NULL;
 			}
 			tokens.next();
+			if(tokens.peek() == LPAREN) {
+				std::unique_ptr<ExprAST> func = std::move(functionDecl(tokens, ty, name.lex, objName.name)); 
+				objFunctions.push_back(std::move(func)); 
+				continue; 
+			}
 			if (tokens.peek() == SEMICOL)
 				tokens.next();
 			objVars.push_back(std::pair<std::string, llvm::Type *>(name.lex, ty));
@@ -1957,12 +2005,12 @@ namespace jimpilier
 	}
 
 	/**
-	 * @brief Parses the declaration for a function, from a stack of tokens,
-	 * including the header prototype and argument list.
+	 * @brief Parses the declaration for a function from a stack of tokens,
+	 * including the next body, header/prototype and argument list.
 	 * @param tokens
 	 * @return std::unique_ptr<FunctionAST>
 	 */
-	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name)
+	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, llvm::Type *dtype, std::string name, std::string objBase)
 	{
 
 		std::vector<std::string> argnames;
@@ -1979,10 +2027,8 @@ namespace jimpilier
 		if (tokens.peek() == RPAREN)
 		{
 			tokens.next();
-			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, argnames, argtypes, dtype);
+			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, argnames, argtypes, dtype, objBase);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
-			for (auto arg : argnames)
-				variables[arg] = NULL;
 			if (body == NULL)
 			{
 				return NULL;
