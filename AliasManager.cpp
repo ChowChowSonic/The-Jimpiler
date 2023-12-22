@@ -69,7 +69,7 @@ public:
 		structTypes.emplace(name, Object(ty, types, names));
 		return true; 
 	}
-	bool addObjectFunction(std::string& objName, std::string& funcAlias, std::vector<llvm::Type*> types, llvm::Function* func){
+	void addObjectFunction(std::string& objName, std::string& funcAlias, std::vector<llvm::Type*> types, llvm::Function* func){
 		structTypes[objName].functions[funcAlias].push_back(FunctionHeader(types, func)); 
 	}
 	/**

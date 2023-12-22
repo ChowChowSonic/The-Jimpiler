@@ -1064,12 +1064,12 @@ namespace jimpilier
 	/// of arguments the function takes).
 	class PrototypeAST
 	{
-		string Name;
-		llvm::Type *retType;
-		vector<std::string> Args;
-		vector<llvm::Type *> Argt;
-
 	public:
+		std::string Name;
+		llvm::Type *retType;
+		std::vector<std::string> Args;
+		std::vector<llvm::Type *> Argt;
+
 		PrototypeAST(const std::string &name, std::vector<std::string> &args, std::vector<llvm::Type *> &argtypes, llvm::Type *ret)
 			: Name(name), Args(std::move(args)), Argt(std::move(argtypes)), retType(ret) {}
 
@@ -1078,9 +1078,14 @@ namespace jimpilier
 		{
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(retType, Argt, false);
-
+			int ctr = 1; 
+			std::string internalName = Name;
+			while(GlobalVarsAndFunctions->getFunction(internalName) != NULL){ 
+				ctr++; 
+				internalName = Name + (std::to_string(ctr)); 
+			}
 			llvm::Function *F =
-				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, GlobalVarsAndFunctions.get());
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, internalName, GlobalVarsAndFunctions.get());
 			unsigned Idx = 0;
 			for (auto &Arg : F->args())
 				Arg.setName(Args[Idx++]);
@@ -1105,7 +1110,7 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Proto->getName();
 			llvm::Function *prevFunction = currentFunction;
-			currentFunction = GlobalVarsAndFunctions->getFunction(Proto->getName());
+			currentFunction = AliasMgr.getFunction(Proto->Name, Proto->Argt);
 
 			if (!currentFunction)
 				currentFunction = Proto->codegen();
@@ -1115,10 +1120,10 @@ namespace jimpilier
 				currentFunction = prevFunction;
 				return nullptr;
 			}
-
 			if (!currentFunction->empty())
 			{
-				std::cout << "Function Cannot be redefined" << endl;
+				errored = true; 
+				std::cout << "Function Cannot be redefined: " << currentFunction->getName().str() << endl;
 				currentFunction = prevFunction;
 				return (llvm::Function *)NULL;
 			}
