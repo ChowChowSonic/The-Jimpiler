@@ -22,6 +22,7 @@ namespace jimpilier
 	std::unique_ptr<llvm::LLVMContext> ctxt;
 	std::unique_ptr<llvm::IRBuilder<>> builder;
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
+	std::unique_ptr<llvm::DataLayout> DataLayout;
 	std::map<std::string, llvm::Value *> variables;
 	std::map<std::string, llvm::Type *> structTypes;
 	AliasManager AliasMgr;
@@ -450,6 +451,37 @@ namespace jimpilier
 			return builder->CreateBr(escapeBlock.top().second);
 		}
 	};
+	class SizeOfExprAST : public ExprAST {
+		llvm::Type *ty = NULL; 
+		std::unique_ptr<ExprAST> target = NULL; 
+		public:
+		SizeOfExprAST(llvm::Type* SizeOfTarget) : ty(SizeOfTarget) {}
+		SizeOfExprAST(std::unique_ptr<ExprAST>& SizeOfTarget) : target(std::move(SizeOfTarget)) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
+			if(!ty && !target){
+				errored = true; 
+				std::cout << "Invalid target for sizeof: The thing you're taking the size of doesn't do what you think it does" << endl; 
+				return NULL; 
+				}
+			ty = ty == NULL ? target->codegen()->getType() : ty; 
+			switch(ty->getTypeID()){
+				case llvm::Type::IntegerTyID:
+					return llvm::ConstantInt::getIntegerValue(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, ty->getIntegerBitWidth()/8));
+				case llvm::Type::FloatTyID:
+					return llvm::ConstantInt::getIntegerValue(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, 4));
+				case llvm::Type::PointerTyID:
+				case llvm::Type::DoubleTyID:
+					return llvm::ConstantInt::getIntegerValue(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, 8));
+				case llvm::Type::ArrayTyID: 
+					return llvm::ConstantInt::getIntegerValue(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, DataLayout->getTypeAllocSize(ty)*ty->getArrayNumElements()));
+				case llvm::Type::StructTyID:
+					llvm::StructType *castedval =  (llvm::StructType*) ty; 
+					return llvm::ConstantInt::getIntegerValue(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, DataLayout->getStructLayout(castedval)->getSizeInBytes())); 
+			}
+			return NULL; 
+		}
+	}; 
+
 	// TODO: Implement forEach statements
 	/**
 	 * @brief Represents a for loop in LLVM IR, currently does not support for each statements
@@ -1085,7 +1117,7 @@ namespace jimpilier
 			}
 			ty->setBody(types);
 			AliasMgr.addObject(base.name, ty, types, names);
-			structTypes[(std::string)ty->getName()] = ty;
+			structTypes[(std::string)base.name] = ty;
 			for (auto &func : functions)
 			{
 				func->codegen();
@@ -1311,6 +1343,7 @@ namespace jimpilier
 		logError("Invalid term:", tokens.peek());
 		return NULL;
 	}
+
 	//TODO: Fix this function
 	/**
 	 * @brief Parses a function call statement, returns std::move(term(tokens)) if it does not find one
@@ -1437,9 +1470,23 @@ namespace jimpilier
 		return std::make_unique<NotExprAST>(std::move(val));
 	}
 
+	std::unique_ptr<ExprAST> sizeOfExpr(Stack<Token> &tokens)
+	{
+		llvm::Type* tyval;
+		std::unique_ptr<ExprAST> convertee;
+		if(tokens.peek() != SIZEOF) return std::move(notExpr(tokens)); 
+		tokens.next(); 
+		tyval = variableTypeStmt(tokens); 
+		if(tyval == NULL){
+			convertee = std::move(notExpr(tokens));
+			return std::make_unique<SizeOfExprAST>(convertee);
+		}
+		return std::make_unique<SizeOfExprAST>(tyval);
+	}
+
 	std::unique_ptr<ExprAST> typeAsExpr(Stack<Token> &tokens)
 	{
-		std::unique_ptr<ExprAST> convertee = std::move(notExpr(tokens));
+		std::unique_ptr<ExprAST> convertee = std::move(sizeOfExpr(tokens));
 		if (tokens.peek() != AS)
 		{
 			return convertee;
@@ -2284,7 +2331,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> printStmt(Stack<Token> &tokens)
 	{
 		bool isline = tokens.peek() == PRINTLN;
-		if (tokens.peek() != PRINT && tokens.peek() != PRINTLN)
+		if (tokens.peek() != PRINT && !isline)
 		{
 			logError("Somehow was looking for a print statement when there was no print. Wtf.", tokens.currentToken());
 			return NULL;
@@ -2299,6 +2346,8 @@ namespace jimpilier
 		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 		return std::make_unique<PrintStmtAST>(args, isline);
 	}
+
+
 
 	/**
 	 * @brief Get the next Valid Stmt in the code file provided.

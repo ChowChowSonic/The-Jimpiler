@@ -29,6 +29,7 @@ int main(int argc, char**args){
     jimpilier::ctxt = std::make_unique<llvm::LLVMContext>();
     jimpilier::GlobalVarsAndFunctions = std::make_unique<llvm::Module>("Jimbo jit", *jimpilier::ctxt);
     jimpilier::builder = std::make_unique<llvm::IRBuilder<>>(*jimpilier::ctxt);
+    jimpilier::DataLayout = std::make_unique<llvm::DataLayout>(jimpilier::GlobalVarsAndFunctions.get()); 
     Stack<Token> tokens = jimpilier::loadTokens(f);
     std::unique_ptr<jimpilier::ExprAST> x; 
     while(!tokens.eof()) {
