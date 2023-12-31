@@ -8,7 +8,7 @@ enum KeyToken{
     IDENT, ERR, IN, AND, OR, TRU, FALS, NOT, IMPORT, //Done
     EQUALCMP, EQUALS, NOTEQUAL, GREATER, GREATEREQUALS, LESS, LESSEQUALS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
     OPENCURL, CLOSECURL, OPENSQUARE, CLOSESQUARE, LPAREN, RPAREN, COMMA, //Done
-    PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, AS, //Done
+    PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, AS, SIZEOF, //Done
     IF, ELSE, FOR, DO, WHILE, CASE, SWITCH, BREAK, CONTINUE, DEFAULT, RET, PRINT, PRINTLN,//Done
     OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, COLON, PERIOD,//Done
     CONST, SINGULAR, VOLATILE, PUBLIC, PRIVATE, PROTECTED, //Done
@@ -17,11 +17,11 @@ enum KeyToken{
 };
 
 map<string, KeyToken> keywords = {
-    {"", IDENT}, {"IN", IN}, {"AND",AND}, {"OR",OR}, {"TRUE", TRU}, {"FALSE", FALS}, {"NOT", NOT},{"IMPORT", IMPORT},
-    {"IF", IF}, {"ELSE", ELSE}, {"FOR", FOR}, {"DO", DO},{"WHILE", WHILE}, {"CASE", CASE}, {"SWITCH", SWITCH}, {"BREAK", BREAK}, {"CONTINUE", CONTINUE}, {"DEFAULT", DEFAULT}, {"RETURN", RET}, {"PRINT",PRINT}, {"PRINTLN", PRINTLN},
-    {"OBJECT", OBJECT}, {"CONSTRUCTOR", CONSTRUCTOR}, {"DESTRUCTOR", DESTRUCTOR}, {"AS", AS},
-    {"CONST", CONST}, {"SINGULAR", SINGULAR}, {"VOLATILE", VOLATILE}, {"PUBLIC", PUBLIC}, {"PRIVATE", PRIVATE}, {"PROTECTED", PROTECTED},
-    {"INT", INT}, {"SHORT", SHORT}, {"LONG", LONG}, {"POINTER", POINTER}, {"FLOAT", FLOAT}, {"DOUBLE", DOUBLE}, {"STRING", STRING}, {"BOOL", BOOL}, {"CHAR", CHAR}, {"BYTE", BYTE}, {"AUTO", AUTO}
+    {"", IDENT}, {"in", IN}, {"and",AND}, {"or",OR}, {"true", TRU}, {"false", FALS}, {"not", NOT},{"import", IMPORT},
+    {"if", IF}, {"else", ELSE}, {"for", FOR}, {"do", DO},{"while", WHILE}, {"case", CASE}, {"switch", SWITCH}, {"break", BREAK}, {"continue", CONTINUE}, {"default", DEFAULT}, {"return", RET}, {"print",PRINT}, {"println", PRINTLN},
+    {"object", OBJECT}, {"constructor", CONSTRUCTOR}, {"destructor", DESTRUCTOR}, {"as", AS}, {"sizeof", SIZEOF},
+    {"const", CONST}, {"singular", SINGULAR}, {"volatile", VOLATILE}, {"public", PUBLIC}, {"private", PRIVATE}, {"protected", PROTECTED},
+    {"int", INT}, {"short", SHORT}, {"long", LONG}, {"pointer", POINTER}, {"float", FLOAT}, {"double", DOUBLE}, {"string", STRING}, {"bool", BOOL}, {"char", CHAR}, {"byte", BYTE}, {"auto", AUTO}
 };
 
 string keytokens[] {
@@ -208,7 +208,7 @@ Token getNextToken(istream & s, int & line){
             bool isvalidchar = isValidIdent(ch);// && isValidIdent(nextchar);
             bool isnextvalid = isValidIdent(nextchar);
             if(isvalidchar && !isspace(ch))lexeme+=ch; 
-            if(!isnextvalid) return Token(keywords[toUpper(lexeme)], lexeme, line); 
+            if(!isnextvalid) return Token(keywords[(lexeme)], lexeme, line); 
             break;
             }
             case INNUM:{
