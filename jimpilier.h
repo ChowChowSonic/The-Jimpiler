@@ -132,8 +132,6 @@ namespace jimpilier
 	// TODO: Find a better way to differentiate between char* and string (use structs maybe?)
 	// TODO: Add Template objects (God help me)
 	// TODO: Add arrays (God help me)
-	// TODO: Add a way to put things on the heap
-	// TODO: Add a way to delete things from the heap
 	// TODO: Add other modifier keywords (volatile, extern, etc...)
 	// TODO: Make "auto" keyword work like C/C++
 	// TODO: Add pointer arithmatic
@@ -480,7 +478,60 @@ namespace jimpilier
 			}
 			return NULL; 
 		}
+	};
+
+	class HeapExprAST : public ExprAST {
+		std::unique_ptr<ExprAST> Callee; 
+		llvm::Type* ty; 
+		public:
+		HeapExprAST(llvm::Type* heapAllocType, std::unique_ptr<ExprAST> &callee) : ty(heapAllocType), Callee(std::move(callee)) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
+			//initalize calloc(i64, i64) as the primary ways to allocate heap memory 
+			GlobalVarsAndFunctions->getOrInsertFunction("calloc", llvm::FunctionType::get(
+				llvm::Type::getInt8Ty(*ctxt)->getPointerTo(), 
+				{llvm::Type::getInt64Ty(*ctxt), llvm::Type::getInt64Ty(*ctxt)}, 
+				false)); 
+
+			//get size of the type being allocated
+			llvm::Value* size; 
+			switch(ty->getTypeID()){
+				case llvm::Type::IntegerTyID:
+					size= llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, ty->getIntegerBitWidth()/8));
+					break; 
+				case llvm::Type::FloatTyID:
+					size= llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 4));
+					break; 
+				case llvm::Type::PointerTyID:
+				case llvm::Type::DoubleTyID:
+					size= llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 8));
+					break; 
+				case llvm::Type::ArrayTyID: 
+					size= llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, DataLayout->getTypeAllocSize(ty)*ty->getArrayNumElements()));
+					break; 
+				case llvm::Type::StructTyID:
+					llvm::StructType *castedval =  (llvm::StructType*) ty; 
+					size= llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, DataLayout->getStructLayout(castedval)->getSizeInBytes())); 
+					break; 
+			}
+
+			llvm::Value* alloc = builder->CreateCall(GlobalVarsAndFunctions->getFunction("calloc"), {size, llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 1))}, "clearalloctmp"); 
+			alloc = builder->CreateBitCast(alloc, ty->getPointerTo(), "bitcasttmp"); 
+			if(Callee != NULL) Callee->codegen(autoDeref, alloc); 
+			return alloc; 
+		}
 	}; 
+
+	class DeleteExprAST : public ExprAST {
+		std::unique_ptr<ExprAST> val; 
+		public:
+		DeleteExprAST(std::unique_ptr<ExprAST> &deleteme) : val(std::move(deleteme)) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
+			llvm::Value* freefunc = GlobalVarsAndFunctions->getOrInsertFunction("free", {llvm::Type::getInt8PtrTy(*ctxt)}, llvm::Type::getInt8PtrTy(*ctxt)).getCallee(); 
+			llvm::Value* deletedthing = val->codegen(true); 
+			deletedthing = builder->CreateBitCast(deletedthing, llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp"); 
+			return builder->CreateCall((llvm::Function*)freefunc, deletedthing, "freedValue"); 
+		}
+	};
 
 	// TODO: Implement forEach statements
 	/**
@@ -974,17 +1025,18 @@ namespace jimpilier
 	{
 		string Callee; 
 		vector<std::unique_ptr<ExprAST>> Args;
+		llvm::Type* CalleType; 
 
 	public:
-		ObjectConstructorCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
-		{
-		}
+		ObjectConstructorCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg)){}
+		ObjectConstructorCallExprAST(llvm::Type* callee, vector<std::unique_ptr<ExprAST>> &Arg) : CalleType(callee), Args(std::move(Arg)){}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
+			CalleType = CalleType == NULL ? structTypes[Callee] : CalleType;  
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
 			ArgsV.push_back(other);
-			ArgsT.push_back(structTypes[Callee]->getPointerTo());
+			ArgsT.push_back(CalleType->getPointerTo());
 			// Look up the name in the global module table.
 			for (unsigned i = 0, e = Args.size(); i != e; ++i)
 			{
@@ -996,11 +1048,12 @@ namespace jimpilier
 				}
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
-
-			llvm::Function *CalleeF = AliasMgr.getFunction(Callee, ArgsT);
+			llvm::Function *CalleeF;
+			CalleeF = Callee == "" ? AliasMgr.getConstructor(CalleType, ArgsT) : AliasMgr.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
 				std::cout << "Unknown object constructor referenced, or incorrect arg types were passed: " << Callee << endl;
+				errored = true; 
 				return NULL;
 			}
 
@@ -1073,6 +1126,7 @@ namespace jimpilier
 			// 	variables[x.first] = NULL; //builder->CreateGEP(x.second.second, (llvm::Value *)thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
 			// }
 			AliasMgr.addFunction(objName, thisfunc, args.second);
+			AliasMgr.addConstructor(structTypes[objName], thisfunc, args.second);
 			currentFunction = lastfunc;
 			return thisfunc;
 		}
@@ -1261,8 +1315,6 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens);
 	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
-	llvm::Type *variableTypeStmt(Stack<Token> &tokens);
-
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
@@ -1437,8 +1489,7 @@ namespace jimpilier
 			return std::move(memberAccessExpr(tokens));
 		}
 		tokens.next();
-		std::unique_ptr<ExprAST> refval;
-		refval = std::move(memberAccessExpr(tokens));
+		std::unique_ptr<ExprAST> refval = std::move(pointerToExpr(tokens));
 		return std::make_unique<RefrenceExprAST>(refval);
 	}
 
@@ -1449,15 +1500,8 @@ namespace jimpilier
 			return std::move(pointerToExpr(tokens));
 		}
 		tokens.next();
-		std::unique_ptr<ExprAST> drefval;
-		if (tokens.peek() == REFRENCETO)
-		{
-			drefval = std::move(valueAtExpr(tokens));
-		}
-		else
-		{
-			drefval = std::move(pointerToExpr(tokens));
-		}
+		std::unique_ptr<ExprAST> drefval = std::move(valueAtExpr(tokens));
+		
 		return std::make_unique<DeRefrenceExprAST>(drefval);
 	}
 
@@ -1470,15 +1514,66 @@ namespace jimpilier
 		return std::make_unique<NotExprAST>(std::move(val));
 	}
 
+	std::unique_ptr<ExprAST> deleteStmt(Stack<Token> &tokens){
+		if(tokens.peek() != DEL){
+			return std::move(notExpr(tokens)); 
+		}
+		tokens.next(); 
+		std::unique_ptr<ExprAST> delme = std::move(assignStmt(tokens)); 
+		return std::make_unique<DeleteExprAST>(delme); 
+	}
+
+	/**
+	 * @brief Alloocates space on the heap for a variable and returns a pointer to that variable. Like C++'s new operator or C's malloc()
+	 * 
+	 * @param tokens 
+	 * @return std::unique_ptr<ExprAST> 
+	 */
+	std::unique_ptr<ExprAST> heapStmt(Stack<Token> &tokens){
+		if(tokens.peek() != HEAP){
+			return std::move(deleteStmt(tokens)); 
+		}
+		tokens.next(); 
+		std::unique_ptr<ExprAST> retval = NULL; 
+		llvm::Type* ty = variableTypeStmt(tokens); 
+		if(ty == NULL){
+		logError("Unknown type when trying to allocate space on the heap", tokens.peek()); 
+		return NULL; 
+		}
+		if (tokens.peek() == LPAREN)
+		{
+			tokens.next();
+			std::vector<std::unique_ptr<ExprAST>> params;
+			while (!errored && (tokens.peek() == COMMA && tokens.next() == COMMA))
+			{
+				std::unique_ptr<ExprAST> param = std::move(jimpilier::assignStmt(tokens));
+				if (param == NULL)
+				{
+					logError("Invalid parameter passed to function", tokens.peek());
+					return NULL;
+				}
+				params.push_back(std::move(param));
+			} 
+			if (tokens.next() != RPAREN)
+			{
+				logError("Expected a closing parethesis '(' here:", tokens.currentToken());
+				return NULL;
+			}
+			retval = std::make_unique<ObjectConstructorCallExprAST>(ty,params);
+		}
+		return std::make_unique<HeapExprAST>(ty,retval); 
+	}
+
+
 	std::unique_ptr<ExprAST> sizeOfExpr(Stack<Token> &tokens)
 	{
 		llvm::Type* tyval;
 		std::unique_ptr<ExprAST> convertee;
-		if(tokens.peek() != SIZEOF) return std::move(notExpr(tokens)); 
+		if(tokens.peek() != SIZEOF) return std::move(heapStmt(tokens)); 
 		tokens.next(); 
 		tyval = variableTypeStmt(tokens); 
 		if(tyval == NULL){
-			convertee = std::move(notExpr(tokens));
+			convertee = std::move(heapStmt(tokens));
 			return std::make_unique<SizeOfExprAST>(convertee);
 		}
 		return std::make_unique<SizeOfExprAST>(tyval);
@@ -1940,7 +2035,7 @@ namespace jimpilier
 				if (type == NULL)
 					return NULL;
 			}
-			while (tokens.peek() == POINTER)
+			while (tokens.peek() == POINTER || tokens.peek() == MULT)
 			{
 				tokens.next();
 				type = type->getPointerTo();

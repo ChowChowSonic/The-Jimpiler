@@ -44,6 +44,7 @@ class AliasManager
 
 public:
 	std::map<std::string, std::vector<FunctionHeader>> functionAliases;
+	std::map<llvm::Type*, std::vector<FunctionHeader>> constructors;
 		std::map<std::string, Object> structTypes;
 	AliasManager() {}
 	llvm::Function *getFunction(std::string &name, std::vector<llvm::Type *> &args)
@@ -56,9 +57,23 @@ public:
 		}
 		return NULL;
 	}
+
+	llvm::Function* getConstructor(llvm::Type* ty, std::vector<llvm::Type*>& args){
+		for (auto& f : constructors[ty])
+		{
+			if (f == args)
+				return f.func;
+			// std::cout << f.args.size() << " " << args.size() << " " << (f.args[0] == args[0]) <<endl;
+		}
+		return NULL;
+	}
 	void addFunction(std::string name, llvm::Function *func, std::vector<llvm::Type *> args)
 	{
 		functionAliases[name].push_back(FunctionHeader(args, func));
+	}
+	void addConstructor(llvm::Type* type, llvm::Function *func, std::vector<llvm::Type *> args)
+	{
+		constructors[type].push_back(FunctionHeader(args, func));
 	}
 	bool hasAlias(std::string alias)
 	{
