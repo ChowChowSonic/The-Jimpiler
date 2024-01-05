@@ -479,7 +479,7 @@ namespace jimpilier
 			return NULL; 
 		}
 	};
-
+	//TODO: Add constructors for the primitive types
 	class HeapExprAST : public ExprAST {
 		std::unique_ptr<ExprAST> Callee; 
 		llvm::Type* ty; 
@@ -516,7 +516,14 @@ namespace jimpilier
 
 			llvm::Value* alloc = builder->CreateCall(GlobalVarsAndFunctions->getFunction("calloc"), {size, llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 1))}, "clearalloctmp"); 
 			alloc = builder->CreateBitCast(alloc, ty->getPointerTo(), "bitcasttmp"); 
-			if(Callee != NULL) Callee->codegen(autoDeref, alloc); 
+			if(Callee != NULL) {
+				Callee->codegen(autoDeref, alloc); 
+			}else{
+				std::vector<llvm::Type*> tylist; 
+				tylist.push_back(ty->getPointerTo()); 
+				if(AliasMgr.getConstructor(ty, tylist) == NULL) return alloc; 
+				builder->CreateCall(AliasMgr.getConstructor(ty, tylist), {alloc}, "defaultconstructorcalltmp"); 
+			}
 			return alloc; 
 		}
 	}; 
