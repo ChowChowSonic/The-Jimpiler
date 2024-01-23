@@ -23,7 +23,6 @@ namespace jimpilier
 	std::unique_ptr<llvm::IRBuilder<>> builder;
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::unique_ptr<llvm::DataLayout> DataLayout;
-	std::map<std::string, llvm::Type *> structTypes;
 	AliasManager AliasMgr;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
@@ -963,16 +962,16 @@ namespace jimpilier
 		{
 			// return NULL;
 			llvm::Value* lhs = base->codegen(false); 
-			std::pair<int, llvm::Type*> returnTy = AliasMgr.objects.getObjMember(lhs->getType()->getContainedType(0), member); 
-			if(returnTy.first == -1){
+			auto returnTy = AliasMgr(lhs->getType()->getContainedType(0), member); 
+			if(returnTy.index == -1){
 				std::cout << "No object member or function with name " << member <<endl; 
 				errored = true; 
 				return NULL; 
 			}
-			llvm::Constant* offset = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, returnTy.first)); 
+			llvm::Constant* offset = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, returnTy.index)); 
 			llvm::Constant* objIndex = llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, false));
 			llvm::Value* gep = builder->CreateInBoundsGEP(lhs->getType()->getContainedType(0), lhs, llvm::ArrayRef<llvm::Value*>({objIndex, offset}), "memberaccess");
-			return autoDeref? builder->CreateLoad(returnTy.second, gep, "LoadTmp") : gep; 
+			return autoDeref? builder->CreateLoad(returnTy.type, gep, "LoadTmp") : gep; 
 		}
 	};
 
@@ -1038,7 +1037,7 @@ namespace jimpilier
 		ObjectConstructorCallExprAST(llvm::Type* callee, vector<std::unique_ptr<ExprAST>> &Arg) : CalleType(callee), Args(std::move(Arg)){}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			CalleType = CalleType == NULL ? structTypes[Callee] : CalleType;  
+			CalleType = CalleType == NULL ? AliasMgr(Callee) : CalleType;  
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
 			ArgsV.push_back(other);
@@ -1132,7 +1131,7 @@ namespace jimpilier
 			// 	AliasMgr[x.first] = NULL; //builder->CreateGEP(x.second.second, (llvm::Value *)thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
 			// }
 			AliasMgr.functions.addFunction(objName, thisfunc, args.second);
-			AliasMgr.objects.addConstructor(structTypes[objName], thisfunc, args.second);
+			AliasMgr.objects.addConstructor(AliasMgr(objName), thisfunc, args.second);
 			currentFunction = lastfunc;
 			return thisfunc;
 		}
@@ -1177,7 +1176,6 @@ namespace jimpilier
 			}
 			ty->setBody(types);
 			AliasMgr.objects.addObject(base.name, ty, types, names);
-			structTypes[(std::string)base.name] = ty;
 			for (auto &func : functions)
 			{
 				func->codegen();
@@ -1205,9 +1203,9 @@ namespace jimpilier
 		const std::string &getName() const { return Name; }
 		llvm::Function *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			if(structTypes[parent] != NULL){
+			if(AliasMgr(parent) != NULL){
 				Args.emplace(Args.begin(), "this");
-				Argt.emplace(Argt.begin(), structTypes[parent]->getPointerTo());
+				Argt.emplace(Argt.begin(), AliasMgr(parent)->getPointerTo());
 			}
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(retType, Argt, false);
@@ -1433,7 +1431,7 @@ namespace jimpilier
 				return NULL;
 			}
 			std::unique_ptr<ExprAST> retval;
-			if(structTypes[t.lex] != NULL){
+			if(AliasMgr(t.lex) != NULL){
 				retval = std::make_unique<ObjectConstructorCallExprAST>(t.lex,params);
 			}else if(memberAccessParent != NULL){
 				retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params, memberAccessParent); 
@@ -2006,7 +2004,7 @@ namespace jimpilier
 	{
 		Token t = tokens.peek();
 		llvm::Type *type = NULL;
-		if (t.token >= INT || structTypes[t.lex] != NULL)
+		if (t.token >= INT || AliasMgr(t.lex) != NULL)
 		{
 			t = tokens.next();
 			switch (t.token)
@@ -2037,7 +2035,7 @@ namespace jimpilier
 				type = llvm::Type::getInt8Ty(*ctxt);
 				break;
 			default:
-				type = structTypes[t.lex];
+				type = AliasMgr(t.lex);
 				if (type == NULL)
 					return NULL;
 			}

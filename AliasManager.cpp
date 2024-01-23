@@ -44,24 +44,38 @@ class FunctionAliasManager{
 }; 
 
 class ObjectAliasManager {
-	class Object {
+	class Object {	
+		class ObjectMember{
+			public:
+			std::string name;
+			llvm::Type* type; 
+			int index; //Do away with this variable eventually
+			public:
+			ObjectMember(const std::string& name, llvm::Type* type, int index) : name(name), type(type), index(index) {}
+		};
 		public: 
 		FunctionAliasManager functions; 
-		std::map<std::string, std::pair<int, llvm::Type *>> members;
+		std::vector<ObjectMember> members;
 		llvm::Type* ptr; 
 		Object(){
 			ptr = NULL; 
 		}
 		Object(llvm::Type* ty, std::vector<llvm::Type*> members, std::vector<std::string> names) : ptr(ty) {
 			for(int i =0; i < members.size(); i++){
-				this->members[names[i]] = std::pair<int, llvm::Type*>(i, members[i]);
+				this->members.push_back(ObjectMember(names[i], members[i], i));
 			}
 		}
-
-		std::pair<int, llvm::Type*>& getMember(std::string name){
-			return members[name];
+		ObjectMember getMember(int i){ 
+			return members[i]; 
 		}
-
+		ObjectMember getMember(std::string name){
+			for(auto& i : members){
+				if(i.name == name){
+					return i; 
+				}
+			}
+			return {"", NULL, -1};
+		}
 		bool operator==(llvm::Type* other){
 			return other == ptr; 
 		}
@@ -83,37 +97,14 @@ class ObjectAliasManager {
 	{
 		constructors[type].push_back(FunctionHeader(args, func));
 	}
-	std::pair<int, llvm::Type*> errorval = std::pair<int, llvm::Type*>(-1, NULL); 
-	/**
-	 * Retrieves an object's member as a pair containing the index of the member and its type. 
-	 * @example
-	 * obj str{
-	 * <TYPE> <NAME>; //this is at index 0 
-	 * int* obj; //this is at index 1 
-	 * } 
-	 * getObjMember("str", "obj") //returns <1, int*>
-	 */
-	std::pair<int, llvm::Type*>& getObjMember(llvm::Type* ty, std::string name){
+	Object getObject(llvm::Type* ty){
 		for(auto& x : structTypes){
-			if(x.second.ptr == ty) return x.second.getMember(name); 
+			if(x.second == ty) return x.second; 
 		}
-		
-		return errorval; 
-	}
-	/**
-	 * Retrieves an object's member as a pair containing the index of the member and its type. 
-	 * @example
-	 * obj str{
-	 * <TYPE> <NAME>; //this is at index 0 
-	 * int* obj; //this is at index 1 
-	 * } 
-	 * getObjMember("str", "obj") //returns <1, int*>
-	*/
-	std::pair<int, llvm::Type*>& getObjMember(std::string objName, std::string name){
-		return structTypes[objName].getMember(name); 
-	}
-	llvm::Type* getType(std::string alias){
-		return structTypes[alias].ptr; 
+		return Object(); 
+	}	
+	Object& getObject(std::string alias){
+		return structTypes[alias]; 
 	}
 
 	bool addObject(std::string alias, llvm::Type* objType, std::vector<llvm::Type*> memberTypes, std::vector<std::string> memberNames){
@@ -137,7 +128,9 @@ public:
 	AliasManager() {}
 	/**
 	 * @brief Returns a refrence to a llvm::Value* that represents a named variable. The llvm::Value itself will
-	 * be a pointer to that variable in memory. To access functions, refer to AliasManager.functions or AliasManager.operator()(std::string&, std::vector<llvm::Type>&).  
+	 * be a pointer to that variable in memory. 
+	 * To access functions, refer to AliasManager.functions or AliasManager.operator()(std::string&, std::vector<llvm::Type>&).
+	 * To access Types by name, refer to AliasManager.objects or AliasManager.operator()(std::string&).   
 	 * @example int i = 9; 
 	 * AliasManager["i"] will return an int* that points to i. 
 	 * @param alias 
@@ -145,6 +138,38 @@ public:
 	 */
 	llvm::Value*& operator[](const std::string& alias){
 		return variables[alias]; 
+	}
+	/**
+	 * @brief Returns a llvm::Type* that is associated with a particular name. Intended for Read-Only operations
+	 * @param alias 
+	 * @return a llvm::Value*& that refers to a named variable.  
+	 */
+	llvm::Type* operator()(const std::string& alias){
+		return objects.getObject(alias).ptr; 
+	}
+	/**
+	 * @brief Returns a struct that represents an object's member with a particular name. Intended for Read-Only operations
+	 * @param alias 
+	 * @return a llvm::Value*& that refers to a named variable.  
+	 */
+	auto operator()(const std::string& alias, const std::string& member){
+		return objects.getObject(alias).getMember(member); 
+	}
+	/**
+	 * @brief Returns a struct that represents an object's member with a particular name. Intended for Read-Only operations
+	 * @param alias 
+	 * @return a llvm::Value*& that refers to a named variable.  
+	 */
+	auto operator()(llvm::Type* alias, const std::string& member){
+		return objects.getObject(alias).getMember(member); 
+	}
+	/**
+	 * @brief Returns a struct that represents an object's Nth member. Intended for Read-Only operations
+	 * @param alias 
+	 * @return a llvm::Value*& that refers to a named variable.  
+	 */
+	auto operator()(const std::string& alias, int member){
+		return objects.getObject(alias).getMember(member); 
 	}
 	
 };
