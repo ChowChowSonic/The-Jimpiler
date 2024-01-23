@@ -1,11 +1,7 @@
 #include <map>
 #include "llvm/IR/Function.h"
 
-class AliasManager
-{
-	std::pair<int, llvm::Type*> errorval = std::pair<int, llvm::Type*>(-1, NULL); 
-	class FunctionHeader
-	{
+class FunctionHeader{
 	public:
 		std::vector<llvm::Type *> args;
 		llvm::Function *func;
@@ -23,9 +19,34 @@ class AliasManager
 		}
 	};
 
+class FunctionAliasManager{
+	
+	std::map<std::string, std::vector<FunctionHeader>> functionAliases;
+	public:
+	FunctionAliasManager(){}
+	llvm::Function *getFunction(std::string &name, std::vector<llvm::Type *> &args)
+	{
+		for (auto& f : functionAliases[name])
+		{
+			if (f == args)
+				return f.func;
+			// std::cout << f.args.size() << " " << args.size() << " " << (f.args[0] == args[0]) <<endl;
+		}
+		return NULL;
+	}
+	void addFunction(std::string name, llvm::Function *func, std::vector<llvm::Type *> args)
+	{
+		functionAliases[name].push_back(FunctionHeader(args, func));
+	}
+	bool hasAlias(std::string& alias){
+		return !functionAliases[alias].empty(); 
+	}
+}; 
+
+class ObjectAliasManager {
 	class Object {
 		public: 
-		std::map<std::string, std::vector<FunctionHeader>> functions;
+		FunctionAliasManager functions; 
 		std::map<std::string, std::pair<int, llvm::Type *>> members;
 		llvm::Type* ptr; 
 		Object(){
@@ -40,25 +61,15 @@ class AliasManager
 		std::pair<int, llvm::Type*>& getMember(std::string name){
 			return members[name];
 		}
-	}; 
 
-public:
-	std::map<std::string, std::vector<FunctionHeader>> functionAliases;
-	std::map<llvm::Type*, std::vector<FunctionHeader>> constructors;
-		std::map<std::string, Object> structTypes;
-	AliasManager() {}
-	llvm::Function *getFunction(std::string &name, std::vector<llvm::Type *> &args)
-	{
-		for (auto& f : functionAliases[name])
-		{
-			if (f == args)
-				return f.func;
-			// std::cout << f.args.size() << " " << args.size() << " " << (f.args[0] == args[0]) <<endl;
+		bool operator==(llvm::Type* other){
+			return other == ptr; 
 		}
-		return NULL;
-	}
-
-	llvm::Function* getConstructor(llvm::Type* ty, std::vector<llvm::Type*>& args){
+	}; 
+	std::map<std::string, Object> structTypes;
+	std::map<llvm::Type*, std::vector<FunctionHeader>> constructors; //Rework this maybe? 
+	public: 
+		llvm::Function* getConstructor(llvm::Type* ty, std::vector<llvm::Type*>& args){
 		for (auto& f : constructors[ty])
 		{
 			if (f == args)
@@ -67,26 +78,12 @@ public:
 		}
 		return NULL;
 	}
-	void addFunction(std::string name, llvm::Function *func, std::vector<llvm::Type *> args)
-	{
-		functionAliases[name].push_back(FunctionHeader(args, func));
-	}
+
 	void addConstructor(llvm::Type* type, llvm::Function *func, std::vector<llvm::Type *> args)
 	{
 		constructors[type].push_back(FunctionHeader(args, func));
 	}
-	bool hasAlias(std::string alias)
-	{
-		return !functionAliases[alias].empty();
-	}
-	bool addObject(std::string& name, llvm::Type* ty, std::vector<llvm::Type*> types, std::vector<std::string> names){
-		//if(structTypes[name].ptr != NULL) return false; 
-		structTypes.emplace(name, Object(ty, types, names));
-		return true; 
-	}
-	void addObjectFunction(std::string& objName, std::string& funcAlias, std::vector<llvm::Type*> types, llvm::Function* func){
-		structTypes[objName].functions[funcAlias].push_back(FunctionHeader(types, func)); 
-	}
+	std::pair<int, llvm::Type*> errorval = std::pair<int, llvm::Type*>(-1, NULL); 
 	/**
 	 * Retrieves an object's member as a pair containing the index of the member and its type. 
 	 * @example
@@ -95,7 +92,7 @@ public:
 	 * int* obj; //this is at index 1 
 	 * } 
 	 * getObjMember("str", "obj") //returns <1, int*>
-	*/
+	 */
 	std::pair<int, llvm::Type*>& getObjMember(llvm::Type* ty, std::string name){
 		for(auto& x : structTypes){
 			if(x.second.ptr == ty) return x.second.getMember(name); 
@@ -115,4 +112,39 @@ public:
 	std::pair<int, llvm::Type*>& getObjMember(std::string objName, std::string name){
 		return structTypes[objName].getMember(name); 
 	}
+	llvm::Type* getType(std::string alias){
+		return structTypes[alias].ptr; 
+	}
+
+	bool addObject(std::string alias, llvm::Type* objType, std::vector<llvm::Type*> memberTypes, std::vector<std::string> memberNames){
+		if(structTypes[alias].ptr != NULL){ 
+			return false; 
+		}
+		structTypes[alias] = Object(objType, memberTypes, memberNames); 
+		return true; 
+	}
+	void addObjectFunction(std::string& objName, std::string& funcAlias, std::vector<llvm::Type*> types, llvm::Function* func){
+		structTypes[objName].functions.addFunction(funcAlias, func, types); 
+	}
+}; 
+
+class AliasManager
+{
+public:
+	FunctionAliasManager functions; 
+	ObjectAliasManager objects; 
+	std::map<std::string, llvm::Value *> variables;
+	AliasManager() {}
+	/**
+	 * @brief Returns a refrence to a llvm::Value* that represents a named variable. The llvm::Value itself will
+	 * be a pointer to that variable in memory. To access functions, refer to AliasManager.functions or AliasManager.operator()(std::string&, std::vector<llvm::Type>&).  
+	 * @example int i = 9; 
+	 * AliasManager["i"] will return an int* that points to i. 
+	 * @param alias 
+	 * @return a llvm::Value*& that refers to a named variable.  
+	 */
+	llvm::Value*& operator[](const std::string& alias){
+		return variables[alias]; 
+	}
+	
 };

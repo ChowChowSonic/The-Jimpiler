@@ -23,7 +23,6 @@ namespace jimpilier
 	std::unique_ptr<llvm::IRBuilder<>> builder;
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::unique_ptr<llvm::DataLayout> DataLayout;
-	std::map<std::string, llvm::Value *> variables;
 	std::map<std::string, llvm::Type *> structTypes;
 	AliasManager AliasMgr;
 	std::vector<std::string> importedFiles;
@@ -95,7 +94,7 @@ namespace jimpilier
 		{
 			if (DEBUGGING)
 				std::cout << Name;
-			llvm::Value *V = variables[Name];
+			llvm::Value *V = AliasMgr[Name];
 			if (!V)
 			{
 				std::cout << "Unknown variable name: " << Name << endl;
@@ -120,10 +119,10 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
-			variables.emplace(std::pair<std::string, llvm::Value *>(name, builder->CreateAlloca(ty, sizeval, name)));
+			AliasMgr[name] = builder->CreateAlloca(ty, sizeval,name);
 			if (!lateinit)
-				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), variables[name]);
-			return variables[name];
+				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name]);
+			return AliasMgr[name];
 		}
 	};
 	// TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr != null (@objptr).func()"
@@ -521,8 +520,8 @@ namespace jimpilier
 			}else{
 				std::vector<llvm::Type*> tylist; 
 				tylist.push_back(ty->getPointerTo()); 
-				if(AliasMgr.getConstructor(ty, tylist) == NULL) return alloc; 
-				builder->CreateCall(AliasMgr.getConstructor(ty, tylist), {alloc}, "defaultconstructorcalltmp"); 
+				if(AliasMgr.objects.getConstructor(ty, tylist) == NULL) return alloc; 
+				builder->CreateCall(AliasMgr.objects.getConstructor(ty, tylist), {alloc}, "defaultconstructorcalltmp"); 
 			}
 			return alloc; 
 		}
@@ -720,7 +719,7 @@ namespace jimpilier
 			return rval;
 		}
 	};
-	// TODO: Fix type management with the BinaryStmtAST::codegen() function
+	// TODO: Break this up into several ExprAST objects for each operator
 	/** BinaryStmtAST - Expression class for a binary operator.
 	 *
 	 *
@@ -920,7 +919,7 @@ namespace jimpilier
 		// : Callee(callee), Args(Arg) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			if (!AliasMgr.hasAlias(Callee))
+			if (!AliasMgr.functions.hasAlias(Callee))
 			{
 				std::cout << "A function was never declared: " << Callee << endl;
 				return NULL;
@@ -940,7 +939,7 @@ namespace jimpilier
 
 			// Look up the name in the global module table.
 
-			llvm::Function *CalleeF = AliasMgr.getFunction(Callee, ArgsT);
+			llvm::Function *CalleeF = AliasMgr.functions.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
 
@@ -964,7 +963,7 @@ namespace jimpilier
 		{
 			// return NULL;
 			llvm::Value* lhs = base->codegen(false); 
-			std::pair<int, llvm::Type*> returnTy = AliasMgr.getObjMember(lhs->getType()->getContainedType(0), member); 
+			std::pair<int, llvm::Type*> returnTy = AliasMgr.objects.getObjMember(lhs->getType()->getContainedType(0), member); 
 			if(returnTy.first == -1){
 				std::cout << "No object member or function with name " << member <<endl; 
 				errored = true; 
@@ -1011,7 +1010,7 @@ namespace jimpilier
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
 
-			llvm::Function *CalleeF = AliasMgr.getFunction(Callee, ArgsT);
+			llvm::Function *CalleeF = AliasMgr.functions.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
 				std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << Callee << endl;
@@ -1056,7 +1055,7 @@ namespace jimpilier
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
 			llvm::Function *CalleeF;
-			CalleeF = Callee == "" ? AliasMgr.getConstructor(CalleType, ArgsT) : AliasMgr.getFunction(Callee, ArgsT);
+			CalleeF = Callee == "" ? AliasMgr.objects.getConstructor(CalleType, ArgsT) : AliasMgr.functions.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
 				std::cout << "Unknown object constructor referenced, or incorrect arg types were passed: " << Callee << endl;
@@ -1100,7 +1099,7 @@ namespace jimpilier
 			// {
 			// 	llvm::Type *longty = llvm::Type::getInt64Ty(*ctxt);
 			// 	llvm::Constant *offset = llvm::ConstantInt::get(longty, llvm::APInt(64, x.second.first, false));
-			// 	variables[x.first] = builder->CreateGEP(x.second.second, thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
+			// 	AliasMgr[x.first] = builder->CreateGEP(x.second.second, thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
 			// }
 
 			unsigned Idx = 0;
@@ -1108,12 +1107,12 @@ namespace jimpilier
 			{
 				std::string name = args.first[Idx++];
 				Arg.setName(name);
-				variables[name] = &Arg;
+				AliasMgr[name] = &Arg;
 				if (name == "this")
 					continue;
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
-				variables[name] = storedvar;
+				AliasMgr[name] = storedvar;
 			}
 
 			llvm::Value *RetVal = bod->codegen();
@@ -1125,15 +1124,15 @@ namespace jimpilier
 			// remove the arguments now that they're out of scope
 			for (auto &Arg : currentFunction->args())
 			{
-				variables[std::string(Arg.getName())] = NULL;
+				AliasMgr[std::string(Arg.getName())] = NULL;
 				// dtypes[std::string(Arg.getName())] = NULL;
 			}
 			// for (auto x : AliasMgr.structTypes[objName].members)
 			// {
-			// 	variables[x.first] = NULL; //builder->CreateGEP(x.second.second, (llvm::Value *)thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
+			// 	AliasMgr[x.first] = NULL; //builder->CreateGEP(x.second.second, (llvm::Value *)thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
 			// }
-			AliasMgr.addFunction(objName, thisfunc, args.second);
-			AliasMgr.addConstructor(structTypes[objName], thisfunc, args.second);
+			AliasMgr.functions.addFunction(objName, thisfunc, args.second);
+			AliasMgr.objects.addConstructor(structTypes[objName], thisfunc, args.second);
 			currentFunction = lastfunc;
 			return thisfunc;
 		}
@@ -1177,7 +1176,7 @@ namespace jimpilier
 				names.push_back(x.first);
 			}
 			ty->setBody(types);
-			AliasMgr.addObject(base.name, ty, types, names);
+			AliasMgr.objects.addObject(base.name, ty, types, names);
 			structTypes[(std::string)base.name] = ty;
 			for (auto &func : functions)
 			{
@@ -1223,7 +1222,7 @@ namespace jimpilier
 			unsigned Idx = 0;
 			for (auto &Arg : F->args())
 				Arg.setName(Args[Idx++]);
-			AliasMgr.addFunction(Name, F, Argt);
+			AliasMgr.functions.addFunction(Name, F, Argt);
 			return F;
 		}
 	};
@@ -1244,7 +1243,7 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Proto->getName();
 			llvm::Function *prevFunction = currentFunction;
-			currentFunction = AliasMgr.getFunction(Proto->Name, Proto->Argt);
+			currentFunction = AliasMgr.functions.getFunction(Proto->Name, Proto->Argt);
 
 			if (!currentFunction)
 				currentFunction = Proto->codegen();
@@ -1269,13 +1268,13 @@ namespace jimpilier
 			{
 				//TODO: Bandaid fix, find a better solution. This will cause bugs later 
 				if(Arg.getArgNo() == 0 && Proto->parent != ""){
-					variables[Arg.getName().str()] = &Arg; 
+					AliasMgr[Arg.getName().str()] = &Arg; 
 					continue; 
 				}
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
-				variables[name] = storedvar;
+				AliasMgr[name] = storedvar;
 				// dtypes[name] = Arg.getType();
 			}
 			if (
@@ -1288,7 +1287,7 @@ namespace jimpilier
 				// remove the arguments now that they're out of scope
 				for (auto &Arg : currentFunction->args())
 				{
-					variables[std::string(Arg.getName())] = NULL;
+					AliasMgr[std::string(Arg.getName())] = NULL;
 					// dtypes[std::string(Arg.getName())] = NULL;
 				}
 				currentFunction = prevFunction;
@@ -1551,8 +1550,8 @@ namespace jimpilier
 		{
 			tokens.next();
 			std::vector<std::unique_ptr<ExprAST>> params;
-			while (!errored && (tokens.peek() == COMMA && tokens.next() == COMMA))
-			{
+			if(tokens.peek() != RPAREN)
+			do{
 				std::unique_ptr<ExprAST> param = std::move(jimpilier::assignStmt(tokens));
 				if (param == NULL)
 				{
@@ -1560,7 +1559,7 @@ namespace jimpilier
 					return NULL;
 				}
 				params.push_back(std::move(param));
-			} 
+			}while (!errored && (tokens.peek() == COMMA && tokens.next() == COMMA));  
 			if (tokens.next() != RPAREN)
 			{
 				logError("Expected a closing parethesis '(' here:", tokens.currentToken());
