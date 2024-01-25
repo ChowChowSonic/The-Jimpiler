@@ -35,6 +35,97 @@ namespace jimpilier
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;
+	
+	class TypeExpr
+	{
+	public:
+		virtual ~TypeExpr(){};
+		virtual llvm::Type *codegen() = 0;
+	};
+
+	class DoubleTypeExpr : public TypeExpr
+	{
+		public:
+		DoubleTypeExpr() {}
+		llvm::Type *codegen() { return llvm::Type::getDoubleTy(*ctxt); };
+	};
+
+	class FloatTypeExpr : public TypeExpr
+	{
+		public:
+		FloatTypeExpr() {}
+		llvm::Type *codegen() { return llvm::Type::getFloatTy(*ctxt); };
+	};
+
+	class LongTypeExpr : public TypeExpr
+	{
+		public:
+		LongTypeExpr() {}
+		llvm::Type *codegen() { return llvm::Type::getInt64Ty(*ctxt); };
+	};
+
+	class IntTypeExpr : public TypeExpr
+	{
+		public:
+		IntTypeExpr() {}
+		llvm::Type *codegen() { return llvm::Type::getInt32Ty(*ctxt); };
+	};
+
+	class ShortTypeExpr : public TypeExpr
+	{
+		public:
+		ShortTypeExpr() {}
+		llvm::Type *codegen() { return llvm::Type::getInt16Ty(*ctxt); };
+	};
+
+	class ByteTypeExpr : public TypeExpr
+	{
+		public:
+		ByteTypeExpr() {}
+		llvm::Type *codegen() { return llvm::Type::getInt8Ty(*ctxt); };
+	};
+
+	class BoolTypeExpr : public TypeExpr
+	{
+		public:
+		BoolTypeExpr() {}
+		llvm::Type *codegen() { return llvm::Type::getInt1Ty(*ctxt); };
+	};
+
+	class TemplateTypeExpr : public TypeExpr
+	{
+		std::string name; 
+		public:
+		TemplateTypeExpr(const std::string name) : name(name){}
+		llvm::Type *codegen() { return llvm::StructType::create(name, {}); };
+	}; 
+
+	class StructTypeExpr : public TypeExpr{
+		std::string name; 
+		public:
+		StructTypeExpr(const std::string& structname) : name(structname){}
+		llvm::Type *codegen(){ 
+			llvm::Type* ty = AliasMgr(name); 
+			if(ty == NULL){
+				std::cout << "Unknown object of name: " << name <<endl;
+				errored = true; 
+			}
+			return ty; 
+		}
+	};
+
+	class PointerToTypeExpr : public TypeExpr
+	{
+		std::unique_ptr<TypeExpr> ty;
+		public:
+		PointerToTypeExpr(std::unique_ptr<TypeExpr> &type) : ty(std::move(type)) {}
+		llvm::Type *codegen()
+		{
+			llvm::Type* t = ty->codegen(); 
+			return t==NULL ? NULL : t->getPointerTo();
+		}
+	};
+	
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
 	{

@@ -119,6 +119,13 @@ class ObjectAliasManager {
 	}
 }; 
 
+/**
+ * @brief An all-in-one wrapper class that manages the frontend names/aliases of functions, variables and objects. 
+ * Variables can be read & modified via the indexing operator (```AliasManager["name"]```). 
+ * Meanwhile objects and functions can be read through the function call operator (```AliasManager("name")```)
+ * 
+ * 
+ */
 class AliasManager
 {
 public:
@@ -164,6 +171,14 @@ public:
 		return objects.getObject(alias).getMember(member); 
 	}
 	/**
+	 * @brief Returns a llvm::Function* that represents an object constructor with a particular set of args. Intended for Read-Only operations
+	 * @param alias 
+	 * @return a llvm::Value*& that refers to a named variable.  
+	 */
+	auto operator()(llvm::Type* constructor, std::vector<llvm::Type*>& args){
+		return objects.getConstructor(constructor, args); 
+	}
+	/**
 	 * @brief Returns a struct that represents an object's Nth member. Intended for Read-Only operations
 	 * @param alias 
 	 * @return a llvm::Value*& that refers to a named variable.  
@@ -171,5 +186,4 @@ public:
 	auto operator()(const std::string& alias, int member){
 		return objects.getObject(alias).getMember(member); 
 	}
-	
 };
