@@ -103,6 +103,12 @@ class ObjectAliasManager {
 		}
 		return Object(); 
 	}	
+	std::string getObjectName(llvm::Type* ty){
+		for(auto& x : structTypes){
+			if(x.second == ty) return x.first; 
+		}
+		return "<Unknown Object>"; 
+	}	
 	Object& getObject(std::string alias){
 		return structTypes[alias]; 
 	}
@@ -185,5 +191,63 @@ public:
 	 */
 	auto operator()(const std::string& alias, int member){
 		return objects.getObject(alias).getMember(member); 
+	}
+
+	llvm::Value *getTypeSize(llvm::Type *ty, std::unique_ptr<llvm::LLVMContext> &ctxt, std::unique_ptr<llvm::DataLayout> &DataLayout){
+		llvm::Value *size = NULL; 
+		switch (ty->getTypeID())
+			{
+			case llvm::Type::IntegerTyID:
+				size = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, ty->getIntegerBitWidth() / 8));
+				break;
+			case llvm::Type::FloatTyID:
+				size = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 4));
+				break;
+			case llvm::Type::PointerTyID:
+			case llvm::Type::DoubleTyID:
+				size = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 8));
+				break;
+			case llvm::Type::ArrayTyID:
+				size = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, DataLayout->getTypeAllocSize(ty) * ty->getArrayNumElements()));
+				break;
+			case llvm::Type::StructTyID:
+				llvm::StructType *castedval = (llvm::StructType *)ty;
+				size = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, DataLayout->getStructLayout(castedval)->getSizeInBytes()));
+				break;
+			}
+			return size; 
+	}
+
+	std::string getTypeName(llvm::Type *ty){
+			if(ty == NULL) return "null"; 
+			std::string ret = ""; 
+			switch (ty->getTypeID())
+			{
+			case llvm::Type::IntegerTyID:
+				return "int"+std::to_string(ty->getIntegerBitWidth()); 
+			case llvm::Type::FloatTyID:
+				return "float";
+			case llvm::Type::ArrayTyID:
+			case llvm::Type::PointerTyID:
+				{
+					llvm::Type* type2 = ty; 
+					do{
+						ret += type2->isPointerTy() ? "pointer to a " : "array of "; 
+						type2 = type2->isPointerTy() ? type2->getNonOpaquePointerElementType() : type2->getContainedType(0);
+					}while(type2->isPointerTy() || type2->isArrayTy()); 
+					return ret+getTypeName(type2);
+				}
+			case llvm::Type::DoubleTyID:
+				return "double"; 
+			case llvm::Type::StructTyID:
+				ret+= "structure named "; 
+				ret+= this->objects.getObjectName(ty); 
+				return ret; 
+			case llvm::Type::VoidTyID:
+				return "void"; 
+			default:
+				return "<unknown type>";
+			}
+			return ret; 
 	}
 };
