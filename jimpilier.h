@@ -1683,25 +1683,11 @@ namespace jimpilier
 		return std::make_unique<DeleteExprAST>(delme);
 	}
 
-	/**
-	 * @brief Alloocates space on the heap for a variable and returns a pointer to that variable. Like C++'s new operator or C's malloc()
-	 *
-	 * @param tokens
-	 * @return std::unique_ptr<ExprAST>
-	 */
-	std::unique_ptr<ExprAST> heapStmt(Stack<Token> &tokens)
-	{
-		if (tokens.peek() != HEAP)
-		{
-			return std::move(deleteStmt(tokens));
-		}
-		tokens.next();
-		std::unique_ptr<ExprAST> retval = std::make_unique<HeapExprAST>();
+	std::unique_ptr<ExprAST> ConstructorCallStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> heapVal = NULL){
 		std::unique_ptr<TypeExpr> ty = std::move(variableTypeStmt(tokens));
 		if (ty == NULL)
 		{
-			logError("Unknown type when trying to allocate space on the heap", tokens.peek());
-			return NULL;
+			return std::move(deleteStmt(tokens));
 		}
 		std::vector<std::unique_ptr<ExprAST>> params;
 		if (tokens.peek() == LPAREN)
@@ -1725,7 +1711,25 @@ namespace jimpilier
 				return NULL;
 			}
 		}
-		return std::make_unique<ObjectConstructorCallExprAST>(ty, params, retval);
+		return std::make_unique<ObjectConstructorCallExprAST>(ty, params, heapVal);
+
+	}
+
+	/**
+	 * @brief Alloocates space on the heap for a variable and returns a pointer to that variable. Like C++'s new operator or C's malloc()
+	 *
+	 * @param tokens
+	 * @return std::unique_ptr<ExprAST>
+	 */
+	std::unique_ptr<ExprAST> heapStmt(Stack<Token> &tokens)
+	{
+		if (tokens.peek() != HEAP)
+		{
+			return std::move(ConstructorCallStmt(tokens));
+		}
+		tokens.next();
+		std::unique_ptr<ExprAST> retval = std::make_unique<HeapExprAST>();
+		return ConstructorCallStmt(tokens, std::move(retval)); 
 	}
 
 	std::unique_ptr<ExprAST> sizeOfExpr(Stack<Token> &tokens)
