@@ -40,7 +40,7 @@ namespace jimpilier
 	{
 	public:
 		virtual ~TypeExpr(){};
-		virtual llvm::Type *codegen() = 0;
+		virtual llvm::Type *codegen(bool testforval = false) = 0;
 	};
 
 	class Variable
@@ -55,49 +55,49 @@ namespace jimpilier
 	{
 	public:
 		DoubleTypeExpr() {}
-		llvm::Type *codegen() { return llvm::Type::getDoubleTy(*ctxt); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getDoubleTy(*ctxt); };
 	};
 
 	class FloatTypeExpr : public TypeExpr
 	{
 	public:
 		FloatTypeExpr() {}
-		llvm::Type *codegen() { return llvm::Type::getFloatTy(*ctxt); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getFloatTy(*ctxt); };
 	};
 
 	class LongTypeExpr : public TypeExpr
 	{
 	public:
 		LongTypeExpr() {}
-		llvm::Type *codegen() { return llvm::Type::getInt64Ty(*ctxt); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt64Ty(*ctxt); };
 	};
 
 	class IntTypeExpr : public TypeExpr
 	{
 	public:
 		IntTypeExpr() {}
-		llvm::Type *codegen() { return llvm::Type::getInt32Ty(*ctxt); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt32Ty(*ctxt); };
 	};
 
 	class ShortTypeExpr : public TypeExpr
 	{
 	public:
 		ShortTypeExpr() {}
-		llvm::Type *codegen() { return llvm::Type::getInt16Ty(*ctxt); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt16Ty(*ctxt); };
 	};
 
 	class ByteTypeExpr : public TypeExpr
 	{
 	public:
 		ByteTypeExpr() {}
-		llvm::Type *codegen() { return llvm::Type::getInt8Ty(*ctxt); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt8Ty(*ctxt); };
 	};
 
 	class BoolTypeExpr : public TypeExpr
 	{
 	public:
 		BoolTypeExpr() {}
-		llvm::Type *codegen() { return llvm::Type::getInt1Ty(*ctxt); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt1Ty(*ctxt); };
 	};
 
 	class TemplateTypeExpr : public TypeExpr
@@ -106,7 +106,7 @@ namespace jimpilier
 
 	public:
 		TemplateTypeExpr(const std::string name) : name(name) {}
-		llvm::Type *codegen() { return llvm::StructType::create(name, {}); };
+		llvm::Type *codegen(bool testforval = false) { return llvm::StructType::create(name, {}); };
 	};
 
 	class StructTypeExpr : public TypeExpr
@@ -115,13 +115,13 @@ namespace jimpilier
 
 	public:
 		StructTypeExpr(const std::string &structname) : name(structname) {}
-		llvm::Type *codegen()
+		llvm::Type *codegen(bool testforval = false)
 		{
 			llvm::Type *ty = AliasMgr(name);
-			if (ty == NULL)
-			{
-				std::cout << "Unknown object of name: " << name << endl;
-				errored = true;
+			if(!testforval && ty == NULL){
+				std::cout << "Unknown object of name: " <<name <<endl; 
+				errored = true; 
+				return NULL;  
 			}
 			return ty;
 		}
@@ -133,7 +133,7 @@ namespace jimpilier
 
 	public:
 		PointerToTypeExpr(std::unique_ptr<TypeExpr> &type) : ty(std::move(type)) {}
-		llvm::Type *codegen()
+		llvm::Type *codegen(bool testforval = false)
 		{
 			llvm::Type *t = ty->codegen();
 			return t == NULL ? NULL : t->getPointerTo();
@@ -224,6 +224,10 @@ namespace jimpilier
 		{
 			llvm::Type *ty = this->type->codegen();
 			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
+			if(AliasMgr[name] != NULL){
+				std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." <<endl; 
+				std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" <<endl; 
+			}
 			AliasMgr[name] = builder->CreateAlloca(ty, sizeval, name);
 			if (!lateinit)
 				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name]);
@@ -1443,7 +1447,7 @@ namespace jimpilier
 	//  	std::unique_ptr<TypeExpr> ty;
 	//  	std::unique_ptr<ExprAST> len;
 	//  	ArrayOfTypeExpr(std::unique_ptr<TypeExpr> &ty,std::unique_ptr<ExprAST> &len) : ty(std::move(ty)), len(std::move(len)){}
-	//  	llvm::Type *codegen(){
+	//  	llvm::Type *codegen(bool testforval = false){
 	//  		return llvm::ArrayType::get(ty->codegen(), );
 	//  	}
 	//  };
@@ -2222,6 +2226,10 @@ namespace jimpilier
 			break;
 		case IDENT:
 			type = std::make_unique<StructTypeExpr>(t.lex);
+			if(type->codegen(true) == NULL){
+				tokens.go_back(); 
+				return NULL; 
+			}
 			break;
 		default:
 			tokens.go_back();
@@ -2280,18 +2288,22 @@ namespace jimpilier
 		{
 			return std::move(listExpr(tokens));
 		}
-		Token name = tokens.peek();
-		if (name != IDENT)
-		{
-			tokens.go_back();
-			return std::move(listExpr(tokens));
-		}
-		tokens.next();
-		if (tokens.peek() == LPAREN)
-		{
-			return std::move(functionDecl(tokens, dtype, name.lex));
-		}
-		return std::make_unique<DeclareExprAST>(name.lex, dtype);
+		std::vector<std::unique_ptr<ExprAST>> vars; 			
+		do{
+			Token name = tokens.peek();
+			if (name != IDENT)
+			{
+					tokens.go_back();
+					return std::move(listExpr(tokens)); //Does this case ever really come up? I gotta double check C's EBNF
+			}
+			tokens.next();
+			if (tokens.peek() == LPAREN)
+			{
+					return std::move(functionDecl(tokens, dtype, name.lex));
+			}
+			vars.push_back(std::move(std::make_unique<DeclareExprAST>(name.lex, dtype, false))); 
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		return std::make_unique<CodeBlockAST>(vars); 
 	}
 
 	/**
