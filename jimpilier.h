@@ -41,6 +41,7 @@ namespace jimpilier
 	public:
 		virtual ~TypeExpr(){};
 		virtual llvm::Type *codegen(bool testforval = false) = 0;
+		virtual std::unique_ptr<TypeExpr> clone() = 0; 
 	};
 
 	class Variable
@@ -56,6 +57,9 @@ namespace jimpilier
 	public:
 		DoubleTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getDoubleTy(*ctxt); };
+		std::unique_ptr<TypeExpr> clone(){
+			return std::unique_ptr<TypeExpr>(new DoubleTypeExpr()); 
+		}
 	};
 
 	class FloatTypeExpr : public TypeExpr
@@ -63,6 +67,9 @@ namespace jimpilier
 	public:
 		FloatTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getFloatTy(*ctxt); };
+				std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new FloatTypeExpr()); 
+		}
 	};
 
 	class LongTypeExpr : public TypeExpr
@@ -70,6 +77,9 @@ namespace jimpilier
 	public:
 		LongTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt64Ty(*ctxt); };
+				std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new LongTypeExpr()); 
+		}
 	};
 
 	class IntTypeExpr : public TypeExpr
@@ -77,6 +87,9 @@ namespace jimpilier
 	public:
 		IntTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt32Ty(*ctxt); };
+		std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new IntTypeExpr()); 
+		}
 	};
 
 	class ShortTypeExpr : public TypeExpr
@@ -84,6 +97,9 @@ namespace jimpilier
 	public:
 		ShortTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt16Ty(*ctxt); };
+		std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new ShortTypeExpr()); 
+		}
 	};
 
 	class ByteTypeExpr : public TypeExpr
@@ -91,6 +107,9 @@ namespace jimpilier
 	public:
 		ByteTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt8Ty(*ctxt); };
+		std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new ByteTypeExpr()); 
+		}
 	};
 
 	class BoolTypeExpr : public TypeExpr
@@ -98,6 +117,9 @@ namespace jimpilier
 	public:
 		BoolTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt1Ty(*ctxt); };
+		std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new BoolTypeExpr()); 
+		}
 	};
 
 	class TemplateTypeExpr : public TypeExpr
@@ -107,6 +129,9 @@ namespace jimpilier
 	public:
 		TemplateTypeExpr(const std::string name) : name(name) {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::StructType::create(name, {}); };
+		std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new TemplateTypeExpr(name)); 
+		}
 	};
 
 	class StructTypeExpr : public TypeExpr
@@ -125,6 +150,9 @@ namespace jimpilier
 			}
 			return ty;
 		}
+		std::unique_ptr<TypeExpr>clone(){
+			return std::unique_ptr<TypeExpr>(new StructTypeExpr(name));  
+		}
 	};
 
 	class PointerToTypeExpr : public TypeExpr
@@ -137,6 +165,10 @@ namespace jimpilier
 		{
 			llvm::Type *t = ty->codegen();
 			return t == NULL ? NULL : t->getPointerTo();
+		}
+		std::unique_ptr<TypeExpr>clone(){
+			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone()); 
+			return std::make_unique<PointerToTypeExpr>(encasedType); 
 		}
 	};
 
@@ -218,7 +250,7 @@ namespace jimpilier
 		bool lateinit;
 
 	public:
-		DeclareExprAST(const std::string Name, std::unique_ptr<TypeExpr> &type, bool isLateInit = false, int ArrSize = 1) : name(Name), type(std::move(type)), size(ArrSize), lateinit(isLateInit) {}
+		DeclareExprAST(const std::string Name, std::unique_ptr<TypeExpr> type, bool isLateInit = false, int ArrSize = 1) : name(Name), type(std::move(type)), size(ArrSize), lateinit(isLateInit) {}
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
@@ -1470,7 +1502,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> mathExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
-	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens);
+	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> LHS = NULL);
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens);
 
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
@@ -2280,41 +2312,17 @@ namespace jimpilier
 		return modifiers;
 	}
 
-	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
-	{
-		std::map<KeyToken, bool> mods = variableModStmt(tokens);
-		std::unique_ptr<TypeExpr> dtype = std::move(variableTypeStmt(tokens));
-		if (dtype == NULL)
-		{
-			return std::move(listExpr(tokens));
-		}
-		std::vector<std::unique_ptr<ExprAST>> vars; 			
-		do{
-			Token name = tokens.peek();
-			if (name != IDENT)
-			{
-					tokens.go_back();
-					return std::move(listExpr(tokens)); //Does this case ever really come up? I gotta double check C's EBNF
-			}
-			tokens.next();
-			if (tokens.peek() == LPAREN)
-			{
-					return std::move(functionDecl(tokens, dtype, name.lex));
-			}
-			vars.push_back(std::move(std::make_unique<DeclareExprAST>(name.lex, dtype, false))); 
-		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
-		return std::make_unique<CodeBlockAST>(vars); 
-	}
-
 	/**
 	 * @brief Takes in a name as an identifier, an equals sign,
 	 * then calls the lowest precidence operation in the AST.
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> LHS)
 	{
-		std::unique_ptr<ExprAST> LHS = std::move(declareStmt(tokens)), RHS = NULL;
+		if(LHS == NULL)
+			LHS = std::move(listExpr(tokens));
+		std::unique_ptr<ExprAST> RHS = NULL;
 		if (tokens.peek() == EQUALS)
 		{
 			tokens.next();
@@ -2324,6 +2332,34 @@ namespace jimpilier
 			return LHS;
 
 		return std::make_unique<AssignStmtAST>(LHS, RHS);
+	}
+
+	std::unique_ptr<ExprAST> declareStmt(Stack<Token> &tokens)
+	{
+		std::map<KeyToken, bool> mods = variableModStmt(tokens);
+		std::unique_ptr<TypeExpr> dtype = std::move(variableTypeStmt(tokens));
+		if (dtype == NULL)
+		{
+			return std::move(assignStmt(tokens));
+		}
+		std::vector<std::unique_ptr<ExprAST>> vars; 			
+		do{
+			Token name = tokens.peek();
+			if (name != IDENT)
+			{
+					tokens.go_back();
+					return std::move(assignStmt(tokens)); //Does this case ever really come up? I gotta double check C's EBNF
+			}
+			tokens.next();
+			if (tokens.peek() == LPAREN)
+			{
+					return std::move(functionDecl(tokens, dtype, name.lex));
+			}
+			std::unique_ptr<ExprAST> declval = std::make_unique<DeclareExprAST>(name.lex, std::move(dtype->clone()), false); 
+			declval = std::move(assignStmt(tokens, std::move(declval))); 
+			vars.push_back(std::move(declval)); 
+		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+		return std::make_unique<CodeBlockAST>(vars); 
 	}
 
 	std::vector<Variable> functionArgList(Stack<Token> &tokens)
@@ -2689,7 +2725,7 @@ namespace jimpilier
 			tokens.next();
 			return std::make_unique<ContinueExprAST>();
 		default:
-			return std::move(assignStmt(tokens));
+			return std::move(declareStmt(tokens));
 		}
 		logError("Returning null on error?", tokens.currentToken());
 		return NULL;
