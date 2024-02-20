@@ -243,6 +243,16 @@ public:
 				ret+= "structure named "; 
 				ret+= this->objects.getObjectName(ty); 
 				return ret; 
+			case llvm::Type::FunctionTyID:{
+			llvm::FunctionType* ft = (llvm::FunctionType*) ty; 
+				ret+= "function that returns a(n) ";
+				ret+= this->getTypeName(ft->getReturnType());
+				ret+= " with exactly ";
+				ret+= std::to_string((int)ft->getNumParams()); 
+				ret+= " fixed arguments";
+				ret+= ft->isVarArg() ? ", and has at least 1 set of varadic arguments" : "."; 
+				return ret; 
+			}
 			case llvm::Type::VoidTyID:
 				return "void"; 
 			default:
