@@ -469,6 +469,8 @@ namespace jimpilier
 			case (llvm::Type::PointerTyID):
 				if (to->getTypeID() == llvm::Type::IntegerTyID)
 					op = llvm::Instruction::CastOps::PtrToInt;
+				else if (to->getTypeID() == llvm::Type::PointerTyID)
+					op = llvm::Instruction::CastOps::BitCast; 
 				else
 				{
 					std::cout << "Attempted conversion failed: "
@@ -1414,7 +1416,7 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Proto->getName();
 			llvm::Function *prevFunction = currentFunction;
-			auto argtypes = (Proto->getArgTypes());
+			std::vector<llvm::Type*> argtypes = (Proto->getArgTypes());
 			currentFunction = AliasMgr.functions.getFunction(Proto->Name, argtypes);
 
 			if (!currentFunction)
@@ -1423,14 +1425,14 @@ namespace jimpilier
 			if (!currentFunction)
 			{
 				currentFunction = prevFunction;
-				return nullptr;
+				return NULL;
 			}
 			if (!currentFunction->empty())
 			{
 				errored = true;
 				std::cout << "Function Cannot be redefined: " << currentFunction->getName().str() << endl;
 				currentFunction = prevFunction;
-				return (llvm::Function *)NULL;
+				return NULL;
 			}
 
 			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
@@ -1450,8 +1452,8 @@ namespace jimpilier
 				AliasMgr[name] = storedvar;
 				// dtypes[name] = Arg.getType();
 			}
-			if (
-				llvm::Value *RetVal = Body->codegen())
+			llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen(); 
+			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy())) 
 			{
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*currentFunction);
@@ -1463,14 +1465,12 @@ namespace jimpilier
 					AliasMgr[std::string(Arg.getName())] = NULL;
 					// dtypes[std::string(Arg.getName())] = NULL;
 				}
-				currentFunction = prevFunction;
-				return GlobalVarsAndFunctions->getFunction(Proto->getName());
+			}else {
+				currentFunction->deleteBody();
 			}
-			else
-				std::cout << "Error in body of function " << Proto->getName() << endl;
-			currentFunction->eraseFromParent();
+			
 			currentFunction = prevFunction;
-			return nullptr;
+			return AliasMgr.functions.getFunction(Proto->Name, argtypes);
 		}
 	};
 
@@ -2405,10 +2405,6 @@ namespace jimpilier
 			tokens.next();
 			std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, args, dtype, objBase);
 			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
-			if (body == NULL)
-			{
-				return NULL;
-			}
 			std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
 			return func;
 		}
@@ -2727,8 +2723,6 @@ namespace jimpilier
 		default:
 			return std::move(declareStmt(tokens));
 		}
-		logError("Returning null on error?", tokens.currentToken());
-		return NULL;
 	}
 	// TODO: Move this function into driver code maybe ???
 	/**
