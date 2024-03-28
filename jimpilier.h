@@ -1,3 +1,4 @@
+#include "llvm/Support/Casting.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
@@ -236,7 +237,7 @@ namespace jimpilier
 				std::cout << "Unknown variable name: " << Name << endl;
 				return nullptr;
 			}
-			if (autoDeref)
+			if (autoDeref && currentFunction != NULL)
 				return builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
 			return V;
 		}
@@ -260,8 +261,14 @@ namespace jimpilier
 				std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." <<endl; 
 				std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" <<endl; 
 			}
-			AliasMgr[name] = builder->CreateAlloca(ty, sizeval, name);
-			if (!lateinit)
+			if(currentFunction == NULL){
+				GlobalVarsAndFunctions->getOrInsertGlobal(name, ty); 
+				AliasMgr[name] = GlobalVarsAndFunctions->getNamedGlobal(name);
+				GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty)); 
+			}else{
+				AliasMgr[name] = (llvm::Value*)builder->CreateAlloca(ty, sizeval, name);
+			}
+			if (!lateinit && currentFunction != NULL)
 				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name]);
 			return AliasMgr[name];
 		}
@@ -848,13 +855,26 @@ namespace jimpilier
 			rval = rhs->codegen(true, lval);
 			if (lval != NULL && rval != NULL)
 			{
-				if (lval->getType() != rval->getType()->getPointerTo())
-				{
-					std::cout << "Error when attempting to assign a value: The type of the right side (" << AliasMgr.getTypeName(lval->getType()) << ") does not match the left side (" <<  AliasMgr.getTypeName(rval->getType()) << ")." << endl;
-					errored = true;
-					return NULL;
-				}
+				if(currentFunction == NULL){
+					if(!llvm::isa<llvm::GlobalVariable>(lval)){
+						errored = true; 
+						std::cout << "Error: Global variable not found " << lval->getName().str();
+						return NULL; 
+					}else if(!llvm::isa<llvm::Constant>(rval) || lval->getType() != rval->getType()->getPointerTo()){
+						errored = true; 
+						std::cout << "Error: Global variable "<< lval->getName().str() << " is not being set to a constant value" <<endl;
+						return NULL; 
+					}
+					llvm::dyn_cast<llvm::GlobalVariable>(lval)->setInitializer(llvm::dyn_cast<llvm::Constant>(rval));
+				}else{
+					if (lval->getType() != rval->getType()->getPointerTo())
+					{
+						std::cout << "Error when attempting to assign a value: The type of the right side (" << AliasMgr.getTypeName(lval->getType()) << ") does not match the left side (" <<  AliasMgr.getTypeName(rval->getType()) << ")." << endl;
+						errored = true;
+						return NULL;
+					}
 				builder->CreateStore(rval, lval);
+				}
 			}
 			return rval;
 		}
@@ -2489,7 +2509,7 @@ namespace jimpilier
 			hasparen = true;
 		do
 		{
-			std::unique_ptr<ExprAST> x = std::move(assignStmt(tokens));
+			std::unique_ptr<ExprAST> x = std::move(declareStmt(tokens));
 			if (x != NULL)
 				beginStmts.push_back(std::move(x));
 		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);

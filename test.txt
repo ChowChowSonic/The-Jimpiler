@@ -1,15 +1,8 @@
 //import test; //Not functional yet.
 
-??
-Declaring variables out here is not functional yet. 
-Leaving them in a block comment for now
-
-private const int alpha = 6+5 //Same thing as C/C++
-public singular int x = 0 //equivalent of Java's Static modifier
-??
-
-//All code blocks have optional curly braces,
-//but they only accept 1 statement if you don't enclose them
+int alpha //Same thing as C/C++, can only be set to constants
+int x = 5 //equivalent of Java's Static modifier
+int pointer xptr = ->x
 
 object vector{ 
     int length
@@ -19,14 +12,15 @@ object vector{
     }
 }
 
+//All code blocks except objects have optional curly braces,
+//but they only accept 1 statement if you don't enclose them
 int test(int a, int b) 
     return a*b
 
 int main(int args, string pointer argv)
 {
-    vector array = vector_constructor(array)
+    vector array = vector()
     int temp //By default initialized to zero
-    int pointer x = ->args
     println "output of:", @argv
     ??
     Major feature #1: Inline debug statements
@@ -37,7 +31,8 @@ int main(int args, string pointer argv)
         temp = t!
         println "temp variable =", temp
     }
-
+    x = 10
+    println "x =", x, "location:",xptr
     //Major feature #2: auto break switches
     //Remove the "auto break" after the switch and see what happens!
     switch auto break temp{
