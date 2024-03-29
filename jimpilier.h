@@ -27,6 +27,7 @@ namespace jimpilier
 	AliasManager AliasMgr;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
+	llvm::Function *STATIC = nullptr;
 	/**
 	 * @brief In the event that a Break statement is called (I.E. in a for loop or switch statements),
 	 * the compilier will automatically jump to the top llvm::BasicBlock in this stack
@@ -261,7 +262,7 @@ namespace jimpilier
 				std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." <<endl; 
 				std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" <<endl; 
 			}
-			if(currentFunction == NULL){
+			if(currentFunction == NULL || currentFunction == STATIC){
 				GlobalVarsAndFunctions->getOrInsertGlobal(name, ty); 
 				AliasMgr[name] = GlobalVarsAndFunctions->getNamedGlobal(name);
 				GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty)); 
@@ -1312,6 +1313,8 @@ namespace jimpilier
 			AliasMgr.objects.addConstructor(AliasMgr(objName), currentFunction, argtypes);
 			llvm::Function *thisfunc = currentFunction;
 			currentFunction = lastfunc;
+			if(currentFunction != NULL)
+			builder->SetInsertPoint(&currentFunction->getBasicBlockList().back()); 
 			return thisfunc;
 		}
 	};
@@ -1472,7 +1475,9 @@ namespace jimpilier
 				AliasMgr[name] = storedvar;
 				// dtypes[name] = Arg.getType();
 			}
+			llvm::Instruction* currentEntry = &BB->getIterator()->back(); 
 			llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen(); 
+			
 			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy())) 
 			{
 				// Validate the generated code, checking for consistency.
@@ -1490,6 +1495,8 @@ namespace jimpilier
 			}
 			
 			currentFunction = prevFunction;
+			if(currentFunction != NULL)
+			builder->SetInsertPoint(&currentFunction->getBasicBlockList().back()); 
 			return AliasMgr.functions.getFunction(Proto->Name, argtypes);
 		}
 	};
