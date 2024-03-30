@@ -1,34 +1,52 @@
-int f = 0
-??
-private const int alpha = (6+5)+2; //equivalent of Java's Final modifier
-public singular int x = 0; //equivalent of Java's Static modifier
+object _IO_FILE{}
+object _IO_marker{}
+object _IO_codecvt{}
+object _IO_wide_data{}
+object _IO_lock_t{}
+object _IO_FILE
+{
+    int _flags;
+    char *_IO_read_ptr;	
+    char *_IO_read_end;	
+    char *_IO_read_base;	
+    char *_IO_write_base;	
+    char *_IO_write_ptr;	
+    char *_IO_write_end;	
+    char *_IO_buf_base;	
+    char *_IO_buf_end;	
+    char *_IO_save_base; 
+    char *_IO_backup_base;  
+    char *_IO_save_end; 
+    _IO_marker *_markers;
+    _IO_FILE *_chain;
+    int _fileno;
+    int _flags2;
+    long _old_offset; 
+    short _cur_column;
+    char _vtable_offset;
+    char _shortbuf;
+    _IO_lock_t *_lock;
 
-int main(string args){
-    int z = 5;
-    if (x == z) == 5{
-        int n = 5; 
+};
+int fclose(_IO_FILE* internal); 
+int fgetc(_IO_FILE* internal);
+_IO_FILE* fopen(string name, string rwxstr); 
+
+
+object file{
+	_IO_FILE* internal
+	constructor(string filename, bool readOnly){
+		if readOnly {
+			this.internal = fopen(filename, "r")
+		}else{
+			this.internal = fopen(filename, "rw")
+		}
+	}
+    char read(){
+        return fgetc(this.internal) as char
     }
-    
-    x++; 
-    for int pointer i = 0; x == 20 and x >= 0; x++ {  //while(x < 20 or x > 0){ 
-        bool q = true;
-        
-        if x < 20 and x > 0 or x > 5{
-            bool l = false; 
-            switch x{
-                case 1{
-                    //print << "yeet"; 
-                }
-                case 2{
-                    //Just do something lmao
-                }
-                case 3{
-
-                }
-            }
-            ++x; 
-        }
-        
+    int close(){
+        fclose(this.internal)
+        return 0;
     }
 }
-??

@@ -1,5 +1,4 @@
-//import test; //Not functional yet.
-
+import test; 
 int alpha //Same thing as C/C++, can only be set to constants
 int x = 5 //equivalent of Java's Static modifier
 int pointer xptr = ->x

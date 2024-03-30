@@ -43,7 +43,7 @@ namespace jimpilier
 	public:
 		virtual ~TypeExpr(){};
 		virtual llvm::Type *codegen(bool testforval = false) = 0;
-		virtual std::unique_ptr<TypeExpr> clone() = 0; 
+		virtual std::unique_ptr<TypeExpr> clone() = 0;
 	};
 
 	class Variable
@@ -59,8 +59,9 @@ namespace jimpilier
 	public:
 		DoubleTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getDoubleTy(*ctxt); };
-		std::unique_ptr<TypeExpr> clone(){
-			return std::unique_ptr<TypeExpr>(new DoubleTypeExpr()); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new DoubleTypeExpr());
 		}
 	};
 
@@ -69,8 +70,9 @@ namespace jimpilier
 	public:
 		FloatTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getFloatTy(*ctxt); };
-				std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new FloatTypeExpr()); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new FloatTypeExpr());
 		}
 	};
 
@@ -79,8 +81,9 @@ namespace jimpilier
 	public:
 		LongTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt64Ty(*ctxt); };
-				std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new LongTypeExpr()); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new LongTypeExpr());
 		}
 	};
 
@@ -89,8 +92,9 @@ namespace jimpilier
 	public:
 		IntTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt32Ty(*ctxt); };
-		std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new IntTypeExpr()); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new IntTypeExpr());
 		}
 	};
 
@@ -99,8 +103,9 @@ namespace jimpilier
 	public:
 		ShortTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt16Ty(*ctxt); };
-		std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new ShortTypeExpr()); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new ShortTypeExpr());
 		}
 	};
 
@@ -109,8 +114,9 @@ namespace jimpilier
 	public:
 		ByteTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt8Ty(*ctxt); };
-		std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new ByteTypeExpr()); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new ByteTypeExpr());
 		}
 	};
 
@@ -119,8 +125,9 @@ namespace jimpilier
 	public:
 		BoolTypeExpr() {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getInt1Ty(*ctxt); };
-		std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new BoolTypeExpr()); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new BoolTypeExpr());
 		}
 	};
 
@@ -131,8 +138,9 @@ namespace jimpilier
 	public:
 		TemplateTypeExpr(const std::string name) : name(name) {}
 		llvm::Type *codegen(bool testforval = false) { return llvm::StructType::create(name, {}); };
-		std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new TemplateTypeExpr(name)); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new TemplateTypeExpr(name));
 		}
 	};
 
@@ -145,15 +153,17 @@ namespace jimpilier
 		llvm::Type *codegen(bool testforval = false)
 		{
 			llvm::Type *ty = AliasMgr(name);
-			if(!testforval && ty == NULL){
-				std::cout << "Unknown object of name: " <<name <<endl; 
-				errored = true; 
-				return NULL;  
+			if (!testforval && ty == NULL)
+			{
+				std::cout << "Unknown object of name: " << name << endl;
+				errored = true;
+				return NULL;
 			}
 			return ty;
 		}
-		std::unique_ptr<TypeExpr>clone(){
-			return std::unique_ptr<TypeExpr>(new StructTypeExpr(name));  
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new StructTypeExpr(name));
 		}
 	};
 
@@ -168,9 +178,10 @@ namespace jimpilier
 			llvm::Type *t = ty->codegen();
 			return t == NULL ? NULL : t->getPointerTo();
 		}
-		std::unique_ptr<TypeExpr>clone(){
-			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone()); 
-			return std::make_unique<PointerToTypeExpr>(encasedType); 
+		std::unique_ptr<TypeExpr> clone()
+		{
+			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone());
+			return std::make_unique<PointerToTypeExpr>(encasedType);
 		}
 	};
 
@@ -258,16 +269,20 @@ namespace jimpilier
 		{
 			llvm::Type *ty = this->type->codegen();
 			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
-			if(AliasMgr[name] != NULL){
-				std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." <<endl; 
-				std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" <<endl; 
+			if (AliasMgr[name] != NULL)
+			{
+				std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." << endl;
+				std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" << endl;
 			}
-			if(currentFunction == NULL || currentFunction == STATIC){
-				GlobalVarsAndFunctions->getOrInsertGlobal(name, ty); 
+			if (currentFunction == NULL || currentFunction == STATIC)
+			{
+				GlobalVarsAndFunctions->getOrInsertGlobal(name, ty);
 				AliasMgr[name] = GlobalVarsAndFunctions->getNamedGlobal(name);
-				GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty)); 
-			}else{
-				AliasMgr[name] = (llvm::Value*)builder->CreateAlloca(ty, sizeval, name);
+				GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty));
+			}
+			else
+			{
+				AliasMgr[name] = (llvm::Value *)builder->CreateAlloca(ty, sizeval, name);
 			}
 			if (!lateinit && currentFunction != NULL)
 				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name]);
@@ -478,7 +493,7 @@ namespace jimpilier
 				if (to->getTypeID() == llvm::Type::IntegerTyID)
 					op = llvm::Instruction::CastOps::PtrToInt;
 				else if (to->getTypeID() == llvm::Type::PointerTyID)
-					op = llvm::Instruction::CastOps::BitCast; 
+					op = llvm::Instruction::CastOps::BitCast;
 				else
 				{
 					std::cout << "Attempted conversion failed: "
@@ -665,16 +680,17 @@ namespace jimpilier
 			llvm::Value *freefunc = GlobalVarsAndFunctions->getOrInsertFunction("free", {llvm::Type::getInt8PtrTy(*ctxt)}, llvm::Type::getInt8PtrTy(*ctxt)).getCallee();
 			llvm::Value *deletedthing = val->codegen(true);
 
-			if(!deletedthing->getType()->isPointerTy()){
-				std::cout << "Remember: Objects on the stack are accessed directly, you only need to delete pointers that point to the heap" <<endl; 
-				std::cout << "You might've tried to delete an object (directly) by mistake rather than a pointer to that object" <<endl; 
-				errored = true; 
-				return NULL;  
+			if (!deletedthing->getType()->isPointerTy())
+			{
+				std::cout << "Remember: Objects on the stack are accessed directly, you only need to delete pointers that point to the heap" << endl;
+				std::cout << "You might've tried to delete an object (directly) by mistake rather than a pointer to that object" << endl;
+				errored = true;
+				return NULL;
 			}
 
 			deletedthing = builder->CreateBitCast(deletedthing, llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp");
 			builder->CreateCall((llvm::Function *)freefunc, deletedthing, "freedValue");
-			return NULL; 
+			return NULL;
 		}
 	};
 
@@ -856,25 +872,31 @@ namespace jimpilier
 			rval = rhs->codegen(true, lval);
 			if (lval != NULL && rval != NULL)
 			{
-				if(currentFunction == NULL){
-					if(!llvm::isa<llvm::GlobalVariable>(lval)){
-						errored = true; 
+				if (currentFunction == NULL)
+				{
+					if (!llvm::isa<llvm::GlobalVariable>(lval))
+					{
+						errored = true;
 						std::cout << "Error: Global variable not found " << lval->getName().str();
-						return NULL; 
-					}else if(!llvm::isa<llvm::Constant>(rval) || lval->getType() != rval->getType()->getPointerTo()){
-						errored = true; 
-						std::cout << "Error: Global variable "<< lval->getName().str() << " is not being set to a constant value" <<endl;
-						return NULL; 
+						return NULL;
+					}
+					else if (!llvm::isa<llvm::Constant>(rval) || lval->getType() != rval->getType()->getPointerTo())
+					{
+						errored = true;
+						std::cout << "Error: Global variable " << lval->getName().str() << " is not being set to a constant value" << endl;
+						return NULL;
 					}
 					llvm::dyn_cast<llvm::GlobalVariable>(lval)->setInitializer(llvm::dyn_cast<llvm::Constant>(rval));
-				}else{
+				}
+				else
+				{
 					if (lval->getType() != rval->getType()->getPointerTo())
 					{
-						std::cout << "Error when attempting to assign a value: The type of the right side (" << AliasMgr.getTypeName(lval->getType()) << ") does not match the left side (" <<  AliasMgr.getTypeName(rval->getType()) << ")." << endl;
+						std::cout << "Error when attempting to assign a value: The type of the right side (" << AliasMgr.getTypeName(lval->getType()) << ") does not match the left side (" << AliasMgr.getTypeName(rval->getType()) << ")." << endl;
 						errored = true;
 						return NULL;
 					}
-				builder->CreateStore(rval, lval);
+					builder->CreateStore(rval, lval);
 				}
 			}
 			return rval;
@@ -1176,11 +1198,13 @@ namespace jimpilier
 			llvm::Function *CalleeF = AliasMgr.functions.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
-				std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << Callee <<'(';
-				int ctr = 0; 
-				for(auto& x : ArgsT){
-					std::cout << AliasMgr.getTypeName(x); 
-					if(ctr < ArgsT.size()-1) std::cout << ", "; 
+				std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << Callee << '(';
+				int ctr = 0;
+				for (auto &x : ArgsT)
+				{
+					std::cout << AliasMgr.getTypeName(x);
+					if (ctr < ArgsT.size() - 1)
+						std::cout << ", ";
 				}
 				std::cout << ')' << endl;
 				return NULL;
@@ -1215,14 +1239,15 @@ namespace jimpilier
 
 			if (target != NULL)
 			{
-				llvm::Value* heapalloc = target->codegen(false, AliasMgr.getTypeSize(TargetType, ctxt, DataLayout)); 
+				llvm::Value *heapalloc = target->codegen(false, AliasMgr.getTypeSize(TargetType, ctxt, DataLayout));
 				heapalloc = builder->CreateBitCast(heapalloc, TargetType->getPointerTo(), "bitcasttmp");
-				builder->CreateStore(heapalloc, other); 
+				builder->CreateStore(heapalloc, other);
 				other = builder->CreateLoad(other->getType()->getNonOpaquePointerElementType(), other, "loadtmp");
 			}
-			if(other->getType() != TargetType->getPointerTo()){
-				errored = true; 
-				std::cout << "Error when attempting to assign a constructor value: The type of the left side (" << AliasMgr.getTypeName(other->getType())  << ") does not match the right side (" <<  AliasMgr.getTypeName(target == NULL? TargetType : TargetType->getPointerTo())  << ")." << endl;
+			if (other->getType() != TargetType->getPointerTo())
+			{
+				errored = true;
+				std::cout << "Error when attempting to assign a constructor value: The type of the left side (" << AliasMgr.getTypeName(other->getType()) << ") does not match the right side (" << AliasMgr.getTypeName(target == NULL ? TargetType : TargetType->getPointerTo()) << ")." << endl;
 				return NULL;
 			}
 			std::vector<llvm::Value *> ArgsV;
@@ -1319,8 +1344,8 @@ namespace jimpilier
 			AliasMgr.objects.addConstructor(AliasMgr(objName), currentFunction, argtypes);
 			llvm::Function *thisfunc = currentFunction;
 			currentFunction = lastfunc;
-			if(currentFunction != NULL)
-			builder->SetInsertPoint(&currentFunction->getBasicBlockList().back()); 
+			if (currentFunction != NULL)
+				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
 			return thisfunc;
 		}
 	};
@@ -1362,14 +1387,15 @@ namespace jimpilier
 				types.push_back(x.second->codegen());
 				names.push_back(x.first);
 			}
-			if(!types.empty()) ty->setBody(types);
+			if (!types.empty())
+				ty->setBody(types);
 
 			AliasMgr.objects.addObject(base.name, ty, types, names);
-			if(!functions.empty())
-			for (auto &func : functions)
-			{
-				func->codegen();
-			}
+			if (!functions.empty())
+				for (auto &func : functions)
+				{
+					func->codegen();
+				}
 			return NULL;
 		}
 	};
@@ -1395,7 +1421,7 @@ namespace jimpilier
 			std::vector<llvm::Type *> ret;
 			for (auto &x : Args)
 				ret.push_back(x.ty->codegen());
-			// if(retType != NULL)ret.emplace(ret.begin(), retType->codegen()); 
+			// if(retType != NULL)ret.emplace(ret.begin(), retType->codegen());
 			return ret;
 		}
 
@@ -1425,9 +1451,10 @@ namespace jimpilier
 			llvm::Function *F =
 				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, internalName, GlobalVarsAndFunctions.get());
 			unsigned Idx = 0;
-			for (auto &Arg : F->args()){
+			for (auto &Arg : F->args())
+			{
 				Arg.setName(Argnames[Idx++]);
-				}
+			}
 			AliasMgr.functions.addFunction(Name, F, Argt);
 			return F;
 		}
@@ -1449,7 +1476,7 @@ namespace jimpilier
 			if (DEBUGGING)
 				std::cout << Proto->getName();
 			llvm::Function *prevFunction = currentFunction;
-			std::vector<llvm::Type*> argtypes = (Proto->getArgTypes());
+			std::vector<llvm::Type *> argtypes = (Proto->getArgTypes());
 			currentFunction = AliasMgr.functions.getFunction(Proto->Name, argtypes);
 			if (!currentFunction)
 				currentFunction = Proto->codegen();
@@ -1484,10 +1511,10 @@ namespace jimpilier
 				AliasMgr[name] = storedvar;
 				// dtypes[name] = Arg.getType();
 			}
-			llvm::Instruction* currentEntry = &BB->getIterator()->back(); 
-			llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen(); 
-			
-			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy())) 
+			llvm::Instruction *currentEntry = &BB->getIterator()->back();
+			llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen();
+
+			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy()))
 			{
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*currentFunction);
@@ -1499,12 +1526,14 @@ namespace jimpilier
 					AliasMgr[std::string(Arg.getName())] = NULL;
 					// dtypes[std::string(Arg.getName())] = NULL;
 				}
-			}else {
+			}
+			else
+			{
 				currentFunction->deleteBody();
 			}
 			currentFunction = prevFunction;
-			if(currentFunction != NULL)
-			builder->SetInsertPoint(&currentFunction->getBasicBlockList().back()); 
+			if (currentFunction != NULL)
+				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
 			return AliasMgr.functions.getFunction(Proto->Name, argtypes);
 		}
 	};
@@ -1540,35 +1569,72 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> LHS = NULL);
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens);
 
+	// TODO: Move this function into driver code maybe ???
+	/**
+	 * @brief Takes a file name, opens the file, tokenizes it, and loads those into a custom Stack<Token> object
+	 *
+	 * @param fileDir
+	 * @return Stack<Token>
+	 */
+	Stack<Token> loadTokens(string fileDir)
+	{
+		vector<Token> tokens;
+
+		ifstream file;
+		file.open(fileDir);
+		if (!file)
+		{
+			std::cout << "File '" << fileDir << "' does not exist" << std::endl;
+			errored = true;
+			Stack<Token> s;
+			return s;
+		}
+		int ln = 1;
+		while (!errored && !file.eof())
+		{
+			Token t = getNextToken(file, ln);
+			t.ln = ln;
+			if (t != ERR)
+				tokens.push_back(t);
+		}
+		Stack<Token> s(tokens);
+		return s;
+	}
+
+	std::string getFilePath(Stack<Token> &tokens)
+	{
+		std::string ret;
+		if(tokens.peek() == SCONST) return tokens.next().lex; 
+		do
+		{
+			ret += tokens.next().lex;
+		} while (!errored && tokens.peek() == PERIOD && tokens.next() == PERIOD && (ret += '/') != "");
+		if(ret[0] != '.') ret= "./" + ret + ".jmb"; 
+		std::cout << (ret) << endl;
+		return ret;
+	}
+
 	std::unique_ptr<ExprAST> import(Stack<Token> &tokens)
 	{
 		if (tokens.next() != IMPORT)
 			return NULL;
-		Token t;
-		std::unique_ptr<ExprAST> b = std::make_unique<NumberExprAST>(1);
-		while (!errored && (t = tokens.next()).token != SEMICOL && (t.token == IDENT || t.token == COMMA) && b)
+		std::unique_ptr<ExprAST> x;
+		do
 		{
-			if (t == IDENT)
+			Stack<Token> tokens2 = loadTokens(getFilePath(tokens));
+			while (!tokens2.eof())
 			{
-				string s = t.lex + ".jmb";
-				if (find(importedFiles.begin(), importedFiles.end(), s) == importedFiles.end())
-				{
-					importedFiles.push_back(s);
-					b = analyzeFile(s);
-				} //*/
+				x = getValidStmt(tokens2);
+				if (errored)
+					break;
+				if (x != NULL)
+					x->codegen();
+				if (DEBUGGING)
+					std::cout << endl;
 			}
-		}
-		if (t.token != SEMICOL)
-		{
-			tokens.go_back(2);
-			logError("Invalid token when importing:", t);
-			return NULL;
-		}
-		// if(!b){
-		// 	logError("Error in dependency designated by the following import:", t);
-		// 	return NULL;
-		// }
-		return b;
+		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
+		
+		return x;
 	}
 
 	/**
@@ -1754,7 +1820,8 @@ namespace jimpilier
 		return std::make_unique<DeleteExprAST>(delme);
 	}
 
-	std::unique_ptr<ExprAST> ConstructorCallStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> heapVal = NULL){
+	std::unique_ptr<ExprAST> ConstructorCallStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> heapVal = NULL)
+	{
 		std::unique_ptr<TypeExpr> ty = std::move(variableTypeStmt(tokens));
 		if (ty == NULL)
 		{
@@ -1783,7 +1850,6 @@ namespace jimpilier
 			}
 		}
 		return std::make_unique<ObjectConstructorCallExprAST>(ty, params, heapVal);
-
 	}
 
 	/**
@@ -1800,7 +1866,7 @@ namespace jimpilier
 		}
 		tokens.next();
 		std::unique_ptr<ExprAST> retval = std::make_unique<HeapExprAST>();
-		return ConstructorCallStmt(tokens, std::move(retval)); 
+		return ConstructorCallStmt(tokens, std::move(retval));
 	}
 
 	std::unique_ptr<ExprAST> sizeOfExpr(Stack<Token> &tokens)
@@ -2293,9 +2359,10 @@ namespace jimpilier
 			break;
 		case IDENT:
 			type = std::make_unique<StructTypeExpr>(t.lex);
-			if(type->codegen(true) == NULL){
-				tokens.go_back(); 
-				return NULL; 
+			if (type->codegen(true) == NULL)
+			{
+				tokens.go_back();
+				return NULL;
 			}
 			break;
 		default:
@@ -2355,7 +2422,7 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> LHS)
 	{
-		if(LHS == NULL)
+		if (LHS == NULL)
 			LHS = std::move(listExpr(tokens));
 		std::unique_ptr<ExprAST> RHS = NULL;
 		if (tokens.peek() == EQUALS)
@@ -2377,24 +2444,25 @@ namespace jimpilier
 		{
 			return std::move(assignStmt(tokens));
 		}
-		std::vector<std::unique_ptr<ExprAST>> vars; 			
-		do{
+		std::vector<std::unique_ptr<ExprAST>> vars;
+		do
+		{
 			Token name = tokens.peek();
 			if (name != IDENT)
 			{
-					tokens.go_back();
-					return std::move(assignStmt(tokens)); //Does this case ever really come up? I gotta double check C's EBNF
+				tokens.go_back();
+				return std::move(assignStmt(tokens)); // Does this case ever really come up? I gotta double check C's EBNF
 			}
 			tokens.next();
 			if (tokens.peek() == LPAREN)
 			{
-					return std::move(functionDecl(tokens, dtype, name.lex));
+				return std::move(functionDecl(tokens, dtype, name.lex));
 			}
-			std::unique_ptr<ExprAST> declval = std::make_unique<DeclareExprAST>(name.lex, std::move(dtype->clone()), false); 
-			declval = std::move(assignStmt(tokens, std::move(declval))); 
-			vars.push_back(std::move(declval)); 
-		}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
-		return std::make_unique<CodeBlockAST>(vars); 
+			std::unique_ptr<ExprAST> declval = std::make_unique<DeclareExprAST>(name.lex, std::move(dtype->clone()), false);
+			declval = std::move(assignStmt(tokens, std::move(declval)));
+			vars.push_back(std::move(declval));
+		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		return std::make_unique<CodeBlockAST>(vars);
 	}
 
 	std::vector<Variable> functionArgList(Stack<Token> &tokens)
@@ -2717,7 +2785,8 @@ namespace jimpilier
 		switch (t.token)
 		{
 		case IMPORT:
-			return std::move(jimpilier::import(tokens));
+			jimpilier::import(tokens);
+			return NULL;
 		case FOR:
 			return std::move(jimpilier::forStmt(tokens));
 		case DO:
@@ -2754,67 +2823,5 @@ namespace jimpilier
 		default:
 			return std::move(declareStmt(tokens));
 		}
-	}
-	// TODO: Move this function into driver code maybe ???
-	/**
-	 * @brief Takes a file name, opens the file, tokenizes it, and loads those into a custom Stack<Token> object
-	 *
-	 * @param fileDir
-	 * @return Stack<Token>
-	 */
-	Stack<Token> loadTokens(string fileDir)
-	{
-		vector<Token> tokens;
-
-		ifstream file;
-		file.open(fileDir);
-		if (!file)
-		{
-			std::cout << "File '" << fileDir << "' does not exist" << std::endl;
-			Stack<Token> s;
-			return s;
-		}
-		int ln = 1;
-		while (!errored && !file.eof())
-		{
-			Token t = getNextToken(file, ln);
-			t.ln = ln;
-			if (t != ERR)
-				tokens.push_back(t);
-		}
-		Stack<Token> s(tokens);
-		return s;
-	}
-	// TODO: Fix this whole damn function oh Lord help me
-	/**
-	 * @brief Soon-to-be depreciated
-	 *
-	 * @deprecated
-	 * @param fileDir
-	 * @return std::unique_ptr<ExprAST>
-	 */
-	std::unique_ptr<ExprAST> analyzeFile(string fileDir)
-	{
-		std::unique_ptr<ExprAST> b;
-		Stack<Token> s = loadTokens(fileDir);
-		while (!s.eof() && (b = std::move(getValidStmt(s))))
-		{
-			if (!b)
-				b->codegen();
-			// std::cout<< s.eof() <<std::endl;
-		}
-		// if (!b)
-		// {
-		// 	Token err = s.peek(); // std::cout << openbrackets <<std::endl ;
-		// 	std::cout << "Syntax error located at token '" << err.lex << "' on line " << err.ln << " in file: " << fileDir << "\n";
-		// 	Token e2;
-		// 	while (err.ln != -1 && (e2 = s.next()).ln == err.ln && !s.eof())
-		// 	{
-		// 		std::cout << e2.lex << " ";
-		// 	}
-		// 	std::cout << std::endl;
-		// 	return NULL;
-		// }
-		return b;
 	}
 };
