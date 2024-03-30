@@ -1176,7 +1176,13 @@ namespace jimpilier
 			llvm::Function *CalleeF = AliasMgr.functions.getFunction(Callee, ArgsT);
 			if (!CalleeF)
 			{
-				std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << Callee << endl;
+				std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << Callee <<'(';
+				int ctr = 0; 
+				for(auto& x : ArgsT){
+					std::cout << AliasMgr.getTypeName(x); 
+					if(ctr < ArgsT.size()-1) std::cout << ", "; 
+				}
+				std::cout << ')' << endl;
 				return NULL;
 			}
 
@@ -1329,7 +1335,7 @@ namespace jimpilier
 		{
 			// TODO: This could cause bugs later. Find a better (non-bandaid) solution
 			llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
-			return ty == NULL ? llvm::StructType::create(*ctxt, NULL, name) : ty;
+			return ty == NULL ? llvm::StructType::create(*ctxt, name) : ty;
 		}
 	};
 	/**
@@ -1356,8 +1362,10 @@ namespace jimpilier
 				types.push_back(x.second->codegen());
 				names.push_back(x.first);
 			}
-			ty->setBody(types);
+			if(!types.empty()) ty->setBody(types);
+
 			AliasMgr.objects.addObject(base.name, ty, types, names);
+			if(!functions.empty())
 			for (auto &func : functions)
 			{
 				func->codegen();
@@ -1387,6 +1395,7 @@ namespace jimpilier
 			std::vector<llvm::Type *> ret;
 			for (auto &x : Args)
 				ret.push_back(x.ty->codegen());
+			// if(retType != NULL)ret.emplace(ret.begin(), retType->codegen()); 
 			return ret;
 		}
 
@@ -1416,8 +1425,9 @@ namespace jimpilier
 			llvm::Function *F =
 				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, internalName, GlobalVarsAndFunctions.get());
 			unsigned Idx = 0;
-			for (auto &Arg : F->args())
-				Arg.setName(Args[Idx++].name);
+			for (auto &Arg : F->args()){
+				Arg.setName(Argnames[Idx++]);
+				}
 			AliasMgr.functions.addFunction(Name, F, Argt);
 			return F;
 		}
@@ -1441,7 +1451,6 @@ namespace jimpilier
 			llvm::Function *prevFunction = currentFunction;
 			std::vector<llvm::Type*> argtypes = (Proto->getArgTypes());
 			currentFunction = AliasMgr.functions.getFunction(Proto->Name, argtypes);
-
 			if (!currentFunction)
 				currentFunction = Proto->codegen();
 
@@ -1493,7 +1502,6 @@ namespace jimpilier
 			}else {
 				currentFunction->deleteBody();
 			}
-			
 			currentFunction = prevFunction;
 			if(currentFunction != NULL)
 			builder->SetInsertPoint(&currentFunction->getBasicBlockList().back()); 
@@ -2422,11 +2430,7 @@ namespace jimpilier
 		std::vector<Variable> args;
 
 		tokens.next();
-		if (tokens.peek().token >= INT)
-		{
-			args = std::move(functionArgList(tokens));
-		}
-
+		args = std::move(functionArgList(tokens));
 		if (tokens.peek() == RPAREN)
 		{
 			tokens.next();

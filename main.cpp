@@ -54,9 +54,9 @@ int main(int argc, char**args){
         if(x != NULL)x->codegen(); 
         if(jimpilier::DEBUGGING) std::cout<< endl;  
     }
-    if(jimpilier::GlobalVarsAndFunctions->getFunction("main") == NULL)
+    if(jimpilier::GlobalVarsAndFunctions->getFunction("main") == NULL && jimpilier::STATIC != NULL)
         jimpilier::STATIC->setName("main"); 
-    else{
+    else if(jimpilier::STATIC != NULL){
         jimpilier::STATIC->eraseFromParent(); 
     }
     time_t end = time(nullptr); 
