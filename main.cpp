@@ -61,7 +61,7 @@ int main(int argc, char**args){
     }
     time_t end = time(nullptr); 
     
-    if(!jimpilier::errored){
+    if(!jimpilier::errored || std::find(all_args.begin(), all_args.end(), "-fd")  != all_args.end()){
         std::cout << "; Code was compiled in approx: "<< (end - now) << " seconds"<<endl; 
         jimpilier::GlobalVarsAndFunctions->dump();
     }

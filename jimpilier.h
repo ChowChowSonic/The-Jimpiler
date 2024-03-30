@@ -1126,7 +1126,15 @@ namespace jimpilier
 			if (!CalleeF)
 			{
 
-				std::cout << "Unknown function referenced, or incorrect arg types passed: " << Callee << endl;
+				std::cout << "Unknown function referenced, or incorrect arg types were passed: " << Callee << '(';
+				int ctr = 0;
+				for (auto &x : ArgsT)
+				{
+					std::cout << AliasMgr.getTypeName(x);
+					if (ctr < ArgsT.size() - 1)
+						std::cout << ", ";
+				}
+				std::cout << ')' << endl;
 				return NULL;
 			}
 
@@ -1138,14 +1146,15 @@ namespace jimpilier
 	{
 		std::string member;
 		std::unique_ptr<ExprAST> base;
+		bool dereferenceParent; 
 
 	public:
-		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset) : base(std::move(base)), member(offset) {}
+		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset, bool deref = false) : base(std::move(base)), member(offset), dereferenceParent(deref) {}
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			// return NULL;
-			llvm::Value *lhs = base->codegen(false);
+			llvm::Value *lhs = base->codegen(dereferenceParent);
 			auto returnTy = AliasMgr(lhs->getType()->getContainedType(0), member);
 			if (returnTy.index == -1)
 			{
@@ -1171,14 +1180,15 @@ namespace jimpilier
 		string Callee;
 		vector<std::unique_ptr<ExprAST>> Args;
 		std::unique_ptr<ExprAST> parent;
+		bool dereferenceParent; 
 
 	public:
-		ObjectFunctionCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &parent) : Callee(callee), Args(std::move(Arg)), parent(std::move(parent))
+		ObjectFunctionCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &parent, bool deref) : dereferenceParent(deref), Callee(callee), Args(std::move(Arg)), parent(std::move(parent))
 		{
 		}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			llvm::Value *parval = parent->codegen(false);
+			llvm::Value *parval = parent->codegen(dereferenceParent);
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
 			ArgsV.push_back(parval);
@@ -1646,10 +1656,10 @@ namespace jimpilier
 	 * @return true if the syntax is valid
 	 * @return NULL if syntax is not valid
 	 */
-	std::unique_ptr<ExprAST> term(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL)
+	std::unique_ptr<ExprAST> term(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL, bool derefParent = false)
 	{
 		if (memberAccessParent != NULL)
-			return std::make_unique<MemberAccessExprAST>(memberAccessParent, tokens.next().lex);
+			return std::make_unique<MemberAccessExprAST>(memberAccessParent, tokens.next().lex, derefParent);
 		std::unique_ptr<ExprAST> LHS;
 		Token s;
 		string x;
@@ -1692,7 +1702,7 @@ namespace jimpilier
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL)
+	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL, bool derefParent = false)
 	{
 		Token t = tokens.next();
 		if (tokens.peek() == LPAREN)
@@ -1723,7 +1733,7 @@ namespace jimpilier
 			}
 			else if (memberAccessParent != NULL)
 			{
-				retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params, memberAccessParent);
+				retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params, memberAccessParent, derefParent);
 			}
 			else
 			{
@@ -1732,13 +1742,13 @@ namespace jimpilier
 			return retval;
 		}
 		tokens.go_back();
-		return std::move(term(tokens, std::move(memberAccessParent)));
+		return std::move(term(tokens, std::move(memberAccessParent), derefParent));
 	}
 
-	std::unique_ptr<ExprAST> indexExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL, std::unique_ptr<ExprAST> memberAccessParent = NULL)
+	std::unique_ptr<ExprAST> indexExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL, std::unique_ptr<ExprAST> memberAccessParent = NULL, bool derefParent = false)
 	{
 		if (base == NULL)
-			base = std::move(functionCallExpr(tokens, std::move(memberAccessParent)));
+			base = std::move(functionCallExpr(tokens, std::move(memberAccessParent), derefParent));
 		if (tokens.peek() != OPENSQUARE)
 			return base;
 		tokens.next();
@@ -1752,7 +1762,7 @@ namespace jimpilier
 		if (tokens.peek() == OPENSQUARE)
 		{
 			std::unique_ptr<ExprAST> thisval = std::make_unique<IndexExprAST>(base, index);
-			return std::move(indexExpr(tokens, std::move(thisval), std::move(memberAccessParent)));
+			return std::move(indexExpr(tokens, std::move(thisval), std::move(memberAccessParent), derefParent));
 		}
 		else
 			return std::make_unique<IndexExprAST>(base, index);
@@ -1763,16 +1773,16 @@ namespace jimpilier
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> memberAccessExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL)
+	std::unique_ptr<ExprAST> memberAccessExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL, bool derefParent = false)
 	{
 		if (base == NULL)
-			base = std::move(indexExpr(tokens, NULL, NULL));
-		if (tokens.peek() != PERIOD)
+			base = std::move(indexExpr(tokens, NULL, NULL, derefParent));
+		if (tokens.peek() != PERIOD && tokens.peek() != POINTERTO)
 			return base;
-		tokens.next();
-		std::unique_ptr<ExprAST> member = std::move(indexExpr(tokens, NULL, std::move(base)));
+		derefParent = tokens.next() == POINTERTO;
+		std::unique_ptr<ExprAST> member = std::move(indexExpr(tokens, NULL, std::move(base), derefParent));
 		// member = std::make_unique<MemberAccessExprAST>(base, member);
-		if (tokens.peek() == PERIOD)
+		if (tokens.peek() == PERIOD || tokens.peek() == POINTERTO)
 			return std::move(memberAccessExpr(tokens, std::move(member)));
 		return member;
 	}
