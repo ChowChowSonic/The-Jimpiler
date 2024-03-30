@@ -313,14 +313,14 @@ namespace jimpilier
 			if (prefix)
 			{
 				llvm::Value *tmpval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
-				tmpval = builder->CreateAdd(tmpval, llvm::ConstantInt::get(tmpval->getType(), llvm::APInt(tmpval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)));
+				tmpval = builder->CreateAdd(tmpval, llvm::ConstantInt::get(tmpval->getType(), llvm::APInt(tmpval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)), "incdectemp");
 				builder->CreateStore(tmpval, v);
 				return tmpval;
 			}
 			else
 			{
 				llvm::Value *oldval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
-				llvm::Value *tmpval = builder->CreateAdd(oldval, llvm::ConstantInt::get(oldval->getType(), llvm::APInt(oldval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)));
+				llvm::Value *tmpval = builder->CreateAdd(oldval, llvm::ConstantInt::get(oldval->getType(), llvm::APInt(oldval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)), "incdectemp");
 				builder->CreateStore(tmpval, v);
 				return oldval;
 			}
@@ -1245,12 +1245,17 @@ namespace jimpilier
 		ObjectConstructorCallExprAST(std::unique_ptr<TypeExpr> &callee, vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &target) : target(std::move(target)), CalledTyConstructor(std::move(callee)), Args(std::move(Arg)) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
+			//Get data type by name or by generating it directly
 			llvm::Type *TargetType = CalledTyConstructor == NULL ? AliasMgr(Callee) : this->CalledTyConstructor->codegen();
 
+			//target = void* where the object will be initialized, usually a heap allocation
+			//other = type* stack local variable
 			if (target != NULL)
 			{
+				//call calloc() passing the size as a Value*
 				llvm::Value *heapalloc = target->codegen(false, AliasMgr.getTypeSize(TargetType, ctxt, DataLayout));
 				heapalloc = builder->CreateBitCast(heapalloc, TargetType->getPointerTo(), "bitcasttmp");
+				//store pointer to calloc() allocation on stack 
 				builder->CreateStore(heapalloc, other);
 				other = builder->CreateLoad(other->getType()->getNonOpaquePointerElementType(), other, "loadtmp");
 			}
@@ -1259,6 +1264,10 @@ namespace jimpilier
 				errored = true;
 				std::cout << "Error when attempting to assign a constructor value: The type of the left side (" << AliasMgr.getTypeName(other->getType()) << ") does not match the right side (" << AliasMgr.getTypeName(target == NULL ? TargetType : TargetType->getPointerTo()) << ")." << endl;
 				return NULL;
+			}
+			if(TargetType->getTypeID() != llvm::Type::StructTyID){ 
+				if(!Args.empty()) builder->CreateStore(Args[0]->codegen(), other); 	
+				return NULL; 
 			}
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
