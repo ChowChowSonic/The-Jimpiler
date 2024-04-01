@@ -902,6 +902,49 @@ namespace jimpilier
 			return rval;
 		}
 	};
+
+	class CompareStmtAST : public ExprAST{
+		unique_ptr<ExprAST> LHS, RHS;
+		bool notval; 
+		public:
+		CompareStmtAST(unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool neq = false)
+			: LHS(std::move(LHS)), RHS(std::move(RHS)), notval(neq) {}
+		llvm::Value* codegen(bool autoDeref = true, llvm::Value* other = NULL){
+			llvm::Value* lhs = LHS->codegen(); 
+			llvm::Value* rhs = RHS->codegen(); 
+			if(lhs->getType()->getTypeID() == rhs->getType()->getTypeID()){
+				switch(lhs->getType()->getTypeID()){
+					case llvm::Type::IntegerTyID: {
+						llvm::Value* larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs; 
+						lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp"); 
+						rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp"); 
+						return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp"); 
+					}
+					case llvm::Type::PointerTyID: {
+						lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+						rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp"); 
+						return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp"); 
+					}
+					case llvm::Type::FloatTyID: 
+					case llvm::Type::DoubleTyID:
+					case llvm::Type::HalfTyID: { 
+						llvm::Type* larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType(); 
+						lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp"); 
+						rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp"); 
+						return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp"); 
+						}
+					default:
+						errored = true; 
+						std::cout << "operator overloading not yet implemented" <<endl; 
+						return NULL; 
+				}
+			}else{
+				errored = true; 
+				std::cout << "Error when attempting to compare two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()); 
+				return NULL; 
+			}
+		}
+	};
 	// TODO: Break this up into several ExprAST objects for each operator
 	/** BinaryStmtAST - Expression class for a binary operator.
 	 *
@@ -2050,10 +2093,10 @@ namespace jimpilier
 		std::unique_ptr<ExprAST> RHS = std::move(greaterLessStmt(tokens));
 		while (!errored && (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL))
 		{
-			tokens.next();
-			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(greaterLessStmt(tokens)));
+			Token t = tokens.next();
+			RHS = std::make_unique<CompareStmtAST>(std::move(RHS), std::move(greaterLessStmt(tokens)), t == NOTEQUAL);
 		}
-		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<CompareStmtAST>(std::move(LHS), std::move(RHS), t== NOTEQUAL);
 	}
 
 	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
