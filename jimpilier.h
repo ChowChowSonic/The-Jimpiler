@@ -798,6 +798,7 @@ namespace jimpilier
 				break;
 			case (llvm::Type::TypeID::FloatTyID):
 				data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
+			case (llvm::Type::TypeID::DoubleTyID):
 				placeholder += "%f\n";
 				break;
 			case (llvm::Type::TypeID::IntegerTyID):
@@ -903,187 +904,293 @@ namespace jimpilier
 		}
 	};
 	/**
-	 * Handles == and != operators 
-	*/
-	class CompareStmtAST : public ExprAST{
+	 * Handles == and != operators
+	 */
+	class CompareStmtAST : public ExprAST
+	{
 		unique_ptr<ExprAST> LHS, RHS;
-		bool notval; 
-		public:
+		bool notval;
+
+	public:
 		CompareStmtAST(unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool neq = false)
 			: LHS(std::move(LHS)), RHS(std::move(RHS)), notval(neq) {}
-		llvm::Value* codegen(bool autoDeref = true, llvm::Value* other = NULL){
-			llvm::Value* lhs = LHS->codegen(); 
-			llvm::Value* rhs = RHS->codegen(); 
-			if(lhs->getType()->getTypeID() == rhs->getType()->getTypeID()){
-				switch(lhs->getType()->getTypeID()){
-					case llvm::Type::IntegerTyID: {
-						llvm::Value* larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs; 
-						lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp"); 
-						rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp"); 
-						return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp"); 
-					}
-					case llvm::Type::PointerTyID: {
-						lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-						rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp"); 
-						return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp"); 
-					}
-					case llvm::Type::FloatTyID: 
-					case llvm::Type::DoubleTyID:
-					case llvm::Type::HalfTyID: { 
-						llvm::Type* larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType(); 
-						lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp"); 
-						rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp"); 
-						return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp"); 
-						}
-					default:
-						errored = true; 
-						std::cout << "operator overloading not yet implemented" <<endl; 
-						return NULL; 
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			llvm::Value *lhs = LHS->codegen();
+			llvm::Value *rhs = RHS->codegen();
+			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
+			{
+				switch (lhs->getType()->getTypeID())
+				{
+				case llvm::Type::IntegerTyID:
+				{
+					llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
+					lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
+					rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
+					return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp");
 				}
-			}else{
-				errored = true; 
-				std::cout << "Error when attempting to compare two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()); 
-				return NULL; 
+				case llvm::Type::PointerTyID:
+				{
+					lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp");
+				}
+				case llvm::Type::FloatTyID:
+				case llvm::Type::DoubleTyID:
+				case llvm::Type::HalfTyID:
+				{
+					llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
+					lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
+					rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
+					return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp");
+				}
+				default:
+					errored = true;
+					std::cout << "operator overloading not yet implemented" << endl;
+					return NULL;
+				}
+			}
+			else
+			{
+				errored = true;
+				std::cout << "Error when attempting to compare two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+				return NULL;
 			}
 		}
 	};
 	/**
 	 * Handles multiplication and division (* and /) statments
-	*/
-	class MultDivStmtAST : public ExprAST{
+	 */
+	class MultDivStmtAST : public ExprAST
+	{
 		unique_ptr<ExprAST> LHS, RHS;
-		bool div; 
-		public:
+		bool div;
+
+	public:
 		MultDivStmtAST(unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool isDiv)
 			: LHS(std::move(LHS)), RHS(std::move(RHS)), div(isDiv) {}
-		llvm::Value* codegen(bool autoDeref = true, llvm::Value* other = NULL){
-			llvm::Value* lhs = LHS->codegen(); 
-			llvm::Value* rhs = RHS->codegen(); 
-			if(lhs->getType()->getTypeID() == rhs->getType()->getTypeID()){
-				switch(lhs->getType()->getTypeID()){
-					case llvm::Type::IntegerTyID: {
-						llvm::Value* larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs; 
-						lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp"); 
-						rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp"); 
-						return div ? builder->CreateSDiv(lhs, rhs, "divtmp") : builder->CreateMul(lhs, rhs, "multemp");
-					}
-					case llvm::Type::PointerTyID: {
-						lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-						rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp"); 
-						return div ? builder->CreateUDiv(lhs, rhs, "divtmp") : builder->CreateMul(lhs, rhs, "multmp");
-					}
-					case llvm::Type::FloatTyID: 
-					case llvm::Type::DoubleTyID:
-					case llvm::Type::HalfTyID: { 
-						llvm::Type* larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType(); 
-						lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp"); 
-						rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp"); 
-						return div ? builder->CreateFDiv(lhs, rhs, "divtmp") :builder->CreateFMul(lhs, rhs, "multmp");  
-						}
-					default:
-						errored = true; 
-						std::cout << "operator overloading not yet implemented" <<endl; 
-						return NULL; 
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			llvm::Value *lhs = LHS->codegen();
+			llvm::Value *rhs = RHS->codegen();
+			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
+			{
+				switch (lhs->getType()->getTypeID())
+				{
+				case llvm::Type::IntegerTyID:
+				{
+					llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
+					lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
+					rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
+					return div ? builder->CreateSDiv(lhs, rhs, "divtmp") : builder->CreateMul(lhs, rhs, "multemp");
 				}
-			}else{
-				errored = true; 
-				std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()); 
-				return NULL; 
+				case llvm::Type::PointerTyID:
+				{
+					lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					return div ? builder->CreateUDiv(lhs, rhs, "divtmp") : builder->CreateMul(lhs, rhs, "multmp");
+				}
+				case llvm::Type::FloatTyID:
+				case llvm::Type::DoubleTyID:
+				case llvm::Type::HalfTyID:
+				{
+					llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
+					lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
+					rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
+					return div ? builder->CreateFDiv(lhs, rhs, "divtmp") : builder->CreateFMul(lhs, rhs, "multmp");
+				}
+				default:
+					errored = true;
+					std::cout << "operator overloading not yet implemented" << endl;
+					return NULL;
+				}
+			}
+			else
+			{
+				errored = true;
+				std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+				return NULL;
 			}
 		}
 	};
 	/**
 	 * Handles addition and subtraction (+ and -) statments
-	*/
-	class AddSubStmtAST : public ExprAST {
+	 */
+	class AddSubStmtAST : public ExprAST
+	{
 		unique_ptr<ExprAST> LHS, RHS;
-		bool sub; 
-		public:
+		bool sub;
+
+	public:
 		AddSubStmtAST(unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool isSub)
 			: LHS(std::move(LHS)), RHS(std::move(RHS)), sub(isSub) {}
-		llvm::Value* codegen(bool autoDeref = true, llvm::Value* other = NULL){
-			llvm::Value* lhs = LHS->codegen(); 
-			llvm::Value* rhs = RHS->codegen(); 
-			if(lhs->getType()->getTypeID() == rhs->getType()->getTypeID()){
-				switch(lhs->getType()->getTypeID()){
-					case llvm::Type::IntegerTyID: {
-						llvm::Value* larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs; 
-						lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp"); 
-						rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp"); 
-						return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtemp");
-					}
-					case llvm::Type::PointerTyID: {
-						lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-						rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp"); 
-						return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtmp");
-					}
-					case llvm::Type::FloatTyID: 
-					case llvm::Type::DoubleTyID:
-					case llvm::Type::HalfTyID: { 
-						llvm::Type* larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType(); 
-						lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp"); 
-						rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp"); 
-						return sub ? builder->CreateFSub(lhs, rhs, "subtmp") :builder->CreateFAdd(lhs, rhs, "addtmp");  
-						}
-					default:
-						errored = true; 
-						std::cout << "operator overloading not yet implemented" <<endl; 
-						return NULL; 
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			llvm::Value *lhs = LHS->codegen();
+			llvm::Value *rhs = RHS->codegen();
+			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
+			{
+				switch (lhs->getType()->getTypeID())
+				{
+				case llvm::Type::IntegerTyID:
+				{
+					llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
+					lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
+					rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
+					return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtemp");
 				}
-			}else{
-				errored = true; 
-				std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()); 
-				return NULL; 
+				case llvm::Type::PointerTyID:
+				{
+					lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtmp");
+				}
+				case llvm::Type::FloatTyID:
+				case llvm::Type::DoubleTyID:
+				case llvm::Type::HalfTyID:
+				{
+					llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
+					lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
+					rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
+					return sub ? builder->CreateFSub(lhs, rhs, "subtmp") : builder->CreateFAdd(lhs, rhs, "addtmp");
+				}
+				default:
+					errored = true;
+					std::cout << "operator overloading not yet implemented" << endl;
+					return NULL;
+				}
+			}
+			else
+			{
+				errored = true;
+				std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+				return NULL;
 			}
 		}
 	};
 
 	/**
 	 * Handles greater than and less than (< and >) statments
-	*/
-	class GtLtStmtAST : public ExprAST {
+	 */
+	class GtLtStmtAST : public ExprAST
+	{
 		unique_ptr<ExprAST> LHS, RHS;
-		bool sub; 
-		public:
+		bool sub;
+
+	public:
 		GtLtStmtAST(unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool isSub)
 			: LHS(std::move(LHS)), RHS(std::move(RHS)), sub(isSub) {}
-		llvm::Value* codegen(bool autoDeref = true, llvm::Value* other = NULL){
-			llvm::Value* lhs = LHS->codegen(); 
-			llvm::Value* rhs = RHS->codegen(); 
-			if(lhs->getType()->getTypeID() == rhs->getType()->getTypeID()){
-				switch(lhs->getType()->getTypeID()){
-					case llvm::Type::IntegerTyID: {
-						llvm::Value* larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs; 
-						lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp"); 
-						rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp"); 
-						return sub ? builder->CreateICmpSLT(lhs, rhs, "subtmp") : builder->CreateICmpSGT(lhs, rhs, "addtemp");
-					}
-					case llvm::Type::PointerTyID: {
-						lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-						rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp"); 
-						return sub ? builder->CreateICmpULT(lhs, rhs, "subtmp") : builder->CreateICmpUGT(lhs, rhs, "addtmp");
-					}
-					case llvm::Type::FloatTyID: 
-					case llvm::Type::DoubleTyID:
-					case llvm::Type::HalfTyID: { 
-						llvm::Type* larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType(); 
-						lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp"); 
-						rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp"); 
-						return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") :builder->CreateFCmpOGT(lhs, rhs, "addtmp");  
-						}
-					default:
-						errored = true; 
-						std::cout << "operator overloading not yet implemented" <<endl; 
-						return NULL; 
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			llvm::Value *lhs = LHS->codegen();
+			llvm::Value *rhs = RHS->codegen();
+			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
+			{
+				switch (lhs->getType()->getTypeID())
+				{
+				case llvm::Type::IntegerTyID:
+				{
+					llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
+					lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
+					rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
+					return sub ? builder->CreateICmpSLT(lhs, rhs, "subtmp") : builder->CreateICmpSGT(lhs, rhs, "addtemp");
 				}
-			}else{
-				errored = true; 
-				std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()); 
-				return NULL; 
+				case llvm::Type::PointerTyID:
+				{
+					lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+					return sub ? builder->CreateICmpULT(lhs, rhs, "subtmp") : builder->CreateICmpUGT(lhs, rhs, "addtmp");
+				}
+				case llvm::Type::FloatTyID:
+				case llvm::Type::DoubleTyID:
+				case llvm::Type::HalfTyID:
+				{
+					llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
+					lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
+					rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
+					return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
+				}
+				default:
+					errored = true;
+					std::cout << "operator overloading not yet implemented" << endl;
+					return NULL;
+				}
+			}
+			else
+			{
+				errored = true;
+				std::cout << "Error when attempting to compare two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+				return NULL;
 			}
 		}
 	};
 
+	/**
+	 * Handles raised-to and modulo statements
+	 */
+	class PowModStmtAST : public ExprAST
+	{
+		unique_ptr<ExprAST> LHS, RHS;
+		bool mod;
+
+	public:
+		PowModStmtAST(unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool ismod)
+			: LHS(std::move(LHS)), RHS(std::move(RHS)), mod(ismod) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			llvm::Type *longty = llvm::IntegerType::getInt32Ty(*ctxt);
+			llvm::Type *doublety = llvm::Type::getDoubleTy(*ctxt);
+			llvm::Value *lhs = LHS->codegen();
+			llvm::Value *rhs = RHS->codegen();
+			if (!mod && (rhs->getType()->isFloatingPointTy() || rhs->getType()->isIntegerTy()))
+			{
+				GlobalVarsAndFunctions->getOrInsertFunction("pow",
+															llvm::FunctionType::get(doublety, {doublety, doublety}, false));
+			}
+			llvm::Function *powfunc = GlobalVarsAndFunctions->getFunction("pow");
+			switch (lhs->getType()->getTypeID())
+			{
+			case llvm::Type::IntegerTyID:
+				lhs = builder->CreateCast(llvm::Instruction::CastOps::SIToFP, lhs, llvm::Type::getDoubleTy(*ctxt), "floatConversionTmp");
+				if (rhs->getType()->isIntegerTy())
+				{
+					rhs = builder->CreateCast(llvm::Instruction::CastOps::SIToFP, rhs, llvm::Type::getDoubleTy(*ctxt), "floatConversionTmp");
+				}
+			case llvm::Type::FloatTyID:
+			case llvm::Type::DoubleTyID:
+			case llvm::Type::HalfTyID:
+			{
+				if (!lhs->getType()->isDoubleTy())
+				{
+					lhs = builder->CreateFPExt(lhs, doublety, "floatExtendTmp");
+				}
+				if (!(rhs->getType()->isFloatingPointTy() || rhs->getType()->isIntegerTy()))
+				{
+					errored = true;
+					std::cout << "Error when attempting to raise a number to a power: the right-hand-side is not an integer or float" << endl;
+					return NULL;
+				}
+				if (rhs->getType()->isIntegerTy())
+				{
+					int bitWidth = rhs->getType()->getIntegerBitWidth();
+					rhs = bitWidth != 32 ? builder->CreateSExtOrTrunc(rhs, longty, "IntBitWidthModifierTmp") : rhs;
+				}
+				else if (rhs->getType()->getTypeID() != llvm::Type::DoubleTyID)
+				{
+					rhs = builder->CreateFPExt(rhs, doublety, "floatExtendTmp");
+				}
+				return builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
+			}
+			default:
+				errored = true;
+				std::cout << "operator overloading not yet implemented" << endl;
+				return NULL;
+			}
+			errored = true;
+			std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+			return NULL;
+		}
+	};
 
 	// TODO: Break this up into several ExprAST objects for each operator
 	/** BinaryStmtAST - Expression class for a binary operator.
@@ -1206,6 +1313,7 @@ namespace jimpilier
 					break;
 				case (llvm::Type::TypeID::FloatTyID):
 					data = builder->CreateCast(llvm::Instruction::CastOps::FPExt, data, llvm::Type::getDoubleTy(*ctxt));
+				case (llvm::Type::DoubleTyID):
 					placeholder += "%f ";
 					break;
 				case (llvm::Type::TypeID::IntegerTyID):
@@ -1329,7 +1437,7 @@ namespace jimpilier
 	{
 		std::string member;
 		std::unique_ptr<ExprAST> base;
-		bool dereferenceParent; 
+		bool dereferenceParent;
 
 	public:
 		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset, bool deref = false) : base(std::move(base)), member(offset), dereferenceParent(deref) {}
@@ -1363,7 +1471,7 @@ namespace jimpilier
 		string Callee;
 		vector<std::unique_ptr<ExprAST>> Args;
 		std::unique_ptr<ExprAST> parent;
-		bool dereferenceParent; 
+		bool dereferenceParent;
 
 	public:
 		ObjectFunctionCallExprAST(const string callee, vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &parent, bool deref) : dereferenceParent(deref), Callee(callee), Args(std::move(Arg)), parent(std::move(parent))
@@ -1428,17 +1536,17 @@ namespace jimpilier
 		ObjectConstructorCallExprAST(std::unique_ptr<TypeExpr> &callee, vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &target) : target(std::move(target)), CalledTyConstructor(std::move(callee)), Args(std::move(Arg)) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			//Get data type by name or by generating it directly
+			// Get data type by name or by generating it directly
 			llvm::Type *TargetType = CalledTyConstructor == NULL ? AliasMgr(Callee) : this->CalledTyConstructor->codegen();
 
-			//target = void* where the object will be initialized, usually a heap allocation
-			//other = type* stack local variable
+			// target = void* where the object will be initialized, usually a heap allocation
+			// other = type* stack local variable
 			if (target != NULL)
 			{
-				//call calloc() passing the size as a Value*
+				// call calloc() passing the size as a Value*
 				llvm::Value *heapalloc = target->codegen(false, AliasMgr.getTypeSize(TargetType, ctxt, DataLayout));
 				heapalloc = builder->CreateBitCast(heapalloc, TargetType->getPointerTo(), "bitcasttmp");
-				//store pointer to calloc() allocation on stack 
+				// store pointer to calloc() allocation on stack
 				builder->CreateStore(heapalloc, other);
 				other = builder->CreateLoad(other->getType()->getNonOpaquePointerElementType(), other, "loadtmp");
 			}
@@ -1448,9 +1556,11 @@ namespace jimpilier
 				std::cout << "Error when attempting to assign a constructor value: The type of the left side (" << AliasMgr.getTypeName(other->getType()) << ") does not match the right side (" << AliasMgr.getTypeName(target == NULL ? TargetType : TargetType->getPointerTo()) << ")." << endl;
 				return NULL;
 			}
-			if(TargetType->getTypeID() != llvm::Type::StructTyID){ 
-				if(!Args.empty()) builder->CreateStore(Args[0]->codegen(), other); 	
-				return NULL; 
+			if (TargetType->getTypeID() != llvm::Type::StructTyID)
+			{
+				if (!Args.empty())
+					builder->CreateStore(Args[0]->codegen(), other);
+				return NULL;
 			}
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
@@ -1806,12 +1916,14 @@ namespace jimpilier
 	std::string getFilePath(Stack<Token> &tokens)
 	{
 		std::string ret;
-		if(tokens.peek() == SCONST) return tokens.next().lex; 
+		if (tokens.peek() == SCONST)
+			return tokens.next().lex;
 		do
 		{
 			ret += tokens.next().lex;
 		} while (!errored && tokens.peek() == PERIOD && tokens.next() == PERIOD && (ret += '/') != "");
-		if(ret[0] != '.') ret= "./" + ret + ".jmb"; 
+		if (ret[0] != '.')
+			ret = "./" + ret + ".jmb";
 		std::cout << (ret) << endl;
 		return ret;
 	}
@@ -1835,7 +1947,7 @@ namespace jimpilier
 					std::cout << endl;
 			}
 		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
-		
+
 		return x;
 	}
 
@@ -2133,15 +2245,15 @@ namespace jimpilier
 
 		while (!errored && (tokens.peek() == POWERTO || tokens.peek() == LEFTOVER))
 		{
-			t = tokens.next();
-			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(term(tokens)));
+			Token t2 = tokens.next();
+			RHS = std::make_unique<PowModStmtAST>(std::move(RHS), std::move(term(tokens)), t2 == LEFTOVER);
 			if (!LHS)
 			{
 				logError("Error parsing a term in raisedToExpr ", t);
 				return NULL;
 			}
 		}
-		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<PowModStmtAST>(std::move(LHS), std::move(RHS), t == LEFTOVER);
 	}
 
 	std::unique_ptr<ExprAST> multAndDivExpr(Stack<Token> &tokens)
@@ -2236,7 +2348,7 @@ namespace jimpilier
 			Token t2 = tokens.next();
 			RHS = std::make_unique<CompareStmtAST>(std::move(RHS), std::move(greaterLessStmt(tokens)), t2 == NOTEQUAL);
 		}
-		return std::make_unique<CompareStmtAST>(std::move(LHS), std::move(RHS), t== NOTEQUAL);
+		return std::make_unique<CompareStmtAST>(std::move(LHS), std::move(RHS), t == NOTEQUAL);
 	}
 
 	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
