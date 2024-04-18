@@ -34,6 +34,7 @@ namespace jimpilier
 	 *
 	 */
 	std::stack<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> escapeBlock;
+	std::map<llvm::Type*, std::map<std::string, std::map<llvm::Type*, llvm::Function*>>> operators; 
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;
@@ -945,9 +946,13 @@ namespace jimpilier
 					return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp");
 				}
 				default:
-					errored = true;
-					std::cout << "operator overloading not yet implemented" << endl;
-					return NULL;
+				if(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()] == nullptr){
+					errored = true; 
+					std::cout << "Operator "<< (notval? "!=" : "==") <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
+					return NULL; 
+				}
+				return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {rhs, lhs},"operatorcalltmp");
+
 				}
 			}
 			else
@@ -1000,9 +1005,12 @@ namespace jimpilier
 					return div ? builder->CreateFDiv(lhs, rhs, "divtmp") : builder->CreateFMul(lhs, rhs, "multmp");
 				}
 				default:
-					errored = true;
-					std::cout << "operator overloading not yet implemented" << endl;
-					return NULL;
+				if(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()] == nullptr){
+					errored = true; 
+					std::cout << "Operator "<< (div? '/' : '*') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
+					return NULL; 
+				}
+					return builder->CreateCall(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
 				}
 			}
 			else
@@ -1055,9 +1063,12 @@ namespace jimpilier
 					return sub ? builder->CreateFSub(lhs, rhs, "subtmp") : builder->CreateFAdd(lhs, rhs, "addtmp");
 				}
 				default:
-					errored = true;
-					std::cout << "operator overloading not yet implemented" << endl;
-					return NULL;
+				if(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()] == nullptr){
+					errored = true; 
+					std::cout << "Operator "<< (sub? '-' : '+') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
+					return NULL; 
+				}
+					return builder->CreateCall(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
 				}
 			}
 			else
@@ -1111,9 +1122,12 @@ namespace jimpilier
 					return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
 				}
 				default:
-					errored = true;
-					std::cout << "operator overloading not yet implemented" << endl;
-					return NULL;
+				if(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()] == nullptr){
+					errored = true; 
+					std::cout << "Operator "<< (sub? '<' : '>') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
+					return NULL; 
+				}
+					return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
 				}
 			}
 			else
@@ -1182,9 +1196,12 @@ namespace jimpilier
 				return builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
 			}
 			default:
-				errored = true;
-				std::cout << "operator overloading not yet implemented" << endl;
-				return NULL;
+			if(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()] == nullptr){
+					errored = true; 
+					std::cout << "Operator "<< (mod ? '%' : '^') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
+					return NULL; 
+				}
+				return builder->CreateCall(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
 			}
 			errored = true;
 			std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
