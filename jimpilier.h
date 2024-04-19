@@ -53,6 +53,9 @@ namespace jimpilier
 		std::string name;
 		std::unique_ptr<TypeExpr> ty;
 		Variable(const std::string &ident, std::unique_ptr<TypeExpr> &type) : name(ident), ty(std::move(type)) {}
+		Variable() : name(""){
+			ty = NULL; 
+		}
 	};
 
 	class DoubleTypeExpr : public TypeExpr
@@ -1738,7 +1741,7 @@ namespace jimpilier
 		std::string Name, parent;
 		std::unique_ptr<TypeExpr> retType;
 		std::vector<Variable> Args;
-
+		PrototypeAST(){};
 		PrototypeAST(const std::string &name,
 					 std::vector<Variable> &args,
 					 std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
@@ -1867,6 +1870,104 @@ namespace jimpilier
 		}
 	};
 
+	class OperatorOverloadAST : public ExprAST
+	{
+		PrototypeAST Proto;
+		std::unique_ptr<ExprAST> Body;
+		std::vector<Variable> args; 
+		std::unique_ptr<TypeExpr> retType; 		
+		std::string name = "operator_", oper; 
+	public:
+		OperatorOverloadAST(std::string &oper,std::unique_ptr<TypeExpr> &ret, std::vector<Variable> &args, 
+					std::unique_ptr<ExprAST> &Body)
+			: oper(oper), Body(std::move(Body)), args(std::move(args)),  retType(std::move(ret)) {}
+
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+
+			name+= oper+"_";
+			llvm::raw_string_ostream stringstream(name); 
+			for(auto t = args.begin(); t < args.end(); t++){
+				t->ty->codegen()->print(stringstream);
+				name+='_';   
+			}
+			Proto = PrototypeAST(name, args, retType); 
+			llvm::Function *prevFunction = currentFunction;
+			std::vector<llvm::Type *> argtypes = (Proto.getArgTypes());
+			//currentFunction = AliasMgr.functions.getFunction(Proto.Name, argtypes);
+			//if (!currentFunction)
+			//	currentFunction = Proto.codegen();
+			//Segment stolen from Proto.codegen()
+			std::vector<std::string> Argnames;
+			std::vector<llvm::Type *> Argt;
+			for (auto &x : Proto.Args)
+			{
+				Argnames.push_back(x.name);
+				Argt.push_back(x.ty->codegen());
+			}
+			llvm::FunctionType *FT =
+				llvm::FunctionType::get(retType->codegen(), Argt, false);
+			llvm::Function *F =
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Proto.Name, GlobalVarsAndFunctions.get());
+			unsigned Idx = 0;
+			for (auto &Arg : F->args())
+			{
+				Arg.setName(Argnames[Idx++]);
+			}
+			//end of segment stolen from Proto.codegen()
+
+			if (!currentFunction)
+			{
+				currentFunction = prevFunction;
+				return NULL;
+			}
+			if (!currentFunction->empty())
+			{
+				errored = true;
+				std::cout << "Operator Cannot be redefined: " << currentFunction->getName().str() << endl;
+				currentFunction = prevFunction;
+				return NULL;
+			}
+
+			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
+			builder->SetInsertPoint(BB);
+			// Record the function arguments in the Named Values map.
+			for (auto &Arg : currentFunction->args())
+			{
+				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
+				builder->CreateStore(&Arg, storedvar);
+				std::string name = std::string(Arg.getName());
+				AliasMgr[name] = storedvar;
+				// dtypes[name] = Arg.getType();
+			}
+			llvm::Instruction *currentEntry = &BB->getIterator()->back();
+			llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen();
+
+			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy()))
+			{
+				// Validate the generated code, checking for consistency.
+				verifyFunction(*currentFunction);
+				if (DEBUGGING)
+					std::cout << "//end of " << Proto.getName() << endl;
+				// remove the arguments now that they're out of scope
+				for (auto &Arg : currentFunction->args())
+				{
+					AliasMgr[std::string(Arg.getName())] = NULL;
+					// dtypes[std::string(Arg.getName())] = NULL;
+				}
+			}
+			else
+			{
+				currentFunction->deleteBody();
+			}
+			currentFunction = prevFunction;
+			if (currentFunction != NULL)
+				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
+			return operators[argtypes[0]][oper][argtypes[1]];
+		}
+	};
+
+
 	// TODO: Implement this fully with the new typing system
 	//  class ArrayOfTypeExpr : public TypeExpr{
 	//  	std::unique_ptr<TypeExpr> ty;
@@ -1886,7 +1987,7 @@ namespace jimpilier
 	}
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
 
-	std::vector<Variable> functionArgList(Stack<Token> &tokens);
+	std::vector<Variable> functionArgList(Stack<Token> &tokens); 
 	std::map<KeyToken, bool> variableModStmt(Stack<Token> &tokens);
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, std::unique_ptr<TypeExpr> &dtype, std::string name, std::string objBase = "");
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
@@ -1897,6 +1998,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> LHS = NULL);
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens);
+	void functionArg(Stack<Token> &tokens, Variable& out);
 
 	// TODO: Move this function into driver code maybe ???
 	/**
@@ -2576,6 +2678,69 @@ namespace jimpilier
 		return NULL;
 	}
 
+	void thisOrFunctionArg(Stack<Token> &tokens, Variable& out){
+		if(tokens.peek() == IDENT && tokens.peek().lex == "this"){ 
+			std::string thisval = "this"; 
+			std::unique_ptr<TypeExpr> nullty = NULL; 
+			out.name = thisval; 
+			out.ty = std::move(nullty); 
+			return; 
+		}
+		functionArg(tokens, out); 
+	}
+
+	std::unique_ptr<ExprAST> operatorOverloadStmt(Stack<Token> &tokens, std::unique_ptr<TypeExpr> ty){
+		if(tokens.next() != OPERATOR){
+			return NULL; 
+		}
+		Variable placeholder; 
+		std::vector<Variable> vars; 
+		if(tokens.peek() == IDENT || tokens.peek().token >= INT){
+			thisOrFunctionArg(tokens, placeholder); 
+			vars.push_back(std::move(placeholder));
+		}
+		Token op = tokens.peek(); 
+		switch(op.token){
+			case PLUS:
+			case MINUS:
+			case MULT:
+			case DIV: 
+			case POWERTO: 
+			case LEFTOVER:
+			case EQUALCMP: 
+			case NOTEQUAL: 
+			case GREATER:
+			case GREATEREQUALS: 
+			case LESS:
+			case LESSEQUALS:
+			case INSERTION:
+			case REMOVAL:  
+			case OPENSQUARE:
+			thisOrFunctionArg(tokens, placeholder);
+			vars.push_back(std::move(placeholder));  
+			if(op == OPENSQUARE && tokens.peek() != CLOSESQUARE){
+				errored = true; 
+				logError("Expected a closing square brace at this token:", tokens.currentToken()); 
+				return NULL; 
+			}else if(op == OPENSQUARE) tokens.next(); 
+			break;
+			//case PERIOD: 
+			default: 
+				errored = true; 
+				logError("Unknown operator:", tokens.currentToken()); 
+				return NULL; 
+			case NOT: 
+			case INCREMENT:
+			case DECREMENT:
+				Variable placeholder; 
+				thisOrFunctionArg(tokens, placeholder); 
+				vars.push_back(std::move(placeholder)); 
+				break;
+		} 
+		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
+		return std::make_unique<OperatorOverloadAST>(op.lex, ty,vars, (body)); 
+	}
+
 	std::vector<std::unique_ptr<TypeExpr>> templateObjNames(Stack<Token> &tokens)
 	{
 		vector<std::unique_ptr<TypeExpr>> types;
@@ -2796,23 +2961,40 @@ namespace jimpilier
 		return std::make_unique<CodeBlockAST>(vars);
 	}
 
+/**
+ * Parses a single function argument 
+ * Function arguments are approximately equal to a data type declaration followed by an identifier
+ */
+	void functionArg(Stack<Token> &tokens, Variable& out){
+			std::unique_ptr<TypeExpr> dtype = std::move(jimpilier::variableTypeStmt(tokens));
+			if (dtype == NULL)
+			{
+				out.name = "ERROR";
+				out.ty = NULL;   
+				return; 
+			}
+			else if (tokens.peek() != IDENT)
+			{
+				logError("Expected identifier after variable type here:", tokens.currentToken()); 
+				dtype.release();
+				dtype = nullptr;  
+				out.ty = nullptr; 
+				out.name = "ERROR";  
+			}
+			Token t = tokens.next();
+			out.name = t.lex; 
+			out.ty = std::move(dtype);  
+	}
+
 	std::vector<Variable> functionArgList(Stack<Token> &tokens)
 	{
 		std::vector<Variable> args;
 		do
 		{
-			std::unique_ptr<TypeExpr> dtype = std::move(jimpilier::variableTypeStmt(tokens));
-			if (dtype == NULL)
-			{
-				break;
-			}
-			else if (tokens.peek() != IDENT)
-			{
-				logError("Expected identifier after variable type here:", tokens.currentToken());
-				break;
-			}
-			Token t = tokens.next();
-			args.push_back(Variable(t.lex, dtype));
+			Variable v; 
+			functionArg(tokens, v); 
+			if(v.ty != nullptr)
+				args.push_back(std::move(v));
 		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 		return args;
 	}

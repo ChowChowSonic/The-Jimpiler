@@ -10,6 +10,7 @@
             "name": "Launch LLVM Compiler",
             "preLaunchTask": "Build LLVM Compiler",
             "program": "${workspaceRoot}/jmb",
+            "args": ["test.txt"],
             "cwd": "."
         }
     ]
