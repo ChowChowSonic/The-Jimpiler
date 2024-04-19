@@ -964,7 +964,7 @@ namespace jimpilier
 					std::cout << "Operator "<< (notval? "!=" : "==") <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
 					return NULL; 
 				}
-				return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {rhs, lhs},"operatorcalltmp");
+				return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {lhs, rhs},"operatorcalltmp");
 
 				}
 			}
@@ -1023,13 +1023,13 @@ namespace jimpilier
 					std::cout << "Operator "<< (div? '/' : '*') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
 					return NULL; 
 				}
-					return builder->CreateCall(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
+					return builder->CreateCall(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
 				}
 			}
 			else
 			{
 				errored = true;
-				std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+				std::cout << "Error when attempting to "<< (div? "divide" : "multiply") <<" two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
 				return NULL;
 			}
 		}
@@ -1049,8 +1049,6 @@ namespace jimpilier
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
-			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
-			{
 				switch (lhs->getType()->getTypeID())
 				{
 				case llvm::Type::IntegerTyID:
@@ -1081,15 +1079,11 @@ namespace jimpilier
 					std::cout << "Operator "<< (sub? '-' : '+') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
 					return NULL; 
 				}
-					return builder->CreateCall(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
+					return builder->CreateCall(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
 				}
-			}
-			else
-			{
 				errored = true;
-				std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+				std::cout << "Error when attempting to "<<(sub? "subtract" : "add")<< " two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
 				return NULL;
-			}
 		}
 	};
 
@@ -1140,7 +1134,7 @@ namespace jimpilier
 					std::cout << "Operator "<< (sub? '<' : '>') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
 					return NULL; 
 				}
-					return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
+					return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
 				}
 			}
 			else
@@ -1214,7 +1208,7 @@ namespace jimpilier
 					std::cout << "Operator "<< (mod ? '%' : '^') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
 					return NULL; 
 				}
-				return builder->CreateCall(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()], {rhs, lhs},"operatorcalltmp");
+				return builder->CreateCall(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
 			}
 			errored = true;
 			std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
@@ -1902,7 +1896,11 @@ namespace jimpilier
 			name+= oper+"_";
 			llvm::raw_string_ostream stringstream(name); 
 			for(auto t = args.begin(); t < args.end(); t++){
-				t->ty->codegen()->print(stringstream);
+				llvm::Type* typev = t->ty->codegen(); 
+				if(typev->isStructTy())
+				name+=typev->getStructName(); 
+				else 
+				typev->print(stringstream);
 				name+='_';   
 			}
 			Proto = PrototypeAST(name, args, retType); 
