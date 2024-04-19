@@ -60,6 +60,7 @@ class ObjectAliasManager {
 		Object(){
 			ptr = NULL; 
 		}
+		Object(llvm::Type* ty) : ptr(ty){}
 		Object(llvm::Type* ty, std::vector<llvm::Type*> members, std::vector<std::string> names) : ptr(ty) {
 			for(int i =0; i < members.size(); i++){
 				this->members.push_back(ObjectMember(names[i], members[i], i));
@@ -115,11 +116,26 @@ class ObjectAliasManager {
 
 	bool addObject(std::string alias, llvm::Type* objType, std::vector<llvm::Type*> memberTypes, std::vector<std::string> memberNames){
 		if(structTypes[alias].ptr != NULL){ 
+
 			return false; 
 		}
 		structTypes[alias] = Object(objType, memberTypes, memberNames); 
 		return true; 
 	}
+
+	void addObjectMembers(std::string alias, std::vector<llvm::Type*> memberTypes, std::vector<std::string> memberNames){
+		for(int i = 0; i < memberTypes.size();i++)
+			structTypes[alias].members.push_back({memberNames[i], memberTypes[i], i}); 
+	}
+	
+	bool addObject(std::string alias, llvm::Type* objType){
+		if(structTypes[alias].ptr != NULL){ 
+			return false; 
+		}
+		structTypes[alias] = Object(objType); 
+		return true;
+	}
+
 	void addObjectFunction(std::string& objName, std::string& funcAlias, std::vector<llvm::Type*> types, llvm::Function* func){
 		structTypes[objName].functions.addFunction(funcAlias, func, types); 
 	}

@@ -1697,6 +1697,7 @@ namespace jimpilier
 			// TODO: This could cause bugs later. Find a better (non-bandaid) solution
 			llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
 			ty = ty == NULL ? llvm::StructType::create(*ctxt, name) : ty;
+			AliasMgr.objects.addObject(name, ty); 
 			return ty; 
 		}
 	};
@@ -1727,7 +1728,7 @@ namespace jimpilier
 			if (!types.empty())
 				ty->setBody(types);
 
-			AliasMgr.objects.addObject(base.name, ty, types, names);
+			AliasMgr.objects.addObjectMembers(base.name, types, names);
 			if(!ops.empty()) for(auto& func : ops){
 				func->codegen();
 			}
@@ -2691,26 +2692,28 @@ namespace jimpilier
 		return NULL;
 	}
 
-	void thisOrFunctionArg(Stack<Token> &tokens, Variable& out){
+	void thisOrFunctionArg(Stack<Token> &tokens, Variable& out, std::string parentTy = ""){
 		if(tokens.peek() == IDENT && tokens.peek().lex == "this"){ 
 			std::string thisval = "this"; 
 			std::unique_ptr<TypeExpr> nullty = NULL; 
 			out.name = thisval; 
-			out.ty = std::move(nullty);
+			out.ty = parentTy == "" ? NULL : std::make_unique<StructTypeExpr>(parentTy); 
 			tokens.next();  
 			return; 
 		}
 		functionArg(tokens, out); 
 	}
 
-	std::unique_ptr<ExprAST> operatorOverloadStmt(Stack<Token> &tokens, std::unique_ptr<TypeExpr> ty){
+	std::unique_ptr<ExprAST> operatorOverloadStmt(Stack<Token> &tokens, std::unique_ptr<TypeExpr> ty, std::string parentName = ""){
 		if(tokens.next() != OPERATOR){
 			return NULL; 
 		}
+		bool hasParen = false; 
+		if(tokens.peek() == LPAREN) hasParen = tokens.next() == LPAREN; 
 		Variable placeholder; 
 		std::vector<Variable> vars; 
 		if(tokens.peek() == IDENT || tokens.peek().token >= INT){
-			thisOrFunctionArg(tokens, placeholder); 
+			thisOrFunctionArg(tokens, placeholder, parentName); 
 			if(placeholder.ty == NULL){
 				logError("Unknown type defined in operator:", tokens.peek()); 
 				return NULL; 
@@ -2735,7 +2738,7 @@ namespace jimpilier
 			case INSERTION:
 			case REMOVAL:  
 			case OPENSQUARE:
-			thisOrFunctionArg(tokens, placeholder);
+			thisOrFunctionArg(tokens, placeholder, parentName);
 			vars.push_back(std::move(placeholder));   
 			if(op == OPENSQUARE && tokens.peek() != CLOSESQUARE){
 				errored = true; 
@@ -2752,10 +2755,14 @@ namespace jimpilier
 			case INCREMENT:
 			case DECREMENT:
 				Variable placeholder; 
-				thisOrFunctionArg(tokens, placeholder); 
+				thisOrFunctionArg(tokens, placeholder, parentName); 
 				vars.push_back(std::move(placeholder)); 
 				break;
 		} 
+		if(hasParen && tokens.peek() != RPAREN){
+			logError("Missing closing parenthesis after this token:", tokens.currentToken()); 
+			return NULL;
+		}else if (hasParen) tokens.next(); 
 		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
 		return std::make_unique<OperatorOverloadAST>(op.lex, ty,vars, (body)); 
 	}
@@ -2781,7 +2788,6 @@ namespace jimpilier
 		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 		return types;
 	}
-
 	/**
 	 * @brief Parses an object/class blueprint
 	 * @param tokens
@@ -2802,6 +2808,7 @@ namespace jimpilier
 		std::string name = tokens.next().lex;
 		std::vector<std::unique_ptr<TypeExpr>> templates = std::move(templateObjNames(tokens));
 		ObjectHeaderExpr objName(name);
+		objName.codegen(); 
 		if (tokens.next() != OPENCURL)
 		{
 			logError("Curly braces are required for object declarations. Please put a brace before this token:", tokens.currentToken());
@@ -2823,7 +2830,7 @@ namespace jimpilier
 			}
 			Token name = tokens.peek();
 			if(name == OPERATOR){
-				std::unique_ptr<ExprAST> op = std::move(operatorOverloadStmt(tokens, std::move(ty)));
+				std::unique_ptr<ExprAST> op = std::move(operatorOverloadStmt(tokens, std::move(ty), objName.name));
 				overloadedOperators.push_back(std::move(op));  
 				continue;
 			}else if (name != IDENT)
