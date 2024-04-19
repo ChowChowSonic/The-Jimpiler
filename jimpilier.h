@@ -56,6 +56,9 @@ namespace jimpilier
 		Variable() : name(""){
 			ty = NULL; 
 		}
+		std::string toString(){
+			return "{ "+name+", "+ AliasMgr.getTypeName(ty->codegen())+" }"; 
+		}
 	};
 
 	class DoubleTypeExpr : public TypeExpr
@@ -391,7 +394,14 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
-			if (!bsval->getType()->isPointerTy())
+			if(bsval->getType()->isStructTy()){
+				if(operators[bsval->getType()]["["][offv->getType()] == NULL){
+					std::cout << "Undeclared [] operator: " << AliasMgr.getTypeName(bsval->getType()) << "[" << AliasMgr.getTypeName(offv->getType()) <<"]"<<endl; 
+					errored = true; 
+					return NULL; 
+				}
+				return builder->CreateCall(operators[bsval->getType()]["["][offv->getType()], {bsval, offv}, "operator[]call");
+			}else if (!bsval->getType()->isPointerTy())
 			{
 				std::cout << "Error: You tried to take an offset of a non-pointer, non-array type! " << endl
 						  << "Make sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!" << endl;
@@ -1692,7 +1702,8 @@ namespace jimpilier
 		{
 			// TODO: This could cause bugs later. Find a better (non-bandaid) solution
 			llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
-			return ty == NULL ? llvm::StructType::create(*ctxt, name) : ty;
+			ty = ty == NULL ? llvm::StructType::create(*ctxt, name) : ty;
+			return ty; 
 		}
 	};
 	/**
@@ -1702,12 +1713,12 @@ namespace jimpilier
 	{
 		ObjectHeaderExpr base;
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> vars;
-		std::vector<std::unique_ptr<ExprAST>> functions;
+		std::vector<std::unique_ptr<ExprAST>> functions, ops;
 
 	public:
 		ObjectExprAST(ObjectHeaderExpr name,
 					  std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> &varArg,
-					  std::vector<std::unique_ptr<ExprAST>> &funcList) : base(name), vars(std::move(varArg)), functions(std::move(funcList)){};
+					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)){};
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
@@ -1723,6 +1734,9 @@ namespace jimpilier
 				ty->setBody(types);
 
 			AliasMgr.objects.addObject(base.name, ty, types, names);
+			if(!ops.empty()) for(auto& func : ops){
+				func->codegen();
+			}
 			if (!functions.empty())
 				for (auto &func : functions)
 				{
@@ -1906,11 +1920,11 @@ namespace jimpilier
 				Argt.push_back(x.ty->codegen());
 			}
 			llvm::FunctionType *FT =
-				llvm::FunctionType::get(retType->codegen(), Argt, false);
-			llvm::Function *F =
+				llvm::FunctionType::get(Proto.retType->codegen(), Argt, false);
+			currentFunction =
 				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Proto.Name, GlobalVarsAndFunctions.get());
 			unsigned Idx = 0;
-			for (auto &Arg : F->args())
+			for (auto &Arg : currentFunction->args())
 			{
 				Arg.setName(Argnames[Idx++]);
 			}
@@ -1949,6 +1963,7 @@ namespace jimpilier
 				verifyFunction(*currentFunction);
 				if (DEBUGGING)
 					std::cout << "//end of " << Proto.getName() << endl;
+					operators[argtypes[0]][oper][argtypes[1]] = currentFunction;
 				// remove the arguments now that they're out of scope
 				for (auto &Arg : currentFunction->args())
 				{
@@ -2683,7 +2698,8 @@ namespace jimpilier
 			std::string thisval = "this"; 
 			std::unique_ptr<TypeExpr> nullty = NULL; 
 			out.name = thisval; 
-			out.ty = std::move(nullty); 
+			out.ty = std::move(nullty);
+			tokens.next();  
 			return; 
 		}
 		functionArg(tokens, out); 
@@ -2697,9 +2713,14 @@ namespace jimpilier
 		std::vector<Variable> vars; 
 		if(tokens.peek() == IDENT || tokens.peek().token >= INT){
 			thisOrFunctionArg(tokens, placeholder); 
+			if(placeholder.ty == NULL){
+				logError("Unknown type defined in operator:", tokens.peek()); 
+				return NULL; 
+			}
 			vars.push_back(std::move(placeholder));
 		}
-		Token op = tokens.peek(); 
+		
+		Token op = tokens.next(); 
 		switch(op.token){
 			case PLUS:
 			case MINUS:
@@ -2717,12 +2738,12 @@ namespace jimpilier
 			case REMOVAL:  
 			case OPENSQUARE:
 			thisOrFunctionArg(tokens, placeholder);
-			vars.push_back(std::move(placeholder));  
+			vars.push_back(std::move(placeholder));   
 			if(op == OPENSQUARE && tokens.peek() != CLOSESQUARE){
 				errored = true; 
 				logError("Expected a closing square brace at this token:", tokens.currentToken()); 
 				return NULL; 
-			}else if(op == OPENSQUARE) tokens.next(); 
+			}else if(op == OPENSQUARE && tokens.peek() == CLOSESQUARE){ tokens.next(); }
 			break;
 			//case PERIOD: 
 			default: 
@@ -2772,6 +2793,7 @@ namespace jimpilier
 	{
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> objVars;
 		std::vector<std::unique_ptr<ExprAST>> objFunctions;
+		std::vector<std::unique_ptr<ExprAST>> overloadedOperators; 
 		if (tokens.peek() == OBJECT)
 			tokens.next();
 		if (tokens.peek() != IDENT)
@@ -2802,7 +2824,11 @@ namespace jimpilier
 				return NULL;
 			}
 			Token name = tokens.peek();
-			if (name != IDENT)
+			if(name == OPERATOR){
+				std::unique_ptr<ExprAST> op = std::move(operatorOverloadStmt(tokens, std::move(ty)));
+				overloadedOperators.push_back(std::move(op));  
+				continue;
+			}else if (name != IDENT)
 			{
 				logError("Expected identifier at this token:", name);
 				return NULL;
@@ -2819,7 +2845,7 @@ namespace jimpilier
 			objVars.push_back(std::pair<std::string, std::unique_ptr<TypeExpr>>(name.lex, std::move(ty)));
 		}
 		tokens.next();
-		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions);
+		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions, overloadedOperators);
 	}
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens)
 	{
@@ -2944,7 +2970,9 @@ namespace jimpilier
 		do
 		{
 			Token name = tokens.peek();
-			if (name != IDENT)
+			if(name == OPERATOR){
+				return operatorOverloadStmt(tokens, std::move(dtype)); 
+			}else if (name != IDENT)
 			{
 				tokens.go_back();
 				return std::move(assignStmt(tokens)); // Does this case ever really come up? I gotta double check C's EBNF
@@ -2969,6 +2997,7 @@ namespace jimpilier
 			std::unique_ptr<TypeExpr> dtype = std::move(jimpilier::variableTypeStmt(tokens));
 			if (dtype == NULL)
 			{
+				logError("Unknown type when declaring a variable:", tokens.peek()); 
 				out.name = "ERROR";
 				out.ty = NULL;   
 				return; 
@@ -2989,7 +3018,7 @@ namespace jimpilier
 	std::vector<Variable> functionArgList(Stack<Token> &tokens)
 	{
 		std::vector<Variable> args;
-		do
+		if(tokens.peek() != RPAREN)do
 		{
 			Variable v; 
 			functionArg(tokens, v); 
