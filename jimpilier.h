@@ -34,7 +34,7 @@ namespace jimpilier
 	 *
 	 */
 	std::stack<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> escapeBlock;
-	std::map<llvm::Type*, std::map<std::string, std::map<llvm::Type*, llvm::Function*>>> operators; 
+	std::map<llvm::Type *, std::map<std::string, std::map<llvm::Type *, llvm::Function *>>> operators;
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;
@@ -53,11 +53,13 @@ namespace jimpilier
 		std::string name;
 		std::unique_ptr<TypeExpr> ty;
 		Variable(const std::string &ident, std::unique_ptr<TypeExpr> &type) : name(ident), ty(std::move(type)) {}
-		Variable() : name(""){
-			ty = NULL; 
+		Variable() : name("")
+		{
+			ty = NULL;
 		}
-		std::string toString(){
-			return "{ "+name+", "+ AliasMgr.getTypeName(ty->codegen())+" }"; 
+		std::string toString()
+		{
+			return "{ " + name + ", " + AliasMgr.getTypeName(ty->codegen()) + " }";
 		}
 	};
 
@@ -317,6 +319,14 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen(false);
+			if(v->getType()->isPointerTy() && v->getType()->getContainedType(0)->isStructTy()){
+				if(operators[prefix? NULL: v->getType()][decrement ? "--" : "++"][prefix? v->getType():NULL] == NULL){
+					errored = true; 
+					std::cout << "Unknown operator " << (decrement? "--":"++") << " with type " << AliasMgr.getTypeName(v->getType()) << endl;  
+					return NULL; 
+				}
+				return builder->CreateCall(operators[prefix? NULL:v->getType()][decrement ? "--" : "++"][prefix? v->getType():NULL], {v}, "IncDecCallTmp");
+			}
 			if (prefix)
 			{
 				llvm::Value *tmpval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
@@ -394,14 +404,17 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
-			if(bsval->getType()->isStructTy()){
-				if(operators[bsval->getType()]["["][offv->getType()] == NULL){
-					std::cout << "Undeclared [] operator: " << AliasMgr.getTypeName(bsval->getType()) << "[" << AliasMgr.getTypeName(offv->getType()) <<"]"<<endl; 
-					errored = true; 
-					return NULL; 
+			if (bsval->getType()->isStructTy())
+			{
+				if (operators[bsval->getType()]["["][offv->getType()] == NULL)
+				{
+					std::cout << "Undeclared [] operator: " << AliasMgr.getTypeName(bsval->getType()) << "[" << AliasMgr.getTypeName(offv->getType()) << "]" << endl;
+					errored = true;
+					return NULL;
 				}
 				return builder->CreateCall(operators[bsval->getType()]["["][offv->getType()], {bsval, offv}, "operator[]call");
-			}else if (!bsval->getType()->isPointerTy())
+			}
+			else if (!bsval->getType()->isPointerTy())
 			{
 				std::cout << "Error: You tried to take an offset of a non-pointer, non-array type! " << endl
 						  << "Make sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!" << endl;
@@ -959,13 +972,13 @@ namespace jimpilier
 					return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp");
 				}
 				default:
-				if(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()] == nullptr){
-					errored = true; 
-					std::cout << "Operator "<< (notval? "!=" : "==") <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
-					return NULL; 
-				}
-				return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {lhs, rhs},"operatorcalltmp");
-
+					if (operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()] == nullptr)
+					{
+						errored = true;
+						std::cout << "Operator " << (notval ? "!=" : "==") << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << endl;
+						return NULL;
+					}
+					return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 				}
 			}
 			else
@@ -1018,18 +1031,19 @@ namespace jimpilier
 					return div ? builder->CreateFDiv(lhs, rhs, "divtmp") : builder->CreateFMul(lhs, rhs, "multmp");
 				}
 				default:
-				if(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()] == nullptr){
-					errored = true; 
-					std::cout << "Operator "<< (div? '/' : '*') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
-					return NULL; 
-				}
-					return builder->CreateCall(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
+					if (operators[lhs->getType()][div ? "/" : "*"][rhs->getType()] == nullptr)
+					{
+						errored = true;
+						std::cout << "Operator " << (div ? '/' : '*') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << endl;
+						return NULL;
+					}
+					return builder->CreateCall(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 				}
 			}
 			else
 			{
 				errored = true;
-				std::cout << "Error when attempting to "<< (div? "divide" : "multiply") <<" two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+				std::cout << "Error when attempting to " << (div ? "divide" : "multiply") << " two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
 				return NULL;
 			}
 		}
@@ -1049,41 +1063,42 @@ namespace jimpilier
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
-				switch (lhs->getType()->getTypeID())
+			switch (lhs->getType()->getTypeID())
+			{
+			case llvm::Type::IntegerTyID:
+			{
+				llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
+				lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
+				rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
+				return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtemp");
+			}
+			case llvm::Type::PointerTyID:
+			{
+				lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+				rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
+				return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtmp");
+			}
+			case llvm::Type::FloatTyID:
+			case llvm::Type::DoubleTyID:
+			case llvm::Type::HalfTyID:
+			{
+				llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
+				lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
+				rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
+				return sub ? builder->CreateFSub(lhs, rhs, "subtmp") : builder->CreateFAdd(lhs, rhs, "addtmp");
+			}
+			default:
+				if (operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()] == nullptr)
 				{
-				case llvm::Type::IntegerTyID:
-				{
-					llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
-					lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
-					rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
-					return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtemp");
+					errored = true;
+					std::cout << "Operator " << (sub ? '-' : '+') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << endl;
+					return NULL;
 				}
-				case llvm::Type::PointerTyID:
-				{
-					lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-					rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-					return sub ? builder->CreateSub(lhs, rhs, "subtmp") : builder->CreateAdd(lhs, rhs, "addtmp");
-				}
-				case llvm::Type::FloatTyID:
-				case llvm::Type::DoubleTyID:
-				case llvm::Type::HalfTyID:
-				{
-					llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
-					lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
-					rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
-					return sub ? builder->CreateFSub(lhs, rhs, "subtmp") : builder->CreateFAdd(lhs, rhs, "addtmp");
-				}
-				default:
-				if(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()] == nullptr){
-					errored = true; 
-					std::cout << "Operator "<< (sub? '-' : '+') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
-					return NULL; 
-				}
-					return builder->CreateCall(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
-				}
-				errored = true;
-				std::cout << "Error when attempting to "<<(sub? "subtract" : "add")<< " two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
-				return NULL;
+				return builder->CreateCall(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
+			}
+			errored = true;
+			std::cout << "Error when attempting to " << (sub ? "subtract" : "add") << " two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << endl;
+			return NULL;
 		}
 	};
 
@@ -1129,12 +1144,13 @@ namespace jimpilier
 					return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
 				}
 				default:
-				if(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()] == nullptr){
-					errored = true; 
-					std::cout << "Operator "<< (sub? '<' : '>') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
-					return NULL; 
-				}
-					return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
+					if (operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()] == nullptr)
+					{
+						errored = true;
+						std::cout << "Operator " << (sub ? '<' : '>') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << endl;
+						return NULL;
+					}
+					return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 				}
 			}
 			else
@@ -1203,12 +1219,13 @@ namespace jimpilier
 				return builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
 			}
 			default:
-			if(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()] == nullptr){
-					errored = true; 
-					std::cout << "Operator "<< (mod ? '%' : '^') <<" never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) <<endl;
-					return NULL; 
+				if (operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()] == nullptr)
+				{
+					errored = true;
+					std::cout << "Operator " << (mod ? '%' : '^') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << endl;
+					return NULL;
 				}
-				return builder->CreateCall(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()], {lhs, rhs},"operatorcalltmp");
+				return builder->CreateCall(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 			}
 			errored = true;
 			std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
@@ -1301,6 +1318,29 @@ namespace jimpilier
 				std::cout << "Error: Unknown operator" << Op;
 				return NULL;
 			}
+		}
+	};
+
+	class ThrowStmtAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> ball;
+
+	public:
+		ThrowStmtAST(std::unique_ptr<ExprAST> &ball) : ball(std::move(ball)) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			// Dear Lord how the fuck does this linker work
+			// GlobalVarsAndFunctions->getOrInsertFunction("__cxa_allocate_exception", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt64Ty(*ctxt)}, false));
+			// GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt)},false));
+			// llvm::Value* ziti = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTIi", llvm::Type::getInt8PtrTy(*ctxt));
+
+			// llvm::Value* ballval = builder->CreateAlloca();
+			// ball->codegen(ballval);
+			// std::cout << (ballval == NULL) <<endl;
+			// llvm::Value* error = builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_allocate_exception"), {AliasMgr.getTypeSize(ballval->getType(), ctxt, DataLayout)}, "errorAllocatmp");
+			// TODO: FIX ME????
+			// return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"), {error, ziti, AliasMgr.objects.getObject(ballval->getType()).destructor}, "throwtmp");
+			return NULL;
 		}
 	};
 
@@ -1574,6 +1614,8 @@ namespace jimpilier
 				builder->CreateStore(heapalloc, other);
 				other = builder->CreateLoad(other->getType()->getNonOpaquePointerElementType(), other, "loadtmp");
 			}
+			if (other == NULL)
+				other = builder->CreateAlloca(TargetType, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(1, 32)), "objConstructorTmp");
 			if (other->getType() != TargetType->getPointerTo())
 			{
 				errored = true;
@@ -1697,8 +1739,8 @@ namespace jimpilier
 			// TODO: This could cause bugs later. Find a better (non-bandaid) solution
 			llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
 			ty = ty == NULL ? llvm::StructType::create(*ctxt, name) : ty;
-			AliasMgr.objects.addObject(name, ty); 
-			return ty; 
+			AliasMgr.objects.addObject(name, ty);
+			return ty;
 		}
 	};
 	/**
@@ -1729,9 +1771,11 @@ namespace jimpilier
 				ty->setBody(types);
 
 			AliasMgr.objects.addObjectMembers(base.name, types, names);
-			if(!ops.empty()) for(auto& func : ops){
-				func->codegen();
-			}
+			if (!ops.empty())
+				for (auto &func : ops)
+				{
+					func->codegen();
+				}
 			if (!functions.empty())
 				for (auto &func : functions)
 				{
@@ -1883,41 +1927,45 @@ namespace jimpilier
 	{
 		PrototypeAST Proto;
 		std::unique_ptr<ExprAST> Body;
-		std::vector<Variable> args; 
-		std::unique_ptr<TypeExpr> retType; 		
-		std::string name = "operator_", oper; 
+		std::vector<Variable> args;
+		std::unique_ptr<TypeExpr> retType;
+		std::string name = "operator_", oper;
+		bool isUnary;
+
 	public:
-		OperatorOverloadAST(std::string &oper,std::unique_ptr<TypeExpr> &ret, std::vector<Variable> &args, 
-					std::unique_ptr<ExprAST> &Body)
-			: oper(oper), Body(std::move(Body)), args(std::move(args)),  retType(std::move(ret)) {}
+		OperatorOverloadAST(std::string &oper, std::unique_ptr<TypeExpr> &ret, std::vector<Variable> &args,
+							std::unique_ptr<ExprAST> &Body, bool isUnary = false)
+			: oper(oper), Body(std::move(Body)), args(std::move(args)), retType(std::move(ret)), isUnary(isUnary) {}
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 
-			name+= oper+"_";
-			llvm::raw_string_ostream stringstream(name); 
-			for(auto t = args.begin(); t < args.end(); t++){
-				llvm::Type* typev = t->ty->codegen(); 
-				if(typev->isStructTy())
-				name+=typev->getStructName(); 
-				else 
-				typev->print(stringstream);
-				name+='_';   
+			name += oper + "_";
+			llvm::raw_string_ostream stringstream(name);
+			for (auto t = args.begin(); t < args.end(); t++)
+			{
+				if(t->ty == NULL) continue; 
+				llvm::Type *typev = t->ty->codegen();
+				if (typev->isStructTy())
+					name += typev->getStructName();
+				else
+					typev->print(stringstream);
+				name += '_';
 			}
-			Proto = PrototypeAST(name, args, retType); 
+			Proto = PrototypeAST(name, args, retType);
 			llvm::Function *prevFunction = currentFunction;
-			std::vector<llvm::Type *> argtypes = (Proto.getArgTypes());
-			//currentFunction = AliasMgr.functions.getFunction(Proto.Name, argtypes);
-			//if (!currentFunction)
-			//	currentFunction = Proto.codegen();
-			//Segment stolen from Proto.codegen()
+			std::vector<llvm::Type *> argtypes;
+			for (auto &x : Proto.Args)
+				argtypes.push_back(x.ty == NULL ? NULL : x.ty->codegen());
+			// Segment stolen from Proto.codegen()
 			std::vector<std::string> Argnames;
 			std::vector<llvm::Type *> Argt;
 			for (auto &x : Proto.Args)
-			{
-				Argnames.push_back(x.name);
-				Argt.push_back(x.ty->codegen());
-			}
+				{
+					if(x.ty == NULL) continue; 
+					Argnames.push_back(x.name);
+					Argt.push_back(x.ty->codegen());
+				}
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(Proto.retType->codegen(), Argt, false);
 			currentFunction =
@@ -1927,7 +1975,7 @@ namespace jimpilier
 			{
 				Arg.setName(Argnames[Idx++]);
 			}
-			//end of segment stolen from Proto.codegen()
+			// end of segment stolen from Proto.codegen()
 
 			if (!currentFunction)
 			{
@@ -1947,6 +1995,11 @@ namespace jimpilier
 			// Record the function arguments in the Named Values map.
 			for (auto &Arg : currentFunction->args())
 			{
+				//TODO: Implement reference types; this is a bandaid solution for the time being
+				if(Arg.getName() == "this" && Arg.getType()->isPointerTy()) {
+					AliasMgr["this"] = &Arg;	
+					continue;
+				} 
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
@@ -1962,7 +2015,8 @@ namespace jimpilier
 				verifyFunction(*currentFunction);
 				if (DEBUGGING)
 					std::cout << "//end of " << Proto.getName() << endl;
-					operators[argtypes[0]][oper][argtypes[1]] = currentFunction;
+				std::cout << AliasMgr.getTypeName(argtypes[0]) << oper <<AliasMgr.getTypeName(argtypes[1]) <<endl; 
+				operators[argtypes[0]][oper][argtypes[1]] = currentFunction;
 				// remove the arguments now that they're out of scope
 				for (auto &Arg : currentFunction->args())
 				{
@@ -1980,7 +2034,6 @@ namespace jimpilier
 			return operators[argtypes[0]][oper][argtypes[1]];
 		}
 	};
-
 
 	// TODO: Implement this fully with the new typing system
 	//  class ArrayOfTypeExpr : public TypeExpr{
@@ -2001,7 +2054,7 @@ namespace jimpilier
 	}
 	// <-- BEGINNING OF AST GENERATING FUNCTIONS -->
 
-	std::vector<Variable> functionArgList(Stack<Token> &tokens); 
+	std::vector<Variable> functionArgList(Stack<Token> &tokens);
 	std::map<KeyToken, bool> variableModStmt(Stack<Token> &tokens);
 	std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, std::unique_ptr<TypeExpr> &dtype, std::string name, std::string objBase = "");
 	std::unique_ptr<ExprAST> analyzeFile(string fileDir);
@@ -2012,7 +2065,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> listExpr(Stack<Token> &tokens);
 	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> LHS = NULL);
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens);
-	void functionArg(Stack<Token> &tokens, Variable& out);
+	void functionArg(Stack<Token> &tokens, Variable &out);
 
 	// TODO: Move this function into driver code maybe ???
 	/**
@@ -2692,79 +2745,120 @@ namespace jimpilier
 		return NULL;
 	}
 
-	void thisOrFunctionArg(Stack<Token> &tokens, Variable& out, std::string parentTy = ""){
-		if(tokens.peek() == IDENT && tokens.peek().lex == "this"){ 
-			std::string thisval = "this"; 
-			std::unique_ptr<TypeExpr> nullty = NULL; 
-			out.name = thisval; 
-			out.ty = parentTy == "" ? NULL : std::make_unique<StructTypeExpr>(parentTy); 
-			tokens.next();  
-			return; 
+	void thisOrFunctionArg(Stack<Token> &tokens, Variable &out, std::string parentTy = "")
+	{
+		if (tokens.peek() == IDENT && tokens.peek().lex == "this")
+		{
+			std::string thisval = "this";
+			std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parentTy);
+			ty = std::make_unique<PointerToTypeExpr>(ty); 
+			out.name = thisval;
+			out.ty = parentTy == "" ? NULL : std::move(ty);
+			tokens.next();
+			return;
 		}
-		functionArg(tokens, out); 
+		functionArg(tokens, out);
 	}
 
-	std::unique_ptr<ExprAST> operatorOverloadStmt(Stack<Token> &tokens, std::unique_ptr<TypeExpr> ty, std::string parentName = ""){
-		if(tokens.next() != OPERATOR){
-			return NULL; 
+	std::unique_ptr<ExprAST> operatorOverloadStmt(Stack<Token> &tokens, std::unique_ptr<TypeExpr> ty, std::string parentName = "")
+	{
+		if (tokens.next() != OPERATOR)
+		{
+			return NULL;
 		}
-		bool hasParen = false; 
-		if(tokens.peek() == LPAREN) hasParen = tokens.next() == LPAREN; 
-		Variable placeholder; 
-		std::vector<Variable> vars; 
-		if(tokens.peek() == IDENT || tokens.peek().token >= INT){
-			thisOrFunctionArg(tokens, placeholder, parentName); 
-			if(placeholder.ty == NULL){
-				logError("Unknown type defined in operator:", tokens.peek()); 
-				return NULL; 
+		bool hasParen = false;
+		if (tokens.peek() == LPAREN)
+			hasParen = tokens.next() == LPAREN;
+		Variable placeholder;
+		std::vector<Variable> vars;
+		if (tokens.peek() == IDENT || tokens.peek().token >= INT)
+		{
+			thisOrFunctionArg(tokens, placeholder, parentName);
+			if (placeholder.ty == NULL)
+			{
+				logError("Unknown type defined in operator:", tokens.peek());
+				return NULL;
 			}
 			vars.push_back(std::move(placeholder));
 		}
-		
-		Token op = tokens.next(); 
-		switch(op.token){
-			case PLUS:
-			case MINUS:
-			case MULT:
-			case DIV: 
-			case POWERTO: 
-			case LEFTOVER:
-			case EQUALCMP: 
-			case NOTEQUAL: 
-			case GREATER:
-			case GREATEREQUALS: 
-			case LESS:
-			case LESSEQUALS:
-			case INSERTION:
-			case REMOVAL:  
-			case OPENSQUARE:
+		bool unary = false; 
+		Token op = tokens.next();
+		switch (op.token)
+		{
+		case PLUS:
+		case MINUS:
+		case MULT:
+		case DIV:
+		case POWERTO:
+		case LEFTOVER:
+		case EQUALCMP:
+		case NOTEQUAL:
+		case GREATER:
+		case GREATEREQUALS:
+		case LESS:
+		case LESSEQUALS:
+		case INSERTION:
+		case REMOVAL:
+		case OPENSQUARE:
 			thisOrFunctionArg(tokens, placeholder, parentName);
-			vars.push_back(std::move(placeholder));   
-			if(op == OPENSQUARE && tokens.peek() != CLOSESQUARE){
-				errored = true; 
-				logError("Expected a closing square brace at this token:", tokens.currentToken()); 
-				return NULL; 
-			}else if(op == OPENSQUARE && tokens.peek() == CLOSESQUARE){ tokens.next(); }
+			vars.push_back(std::move(placeholder));
+			if (op == OPENSQUARE && tokens.peek() != CLOSESQUARE)
+			{
+				errored = true;
+				logError("Expected a closing square brace at this token:", tokens.currentToken());
+				return NULL;
+			}
+			else if (op == OPENSQUARE && tokens.peek() == CLOSESQUARE)
+			{
+				tokens.next();
+			}
 			break;
-			//case PERIOD: 
-			default: 
-				errored = true; 
-				logError("Unknown operator:", tokens.currentToken()); 
-				return NULL; 
-			case NOT: 
+		// case PERIOD:
+		default:
+			errored = true;
+			logError("Unknown operator:", tokens.currentToken());
+			return NULL;
+		case NOT:
+		case POINTERTO:
+		case REFRENCETO:
+		case PRINT:
+		case PRINTLN:
+			unary = true; 
+			placeholder.ty = NULL; 
+			vars.push_back(std::move(placeholder));
+			thisOrFunctionArg(tokens, placeholder, parentName);
+			vars.push_back(std::move(placeholder));
+			break;
 			case INCREMENT:
 			case DECREMENT:
-				Variable placeholder; 
-				thisOrFunctionArg(tokens, placeholder, parentName); 
-				vars.push_back(std::move(placeholder)); 
-				break;
-		} 
-		if(hasParen && tokens.peek() != RPAREN){
-			logError("Missing closing parenthesis after this token:", tokens.currentToken()); 
+			if(vars.size() == 0){
+				placeholder.ty = NULL; 
+				vars.push_back(std::move(placeholder));
+			}else if(vars.size() == 1){
+				placeholder.ty = NULL; 
+				vars.push_back(std::move(placeholder));
+				break; 
+			}
+			thisOrFunctionArg(tokens, placeholder, parentName);
+			vars.push_back(std::move(placeholder));
+			if(vars.size() == 1){
+				placeholder.ty = NULL; 
+				vars.push_back(std::move(placeholder));
+				break; 
+			}
+			break; 
+		}
+		if (hasParen && tokens.peek() != RPAREN)
+		{
+			logError("Missing closing parenthesis after this token:", tokens.currentToken());
 			return NULL;
-		}else if (hasParen) tokens.next(); 
-		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
-		return std::make_unique<OperatorOverloadAST>(op.lex, ty,vars, (body)); 
+		}
+		else if (hasParen)
+			tokens.next();
+		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+		std::unique_ptr<ExprAST> retval;
+		retval = std::make_unique<OperatorOverloadAST>(op.lex, ty, vars, (body), unary);
+		return retval;
 	}
 
 	std::vector<std::unique_ptr<TypeExpr>> templateObjNames(Stack<Token> &tokens)
@@ -2797,7 +2891,7 @@ namespace jimpilier
 	{
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> objVars;
 		std::vector<std::unique_ptr<ExprAST>> objFunctions;
-		std::vector<std::unique_ptr<ExprAST>> overloadedOperators; 
+		std::vector<std::unique_ptr<ExprAST>> overloadedOperators;
 		if (tokens.peek() == OBJECT)
 			tokens.next();
 		if (tokens.peek() != IDENT)
@@ -2808,7 +2902,7 @@ namespace jimpilier
 		std::string name = tokens.next().lex;
 		std::vector<std::unique_ptr<TypeExpr>> templates = std::move(templateObjNames(tokens));
 		ObjectHeaderExpr objName(name);
-		objName.codegen(); 
+		objName.codegen();
 		if (tokens.next() != OPENCURL)
 		{
 			logError("Curly braces are required for object declarations. Please put a brace before this token:", tokens.currentToken());
@@ -2829,11 +2923,13 @@ namespace jimpilier
 				return NULL;
 			}
 			Token name = tokens.peek();
-			if(name == OPERATOR){
+			if (name == OPERATOR)
+			{
 				std::unique_ptr<ExprAST> op = std::move(operatorOverloadStmt(tokens, std::move(ty), objName.name));
-				overloadedOperators.push_back(std::move(op));  
+				overloadedOperators.push_back(std::move(op));
 				continue;
-			}else if (name != IDENT)
+			}
+			else if (name != IDENT)
 			{
 				logError("Expected identifier at this token:", name);
 				return NULL;
@@ -2975,9 +3071,11 @@ namespace jimpilier
 		do
 		{
 			Token name = tokens.peek();
-			if(name == OPERATOR){
-				return operatorOverloadStmt(tokens, std::move(dtype)); 
-			}else if (name != IDENT)
+			if (name == OPERATOR)
+			{
+				return operatorOverloadStmt(tokens, std::move(dtype));
+			}
+			else if (name != IDENT)
 			{
 				tokens.go_back();
 				return std::move(assignStmt(tokens)); // Does this case ever really come up? I gotta double check C's EBNF
@@ -2994,42 +3092,44 @@ namespace jimpilier
 		return std::make_unique<CodeBlockAST>(vars);
 	}
 
-/**
- * Parses a single function argument 
- * Function arguments are approximately equal to a data type declaration followed by an identifier
- */
-	void functionArg(Stack<Token> &tokens, Variable& out){
-			std::unique_ptr<TypeExpr> dtype = std::move(jimpilier::variableTypeStmt(tokens));
-			if (dtype == NULL)
-			{
-				logError("Unknown type when declaring a variable:", tokens.peek()); 
-				out.name = "ERROR";
-				out.ty = NULL;   
-				return; 
-			}
-			else if (tokens.peek() != IDENT)
-			{
-				logError("Expected identifier after variable type here:", tokens.currentToken()); 
-				dtype.release();
-				dtype = nullptr;  
-				out.ty = nullptr; 
-				out.name = "ERROR";  
-			}
-			Token t = tokens.next();
-			out.name = t.lex; 
-			out.ty = std::move(dtype);  
+	/**
+	 * Parses a single function argument
+	 * Function arguments are approximately equal to a data type declaration followed by an identifier
+	 */
+	void functionArg(Stack<Token> &tokens, Variable &out)
+	{
+		std::unique_ptr<TypeExpr> dtype = std::move(jimpilier::variableTypeStmt(tokens));
+		if (dtype == NULL)
+		{
+			logError("Unknown type when declaring a variable:", tokens.peek());
+			out.name = "ERROR";
+			out.ty = NULL;
+			return;
+		}
+		else if (tokens.peek() != IDENT)
+		{
+			logError("Expected identifier after variable type here:", tokens.currentToken());
+			dtype.release();
+			dtype = nullptr;
+			out.ty = nullptr;
+			out.name = "ERROR";
+		}
+		Token t = tokens.next();
+		out.name = t.lex;
+		out.ty = std::move(dtype);
 	}
 
 	std::vector<Variable> functionArgList(Stack<Token> &tokens)
 	{
 		std::vector<Variable> args;
-		if(tokens.peek() != RPAREN)do
-		{
-			Variable v; 
-			functionArg(tokens, v); 
-			if(v.ty != nullptr)
-				args.push_back(std::move(v));
-		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
+		if (tokens.peek() != RPAREN)
+			do
+			{
+				Variable v;
+				functionArg(tokens, v);
+				if (v.ty != nullptr)
+					args.push_back(std::move(v));
+			} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 		return args;
 	}
 
@@ -3318,6 +3418,17 @@ namespace jimpilier
 		return std::make_unique<PrintStmtAST>(args, isline);
 	}
 
+	std::unique_ptr<ExprAST> throwStmt(Stack<Token> &tokens)
+	{
+		if (tokens.next() != THROW)
+		{
+			logError("No throw statement found", tokens.currentToken());
+			return NULL;
+		}
+		std::unique_ptr<ExprAST> obj = heapStmt(tokens);
+		return std::make_unique<ThrowStmtAST>(obj);
+	}
+
 	/**
 	 * @brief Get the next Valid Stmt in the code file provided.
 	 *
@@ -3367,6 +3478,8 @@ namespace jimpilier
 		case CONTINUE:
 			tokens.next();
 			return std::make_unique<ContinueExprAST>();
+		case THROW:
+			return std::move(jimpilier::throwStmt(tokens));
 		default:
 			return std::move(declareStmt(tokens));
 		}

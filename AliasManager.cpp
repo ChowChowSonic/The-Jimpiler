@@ -57,6 +57,7 @@ class ObjectAliasManager {
 		FunctionAliasManager functions; 
 		std::vector<ObjectMember> members;
 		llvm::Type* ptr; 
+		llvm::Function* destructor;
 		Object(){
 			ptr = NULL; 
 		}
@@ -127,7 +128,7 @@ class ObjectAliasManager {
 		for(int i = 0; i < memberTypes.size();i++)
 			structTypes[alias].members.push_back({memberNames[i], memberTypes[i], i}); 
 	}
-	
+
 	bool addObject(std::string alias, llvm::Type* objType){
 		if(structTypes[alias].ptr != NULL){ 
 			return false; 
