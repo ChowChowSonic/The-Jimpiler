@@ -140,6 +140,18 @@ namespace jimpilier
 		}
 	};
 
+	class VoidTypeExpr : public TypeExpr
+	{
+	public:
+		VoidTypeExpr() {}
+		llvm::Type *codegen(bool testforval = false) { return llvm::Type::getVoidTy(*ctxt); };
+		std::unique_ptr<TypeExpr> clone()
+		{
+			return std::unique_ptr<TypeExpr>(new VoidTypeExpr());
+		}
+	};
+
+
 	class TemplateTypeExpr : public TypeExpr
 	{
 		std::string name;
@@ -714,7 +726,13 @@ namespace jimpilier
 				errored = true;
 				return NULL;
 			}
-
+			std::vector<llvm::Type*> argstmp; argstmp.push_back(deletedthing->getType()); 
+			std::string nametmp = "destructor@"+AliasMgr.objects.getObjectName(deletedthing->getType()->getContainedType(0)); 
+			llvm::Function* destruct = AliasMgr.functions.getFunction(nametmp, argstmp); 
+			std::cout << AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr) <<endl; 
+			if(destruct != NULL) {
+				builder->CreateCall(destruct, {deletedthing}); 
+			}
 			deletedthing = builder->CreateBitCast(deletedthing, llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp");
 			builder->CreateCall((llvm::Function *)freefunc, deletedthing, "freedValue");
 			return NULL;
@@ -871,14 +889,14 @@ namespace jimpilier
 		{
 			if (DEBUGGING)
 				std::cout << "return ";
+			if(ret == NULL) return builder->CreateRetVoid(); 
 			llvm::Value *retval = ret->codegen();
 			if (retval->getType() != currentFunction->getReturnType())
 			{
 				// builder->CreateCast() //Add type casting here
 			}
-			if (retval == NULL)
-				return NULL;
-			return builder->CreateRet(retval);
+			
+			return builder->CreateRet(retval); 
 		}
 	};
 
@@ -1688,7 +1706,7 @@ namespace jimpilier
 				llvm::FunctionType::get(argtypes[0], argtypes, false);
 			llvm::Function *lastfunc = currentFunction;
 			currentFunction =
-				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName + "_constructor", GlobalVarsAndFunctions.get());
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName + "@constructor", GlobalVarsAndFunctions.get());
 			llvm::BasicBlock *entry = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
 			builder->SetInsertPoint(entry);
 
@@ -1754,11 +1772,11 @@ namespace jimpilier
 		ObjectHeaderExpr base;
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> vars;
 		std::vector<std::unique_ptr<ExprAST>> functions, ops;
-
+		std::unique_ptr<ExprAST> destruct; 
 	public:
-		ObjectExprAST(ObjectHeaderExpr name,
+		ObjectExprAST(ObjectHeaderExpr name, 
 					  std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> &varArg,
-					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)){};
+					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist, std::unique_ptr<ExprAST> &destro) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)), destruct(std::move(destro)){};
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
@@ -1779,6 +1797,9 @@ namespace jimpilier
 				{
 					func->codegen();
 				}
+			if(destruct != NULL) {
+				AliasMgr.objects.setObjectDestructor(base.name, (llvm::Function*)destruct->codegen()); 
+			}
 			if (!functions.empty())
 				for (auto &func : functions)
 				{
@@ -2728,24 +2749,12 @@ namespace jimpilier
 	 * @param tokens
 	 * @return std::unique_ptr<ExprAST>
 	 */
-	std::unique_ptr<ExprAST> destruct(Stack<Token> &tokens)
+	std::unique_ptr<ExprAST> destruct(Stack<Token> &tokens, std::string parentType)
 	{
 		Token t = tokens.next();
-		if (t != LPAREN)
-		{
-			tokens.go_back(1);
-			logError("Expecting a left parenthesis at this token:", t);
-			return NULL;
-		}
-		t = tokens.next();
-		if (t != RPAREN)
-		{
-			tokens.go_back(1);
-			logError("Expecting a right parenthesis at this token:", t);
-			return NULL;
-		}
-		logError("Error in destruct()", t);
-		return NULL;
+		std::unique_ptr<TypeExpr> v =std::move(std::make_unique<VoidTypeExpr>()); 
+		std::vector<Variable> list;
+		return std::make_unique<FunctionAST>(std::make_unique<PrototypeAST>("destructor@"+parentType, list, v, parentType), std::move(codeBlockExpr(tokens)), parentType);
 	}
 
 	void thisOrFunctionArg(Stack<Token> &tokens, Variable &out, std::string parentTy = "")
@@ -2895,6 +2904,7 @@ namespace jimpilier
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> objVars;
 		std::vector<std::unique_ptr<ExprAST>> objFunctions;
 		std::vector<std::unique_ptr<ExprAST>> overloadedOperators;
+		std::unique_ptr<ExprAST> destructor = NULL;
 		if (tokens.peek() == OBJECT)
 			tokens.next();
 		if (tokens.peek() != IDENT)
@@ -2918,6 +2928,9 @@ namespace jimpilier
 				std::unique_ptr<ExprAST> constructorast = std::move(construct(tokens, objName.name));
 				objFunctions.push_back(std::move(constructorast));
 				continue;
+			}else if(tokens.peek() == DESTRUCTOR){
+				destructor = std::move(destruct(tokens, objName.name)); 
+				continue; 
 			}
 			std::unique_ptr<TypeExpr> ty = std::move(variableTypeStmt(tokens));
 			if (ty == NULL)
@@ -2949,7 +2962,7 @@ namespace jimpilier
 			objVars.push_back(std::pair<std::string, std::unique_ptr<TypeExpr>>(name.lex, std::move(ty)));
 		}
 		tokens.next();
-		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions, overloadedOperators);
+		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions, overloadedOperators, destructor);
 	}
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens)
 	{
@@ -3394,11 +3407,9 @@ namespace jimpilier
 			logError("Somehow was looking for a return statement when there was no return. Wtf.", tokens.currentToken());
 			return NULL;
 		}
-		std::unique_ptr<ExprAST> val = std::move(jimpilier::listExpr(tokens));
-		if (val == NULL)
-		{
-			return NULL;
-		}
+		std::unique_ptr<ExprAST> val = NULL; 
+		if(!(tokens.peek() == SEMICOL || tokens.peek() == CLOSECURL))
+			val = std::move(jimpilier::listExpr(tokens));
 		return std::make_unique<RetStmtAST>(val);
 	}
 

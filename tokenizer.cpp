@@ -20,7 +20,7 @@ map<string, KeyToken> keywords = {
     {"", IDENT}, {"in", IN}, {"and",AND}, {"or",OR}, {"true", TRU}, {"false", FALS}, {"not", NOT},{"import", IMPORT},
     {"if", IF}, {"else", ELSE}, {"for", FOR}, {"do", DO},{"while", WHILE}, {"case", CASE}, {"switch", SWITCH}, {"break", BREAK}, {"continue", CONTINUE}, {"default", DEFAULT}, {"return", RET}, {"print",PRINT}, {"println", PRINTLN},
     {"object", OBJECT}, {"constructor", CONSTRUCTOR}, {"destructor", DESTRUCTOR}, {"as", AS}, {"sizeof", SIZEOF}, {"heap", HEAP}, {"delete", DEL}, 
-    {"const", CONST}, {"singular", SINGULAR}, {"volatile", VOLATILE}, {"public", PUBLIC}, {"private", PRIVATE}, {"protected", PROTECTED}, {"operator", OPERATOR}, {"throw", THROW}
+    {"const", CONST}, {"singular", SINGULAR}, {"volatile", VOLATILE}, {"public", PUBLIC}, {"private", PRIVATE}, {"protected", PROTECTED}, {"operator", OPERATOR}, {"throw", THROW}, 
     {"int", INT}, {"short", SHORT}, {"long", LONG}, {"pointer", POINTER}, {"ptr", POINTER}, {"float", FLOAT}, {"double", DOUBLE}, {"string", STRING}, {"bool", BOOL}, {"char", CHAR}, {"byte", BYTE}, {"auto", AUTO}
 };
 
@@ -31,7 +31,7 @@ string keytokens[] {
     "PLUS","MINUS","MULT","DIV","LEFTOVER","POWERTO","POINTERTO","REFRENCETO", "AS", "SIZEOF", "HEAP", "DELETE", 
     "IF","ELSE","FOR","DO","WHILE","CASE","SWITCH", "BREAK", "CONTINUE", "DEFAULT", "RET", "PRINT", "PRINTLN",
     "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL", "COLON", "PERIOD",
-    "CONST","SINGULAR", "VOLATILE", "PUBLIC","PRIVATE","PROTECTED","OPERATOR", "THROW"
+    "CONST","SINGULAR", "VOLATILE", "PUBLIC","PRIVATE","PROTECTED","OPERATOR", "THROW", 
     "SCONST", "NUMCONST",
     "INT","SHORT","LONG","POINTER","FLOAT","DOUBLE","STRING","BOOL","CHAR","BYTE","AUTO"
 }; 
