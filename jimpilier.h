@@ -1185,9 +1185,12 @@ namespace jimpilier
 															llvm::FunctionType::get(doublety, {doublety, doublety}, false));
 			}
 			llvm::Function *powfunc = GlobalVarsAndFunctions->getFunction("pow");
+			
 			switch (lhs->getType()->getTypeID())
 			{
 			case llvm::Type::IntegerTyID:
+				//TODO: Create type alignment system
+				if(mod) return builder->CreateSRem(lhs, rhs, "modtmp"); 
 				lhs = builder->CreateCast(llvm::Instruction::CastOps::SIToFP, lhs, llvm::Type::getDoubleTy(*ctxt), "floatConversionTmp");
 				if (rhs->getType()->isIntegerTy())
 				{
@@ -1216,7 +1219,7 @@ namespace jimpilier
 				{
 					rhs = builder->CreateFPExt(rhs, doublety, "floatExtendTmp");
 				}
-				return builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
+				return mod? builder->CreateFRem(lhs, rhs) : builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
 			}
 			default:
 				if (operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()] == nullptr)
