@@ -45,6 +45,9 @@ namespace jimpilier
 		virtual ~TypeExpr(){};
 		virtual llvm::Type *codegen(bool testforval = false) = 0;
 		virtual std::unique_ptr<TypeExpr> clone() = 0;
+		virtual bool isReference(){
+			return false; 
+		}
 	};
 
 	class Variable
@@ -203,6 +206,28 @@ namespace jimpilier
 		{
 			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone());
 			return std::make_unique<PointerToTypeExpr>(encasedType);
+		}
+	};
+
+	class ReferenceToTypeExpr : public TypeExpr
+	{
+		std::unique_ptr<TypeExpr> ty;
+
+	public:
+		ReferenceToTypeExpr(std::unique_ptr<TypeExpr> &type) : ty(std::move(type)) {}
+		llvm::Type *codegen(bool testforval = false)
+		{
+			llvm::Type *t = ty->codegen();
+			return t == NULL ? NULL : t->getPointerTo();
+		}
+		std::unique_ptr<TypeExpr> clone()
+		{
+			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone());
+			return std::make_unique<ReferenceToTypeExpr>(encasedType);
+		}
+
+		bool isReference(){
+			return true; 
 		}
 	};
 
@@ -2763,7 +2788,7 @@ namespace jimpilier
 		{
 			std::string thisval = "this";
 			std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parentTy);
-			ty = std::make_unique<PointerToTypeExpr>(ty); 
+			ty = std::make_unique<PointerToTypeExpr>(ty); //TODO Implement references
 			out.name = thisval;
 			out.ty = parentTy == "" ? NULL : std::move(ty);
 			tokens.next();
@@ -3013,6 +3038,7 @@ namespace jimpilier
 			tokens.next();
 			type = std::make_unique<PointerToTypeExpr>(type);
 		}
+		if(tokens.peek() == REFRENCETO) type = std::make_unique<ReferenceToTypeExpr>(type); 
 		return type;
 	}
 	/**
