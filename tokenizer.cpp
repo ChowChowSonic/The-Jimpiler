@@ -1,3 +1,5 @@
+#ifndef tokenizer
+#define tokenizer
 //#include <map>
 //#include <string> 
 //#include <iostream>
@@ -235,3 +237,4 @@ Token getNextToken(istream & s, int & line){
     }
     return Token(ERR, string("ERROR"), -1);
 }
+#endif

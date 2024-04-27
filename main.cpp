@@ -12,11 +12,6 @@ g++ unlinked_exe $(llvm-config --ldflags --libs) -lpthread -o jmb && ./jmb
 #include <string>
 #include <algorithm>
 #include <filesystem>
-#include <stack>
-#include "tokenizer.cpp"
-#include "Scope.cpp"
-#include "Stack.cpp"
-#include "analyzer.cpp"
 #include "jimpilier.h"
 
 using namespace std; 

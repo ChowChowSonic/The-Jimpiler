@@ -1,4 +1,6 @@
-
+#ifndef jimstack
+#define jimstack
+using namespace std; 
 template <typename T>
 /**
  * @brief A read-only version of the stack that allows the user to go back any amount. 
@@ -85,3 +87,4 @@ class Stack{
         if(index < 0) index = 0; 
     }
 };
+#endif

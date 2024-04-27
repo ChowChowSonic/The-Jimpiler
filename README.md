@@ -24,5 +24,5 @@ Here is the shell command that I use to test any code I write:
 I plan to have Jimbo files use a `.jmb` file extension, but this is currently low on my priority list. 
 
 ## Check out my progress
-Right now my main priority is getting the language off the ground (When i'm not in class); once I do that, I plan of updating the file setup to be more easy to navigate and clean. Until then, `jimpilier.h` will be a big monolith of a file for anything compiler related. 
-I have various TODO markers spread out throughout `jimpilier.h` reminding me that I still have a lot of progress to make. Feel free to take a look through and see my progress! 
+Right now my main priority is getting the language off the ground (When i'm not in class); `TypeExpr.cpp` contains the type & Variable objects, `globals.cpp` contains, well, globals; `ExprAST.cpp` contains the IR generating abstract syntax tree (& related) objects, while `jimpilier.h` contains the parsing code. 
+I have various TODO markers spread out throughout `jimpilier.h` and `ExprAST.cpp` reminding me that I still have a lot of progress to make. Feel free to take a look through and see my progress! 

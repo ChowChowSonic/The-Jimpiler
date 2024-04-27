@@ -1,6 +1,11 @@
+
 #include <map>
 #include "llvm/IR/Function.h"
 
+#ifndef aliasmgr
+#define aliasmgr
+#include "globals.cpp"
+namespace jimpilier {
 class FunctionHeader{
 	public:
 		std::vector<llvm::Type *> args;
@@ -282,3 +287,5 @@ public:
 			return ret; 
 	}
 };
+}
+#endif
