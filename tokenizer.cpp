@@ -1,8 +1,9 @@
 #ifndef tokenizer
 #define tokenizer
-//#include <map>
-//#include <string> 
-//#include <iostream>
+#include <map>
+#include <string> 
+#include <iostream>
+#include <iomanip>
 //Tokenizer of the compilier
 using namespace std; 
 

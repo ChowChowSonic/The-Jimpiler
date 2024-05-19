@@ -145,13 +145,9 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen(false);
-			if(v->getType()->isPointerTy() && v->getType()->getContainedType(0)->isStructTy()){
-				if(operators[prefix? NULL: v->getType()][decrement ? "--" : "++"][prefix? v->getType():NULL] == NULL){
-					errored = true; 
-					std::cout << "Unknown operator " << (decrement? "--":"++") << " with type " << AliasMgr.getTypeName(v->getType()) << std::endl;  
-					return NULL; 
-				}
+			if(operators[prefix? NULL: v->getType()][decrement ? "--" : "++"][prefix? v->getType():NULL] != NULL){
 				return builder->CreateCall(operators[prefix? NULL:v->getType()][decrement ? "--" : "++"][prefix? v->getType():NULL], {v}, "IncDecCallTmp");
+			
 			}
 			if (prefix)
 			{
@@ -179,6 +175,9 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen();
+			if(operators[NULL]["!"][v->getType()] != NULL)
+				return builder->CreateCall(operators[NULL]["!"][v->getType()], {v}, "notcalltmp"); 
+
 			if (v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
 				return builder->CreateNot(v, "negationtmp");
 			if (v->getType()->isStructTy())
@@ -211,6 +210,8 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen(autoDeref);
+			if(operators[NULL]["@"][v->getType()] != NULL)
+				return builder->CreateCall(operators[NULL]["@"][v->getType()], {v}, "derefcalltmp"); 
 			if (v != NULL && v->getType()->isPointerTy())
 				return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
 			else
@@ -230,14 +231,8 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
-			if (bsval->getType()->isStructTy())
+			if (operators[bsval->getType()]["["][offv->getType()] == NULL)
 			{
-				if (operators[bsval->getType()]["["][offv->getType()] == NULL)
-				{
-					std::cout << "Undeclared [] operator: " << AliasMgr.getTypeName(bsval->getType()) << "[" << AliasMgr.getTypeName(offv->getType()) << "]" << std::endl;
-					errored = true;
-					return NULL;
-				}
 				return builder->CreateCall(operators[bsval->getType()]["["][offv->getType()], {bsval, offv}, "operator[]call");
 			}
 			else if (!bsval->getType()->isPointerTy())
@@ -272,6 +267,11 @@ namespace jimpilier{
 			llvm::Type *to = this->totype->codegen();
 			llvm::Value *init = from->codegen();
 			llvm::Instruction::CastOps op;
+
+			if(operators[init->getType()]["AS"][to] != NULL){
+				return builder->CreateCall(operators[init->getType()]["AS"][to], {init}, "typecasttmp");
+			}
+
 			switch (init->getType()->getTypeID())
 			{
 			case (llvm::Type::IntegerTyID):
@@ -532,7 +532,8 @@ namespace jimpilier{
 		{
 			llvm::Value *freefunc = GlobalVarsAndFunctions->getOrInsertFunction("free", {llvm::Type::getInt8PtrTy(*ctxt)}, llvm::Type::getInt8PtrTy(*ctxt)).getCallee();
 			llvm::Value *deletedthing = val->codegen(true);
-
+			if(operators[NULL]["DELETE"][deletedthing->getType()] != NULL)
+				return builder->CreateCall(operators[NULL]["DELETE"][deletedthing->getType()], {deletedthing}, "deletecalltmp"); 
 			if (!deletedthing->getType()->isPointerTy())
 			{
 				std::cout << "Remember: Objects on the stack are accessed directly, you only need to delete pointers that point to the heap" << std::endl;
@@ -777,6 +778,8 @@ namespace jimpilier{
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
+			if (operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()] != nullptr)
+				return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
 			{
 				switch (lhs->getType()->getTypeID())
@@ -804,13 +807,9 @@ namespace jimpilier{
 					return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp");
 				}
 				default:
-					if (operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()] == nullptr)
-					{
-						errored = true;
-						std::cout << "Operator " << (notval ? "!=" : "==") << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
-						return NULL;
-					}
-					return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
+					errored = true;
+					std::cout << "Operator " << (notval ? "!=" : "==") << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+					return NULL;
 				}
 			}
 			else
@@ -836,6 +835,10 @@ namespace jimpilier{
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
+
+			if (operators[lhs->getType()][div ? "/" : "*"][rhs->getType()] != nullptr)
+				return builder->CreateCall(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
+
 			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
 			{
 				switch (lhs->getType()->getTypeID())
@@ -863,13 +866,9 @@ namespace jimpilier{
 					return div ? builder->CreateFDiv(lhs, rhs, "divtmp") : builder->CreateFMul(lhs, rhs, "multmp");
 				}
 				default:
-					if (operators[lhs->getType()][div ? "/" : "*"][rhs->getType()] == nullptr)
-					{
 						errored = true;
 						std::cout << "Operator " << (div ? '/' : '*') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
 						return NULL;
-					}
-					return builder->CreateCall(operators[lhs->getType()][div ? "/" : "*"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 				}
 			}
 			else
@@ -895,6 +894,10 @@ namespace jimpilier{
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
+
+			if (operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()] != nullptr)
+				return builder->CreateCall(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
+
 			switch (lhs->getType()->getTypeID())
 			{
 			case llvm::Type::IntegerTyID:
@@ -920,17 +923,10 @@ namespace jimpilier{
 				return sub ? builder->CreateFSub(lhs, rhs, "subtmp") : builder->CreateFAdd(lhs, rhs, "addtmp");
 			}
 			default:
-				if (operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()] == nullptr)
-				{
 					errored = true;
 					std::cout << "Operator " << (sub ? '-' : '+') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
 					return NULL;
-				}
-				return builder->CreateCall(operators[lhs->getType()][sub ? "-" : "+"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 			}
-			errored = true;
-			std::cout << "Error when attempting to " << (sub ? "subtract" : "add") << " two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
-			return NULL;
 		}
 	};
 
@@ -949,6 +945,10 @@ namespace jimpilier{
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
+			
+			if (operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()] != nullptr)
+				return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
+
 			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
 			{
 				switch (lhs->getType()->getTypeID())
@@ -976,13 +976,9 @@ namespace jimpilier{
 					return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
 				}
 				default:
-					if (operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()] == nullptr)
-					{
 						errored = true;
 						std::cout << "Operator " << (sub ? '<' : '>') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
 						return NULL;
-					}
-					return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 				}
 			}
 			else
@@ -1011,6 +1007,10 @@ namespace jimpilier{
 			llvm::Type *doublety = llvm::Type::getDoubleTy(*ctxt);
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
+
+			if (operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()] != nullptr)
+				return builder->CreateCall(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
+
 			if (!mod && (rhs->getType()->isFloatingPointTy() || rhs->getType()->isIntegerTy()))
 			{
 				GlobalVarsAndFunctions->getOrInsertFunction("pow",
@@ -1054,17 +1054,10 @@ namespace jimpilier{
 				return mod? builder->CreateFRem(lhs, rhs) : builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
 			}
 			default:
-				if (operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()] == nullptr)
-				{
 					errored = true;
 					std::cout << "Operator " << (mod ? '%' : '^') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
 					return NULL;
-				}
-				return builder->CreateCall(operators[lhs->getType()][mod ? "%" : "^"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 			}
-			errored = true;
-			std::cout << "Error when attempting to multiply two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
-			return NULL;
 		}
 	};
 
