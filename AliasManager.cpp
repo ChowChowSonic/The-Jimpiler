@@ -151,6 +151,8 @@ class ObjectAliasManager {
 	}
 }; 
 
+
+
 /**
  * @brief An all-in-one wrapper class that manages the frontend names/aliases of functions, variables and objects. 
  * Variables can be read & modified via the indexing operator (```AliasManager["name"]```). 
@@ -160,10 +162,16 @@ class ObjectAliasManager {
  */
 class AliasManager
 {
+	class CompileTimeVariable{
+		public:
+		llvm::Value* val = NULL; 
+		bool isRef = false; 
+	}; 
+
 public:
 	FunctionAliasManager functions; 
 	ObjectAliasManager objects; 
-	std::map<std::string, llvm::Value *> variables;
+	std::map<std::string, CompileTimeVariable> variables;
 	AliasManager() {}
 	/**
 	 * @brief Returns a refrence to a llvm::Value* that represents a named variable. The llvm::Value itself will
@@ -175,7 +183,7 @@ public:
 	 * @param alias 
 	 * @return a llvm::Value*& that refers to a named variable.  
 	 */
-	llvm::Value*& operator[](const std::string& alias){
+	CompileTimeVariable& operator[](const std::string& alias){
 		return variables[alias]; 
 	}
 	/**

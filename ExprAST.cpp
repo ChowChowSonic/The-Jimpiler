@@ -78,7 +78,7 @@ namespace jimpilier{
 		{
 			if (DEBUGGING)
 				std::cout << Name;
-			llvm::Value *V = AliasMgr[Name];
+			llvm::Value *V = AliasMgr[Name].val;
 			if (!V)
 			{
 				std::cout << "Unknown variable name: " << Name << std::endl;
@@ -104,7 +104,7 @@ namespace jimpilier{
 		{
 			llvm::Type *ty = this->type->codegen();
 			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
-			if (AliasMgr[name] != NULL)
+			if (AliasMgr[name].val != NULL)
 			{
 				std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." << std::endl;
 				std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" << std::endl;
@@ -112,16 +112,16 @@ namespace jimpilier{
 			if (currentFunction == NULL || currentFunction == STATIC)
 			{
 				GlobalVarsAndFunctions->getOrInsertGlobal(name, ty);
-				AliasMgr[name] = GlobalVarsAndFunctions->getNamedGlobal(name);
+				AliasMgr[name] = {(llvm::Value*)GlobalVarsAndFunctions->getNamedGlobal(name) , this->type->isReference()};
 				GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty));
 			}
 			else
 			{
-				AliasMgr[name] = (llvm::Value *)builder->CreateAlloca(ty, sizeval, name);
+				AliasMgr[name] = {(llvm::Value *)builder->CreateAlloca(ty, sizeval, name), this->type->isReference()};
 			}
 			if (!lateinit && currentFunction != NULL)
-				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name]);
-			return AliasMgr[name];
+				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name].val);
+			return AliasMgr[name].val;
 		}
 	};
 	// TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr != null (@objptr).func()"
@@ -544,7 +544,7 @@ namespace jimpilier{
 			std::vector<llvm::Type*> argstmp; argstmp.push_back(deletedthing->getType()); 
 			std::string nametmp = "destructor@"+AliasMgr.objects.getObjectName(deletedthing->getType()->getContainedType(0)); 
 			llvm::Function* destruct = AliasMgr.functions.getFunction(nametmp, argstmp); 
-			std::cout << AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr) << std::endl; 
+			//std::cout << AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr) << std::endl; 
 			if(destruct != NULL) {
 				builder->CreateCall(destruct, {deletedthing}); 
 			}
@@ -1501,9 +1501,9 @@ namespace jimpilier{
 		{
 			std::vector<std::string> argnames;
 			std::vector<llvm::Type *> argtypes;
-			llvm::StructType *retType = llvm::StructType::getTypeByName(*ctxt, objName); // I forget if this was intentional or legacy code
-			argnames.push_back("this");
-			argtypes.push_back(retType->getPointerTo());
+			std::unique_ptr<TypeExpr> retType = std::make_unique<StructTypeExpr>(objName);
+			retType = std::make_unique<ReferenceToTypeExpr>(retType); 
+			argslist.emplace(argslist.begin(), Variable("this", retType)); 
 			for (auto &x : argslist)
 			{
 				argnames.push_back(x.name);
@@ -1522,16 +1522,16 @@ namespace jimpilier{
 			{
 				std::string name = argnames[Idx++];
 				Arg.setName(name);
-				AliasMgr[name] = &Arg;
+				AliasMgr[name] = {&Arg, argslist[Idx-1].ty->isReference()};
 				if (Idx == 1)
 					continue;
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
-				AliasMgr[name] = storedvar;
+				AliasMgr[name] = {storedvar, argslist[Idx-1].ty->isReference()};
 			}
 
 			llvm::Value *RetVal = bod->codegen();
-			builder->CreateRet(AliasMgr["this"]);
+			builder->CreateRet(AliasMgr["this"].val);
 			// Validate the generated code, checking for consistency.
 			verifyFunction(*currentFunction);
 			if (DEBUGGING)
@@ -1539,7 +1539,7 @@ namespace jimpilier{
 			// remove the arguments now that they're out of scope
 			for (auto &Arg : currentFunction->args())
 			{
-				AliasMgr[std::string(Arg.getName())] = NULL;
+				AliasMgr[std::string(Arg.getName())] = {NULL, false};
 				// dtypes[std::string(Arg.getName())] = NULL;
 			}
 			// for (auto x : AliasMgr.structTypes[objName].members)
@@ -1718,13 +1718,13 @@ namespace jimpilier{
 				// TODO: Bandaid fix, find a better solution. This will cause bugs later
 				if (Arg.getArgNo() == 0 && Proto->parent != "")
 				{
-					AliasMgr[Arg.getName().str()] = &Arg;
+					AliasMgr[Arg.getName().str()] = {&Arg, true}; //TODO: Remove me upon implementation of references
 					continue;
 				}
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
-				AliasMgr[name] = storedvar;
+				AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()};
 				// dtypes[name] = Arg.getType();
 			}
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
@@ -1739,7 +1739,7 @@ namespace jimpilier{
 				// remove the arguments now that they're out of scope
 				for (auto &Arg : currentFunction->args())
 				{
-					AliasMgr[std::string(Arg.getName())] = NULL;
+					AliasMgr[std::string(Arg.getName())] = {NULL, false};
 					// dtypes[std::string(Arg.getName())] = NULL;
 				}
 			}
@@ -1761,12 +1761,11 @@ namespace jimpilier{
 		std::vector<Variable> args;
 		std::unique_ptr<TypeExpr> retType;
 		std::string name = "operator_", oper;
-		bool isUnary;
 
 	public:
 		OperatorOverloadAST(std::string &oper, std::unique_ptr<TypeExpr> &ret, std::vector<Variable> &args,
-							std::unique_ptr<ExprAST> &Body, bool isUnary = false)
-			: oper(oper), Body(std::move(Body)), args(std::move(args)), retType(std::move(ret)), isUnary(isUnary) {}
+							std::unique_ptr<ExprAST> &Body)
+			: oper(oper), Body(std::move(Body)), args(std::move(args)), retType(std::move(ret)) {}
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
@@ -1828,13 +1827,13 @@ namespace jimpilier{
 			{
 				//TODO: Implement reference types; this is a bandaid solution for the time being
 				if(Arg.getName() == "this" && Arg.getType()->isPointerTy()) {
-					AliasMgr["this"] = &Arg;	
+					AliasMgr["this"] = {&Arg, Proto.Args[Arg.getArgNo()].ty->isReference()};	
 					continue;
 				} 
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
-				AliasMgr[name] = storedvar;
+				AliasMgr[name] = {storedvar, Proto.Args[Arg.getArgNo()].ty->isReference()};
 				// dtypes[name] = Arg.getType();
 			}
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
@@ -1846,12 +1845,11 @@ namespace jimpilier{
 				verifyFunction(*currentFunction);
 				if (DEBUGGING)
 					std::cout << "//end of " << Proto.getName() << std::endl;
-				std::cout << AliasMgr.getTypeName(argtypes[0]) << oper <<AliasMgr.getTypeName(argtypes[1]) <<std::endl; 
 				operators[argtypes[0]][oper][argtypes[1]] = currentFunction;
 				// remove the arguments now that they're out of scope
 				for (auto &Arg : currentFunction->args())
 				{
-					AliasMgr[std::string(Arg.getName())] = NULL;
+					AliasMgr[std::string(Arg.getName())] = {NULL, false};
 					// dtypes[std::string(Arg.getName())] = NULL;
 				}
 			}

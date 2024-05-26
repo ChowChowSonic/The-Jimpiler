@@ -747,7 +747,6 @@ namespace jimpilier
 			}
 			vars.push_back(std::move(placeholder));
 		}
-		bool unary = false; 
 		Token op = tokens.next();
 		switch (op.token)
 		{
@@ -765,16 +764,19 @@ namespace jimpilier
 		case LESSEQUALS:
 		case INSERTION:
 		case REMOVAL:
+		thisOrFunctionArg(tokens, placeholder, parentName);
+		vars.push_back(std::move(placeholder));
+		break; 
 		case OPENSQUARE:
 			thisOrFunctionArg(tokens, placeholder, parentName);
 			vars.push_back(std::move(placeholder));
-			if (op == OPENSQUARE && tokens.peek() != CLOSESQUARE)
+			if (tokens.peek() != CLOSESQUARE)
 			{
 				errored = true;
 				logError("Expected a closing square brace at this token:", tokens.currentToken());
 				return NULL;
 			}
-			else if (op == OPENSQUARE && tokens.peek() == CLOSESQUARE)
+			else if (tokens.peek() == CLOSESQUARE)
 			{
 				tokens.next();
 			}
@@ -789,14 +791,13 @@ namespace jimpilier
 		case REFRENCETO:
 		case PRINT:
 		case PRINTLN:
-			unary = true; 
 			placeholder.ty = NULL; 
 			vars.push_back(std::move(placeholder));
 			thisOrFunctionArg(tokens, placeholder, parentName);
 			vars.push_back(std::move(placeholder));
 			break;
-			case INCREMENT:
-			case DECREMENT:
+		case INCREMENT:
+		case DECREMENT:
 			if(vars.size() == 0){
 				placeholder.ty = NULL; 
 				vars.push_back(std::move(placeholder));
@@ -823,7 +824,7 @@ namespace jimpilier
 			tokens.next();
 		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
 		std::unique_ptr<ExprAST> retval;
-		retval = std::make_unique<OperatorOverloadAST>(op.lex, ty, vars, (body), unary);
+		retval = std::make_unique<OperatorOverloadAST>(op.lex, ty, vars, (body));
 		return retval;
 	}
 
