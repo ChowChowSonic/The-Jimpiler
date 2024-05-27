@@ -79,6 +79,9 @@ namespace jimpilier{
 			if (DEBUGGING)
 				std::cout << Name;
 			llvm::Value *V = AliasMgr[Name].val;
+			if(V && AliasMgr[Name].isRef && currentFunction != NULL){ 
+				V = builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp"); 
+			}
 			if (!V)
 			{
 				std::cout << "Unknown variable name: " << Name << std::endl;
@@ -1321,7 +1324,7 @@ namespace jimpilier{
 				return NULL;
 			}
 
-			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
+			return CalleeF->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF, ArgsV) : builder->CreateCall(CalleeF, ArgsV, "calltmp");
 		}
 	};
 
@@ -1333,7 +1336,7 @@ namespace jimpilier{
 
 	public:
 		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset, bool deref = false) : base(std::move(base)), member(offset), dereferenceParent(deref) {}
-
+		//TODO: FIX ME
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			// return NULL;
@@ -1341,7 +1344,7 @@ namespace jimpilier{
 			auto returnTy = AliasMgr(lhs->getType()->getContainedType(0), member);
 			if (returnTy.index == -1)
 			{
-				std::cout << "No object member or function with name " << member << std::endl;
+				std::cout << "No object member or function with name '" << member << "' found in object of type: " << AliasMgr.getTypeName(lhs->getType()->getContainedType(0)) << std::endl;
 				errored = true;
 				return NULL;
 			}
@@ -1403,7 +1406,17 @@ namespace jimpilier{
 				return NULL;
 			}
 
-			return builder->CreateCall(CalleeF, ArgsV, "calltmp");
+			for (unsigned i = 0; i < CalleeF->arg_size(); ++i)
+			{
+				ArgsV.push_back(Args[i]->codegen());
+				if (!ArgsV.back())
+				{
+					std::cout << "Error saving function args";
+					return nullptr;
+				}
+			}
+
+			return CalleeF->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF, ArgsV) : builder->CreateCall(CalleeF, ArgsV, "calltmp");
 		}
 	};
 
@@ -1522,9 +1535,6 @@ namespace jimpilier{
 			{
 				std::string name = argnames[Idx++];
 				Arg.setName(name);
-				AliasMgr[name] = {&Arg, argslist[Idx-1].ty->isReference()};
-				if (Idx == 1)
-					continue;
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				AliasMgr[name] = {storedvar, argslist[Idx-1].ty->isReference()};
@@ -1715,18 +1725,13 @@ namespace jimpilier{
 			// Record the function arguments in the Named Values map.
 			for (auto &Arg : currentFunction->args())
 			{
-				// TODO: Bandaid fix, find a better solution. This will cause bugs later
-				if (Arg.getArgNo() == 0 && Proto->parent != "")
-				{
-					AliasMgr[Arg.getName().str()] = {&Arg, true}; //TODO: Remove me upon implementation of references
-					continue;
-				}
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
 				AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()};
 				// dtypes[name] = Arg.getType();
 			}
+
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
 			llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen();
 
@@ -1825,11 +1830,6 @@ namespace jimpilier{
 			// Record the function arguments in the Named Values map.
 			for (auto &Arg : currentFunction->args())
 			{
-				//TODO: Implement reference types; this is a bandaid solution for the time being
-				if(Arg.getName() == "this" && Arg.getType()->isPointerTy()) {
-					AliasMgr["this"] = {&Arg, Proto.Args[Arg.getArgNo()].ty->isReference()};	
-					continue;
-				} 
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());

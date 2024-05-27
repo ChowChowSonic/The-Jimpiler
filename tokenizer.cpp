@@ -16,7 +16,7 @@ enum KeyToken{
     OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, COLON, PERIOD,//Done
     CONST, SINGULAR, VOLATILE, PUBLIC, PRIVATE, PROTECTED, OPERATOR, THROW,//Done
     SCONST, NUMCONST, //Done
-    INT, SHORT, LONG, POINTER, FLOAT, DOUBLE, STRING, BOOL, CHAR, BYTE, AUTO //Done 
+    INT, SHORT, LONG, POINTER, FLOAT, DOUBLE, STRING, BOOL, CHAR, BYTE, VOID, AUTO //Done 
 };
 
 map<string, KeyToken> keywords = {
@@ -24,7 +24,7 @@ map<string, KeyToken> keywords = {
     {"if", IF}, {"else", ELSE}, {"for", FOR}, {"do", DO},{"while", WHILE}, {"case", CASE}, {"switch", SWITCH}, {"break", BREAK}, {"continue", CONTINUE}, {"default", DEFAULT}, {"return", RET}, {"print",PRINT}, {"println", PRINTLN},
     {"object", OBJECT}, {"constructor", CONSTRUCTOR}, {"destructor", DESTRUCTOR}, {"as", AS}, {"sizeof", SIZEOF}, {"heap", HEAP}, {"delete", DEL}, 
     {"const", CONST}, {"singular", SINGULAR}, {"volatile", VOLATILE}, {"public", PUBLIC}, {"private", PRIVATE}, {"protected", PROTECTED}, {"operator", OPERATOR}, {"throw", THROW}, 
-    {"int", INT}, {"short", SHORT}, {"long", LONG}, {"pointer", POINTER}, {"ptr", POINTER}, {"float", FLOAT}, {"double", DOUBLE}, {"string", STRING}, {"bool", BOOL}, {"char", CHAR}, {"byte", BYTE}, {"auto", AUTO}
+    {"int", INT}, {"short", SHORT}, {"long", LONG}, {"pointer", POINTER}, {"ptr", POINTER}, {"float", FLOAT}, {"double", DOUBLE}, {"string", STRING}, {"bool", BOOL}, {"char", CHAR}, {"byte", BYTE}, {"void", VOID}, {"auto", AUTO}
 };
 
 string keytokens[] {
@@ -36,7 +36,7 @@ string keytokens[] {
     "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL", "COLON", "PERIOD",
     "CONST","SINGULAR", "VOLATILE", "PUBLIC","PRIVATE","PROTECTED","OPERATOR", "THROW", 
     "SCONST", "NUMCONST",
-    "INT","SHORT","LONG","POINTER","FLOAT","DOUBLE","STRING","BOOL","CHAR","BYTE","AUTO"
+    "INT","SHORT","LONG","POINTER","FLOAT","DOUBLE","STRING","BOOL","CHAR","BYTE","VOID", "AUTO"
 }; 
 enum LexState{START, INNUM, INSTRING, INCOMMENT, INLINECOMMENT, INIDENT};
 

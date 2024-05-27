@@ -717,7 +717,7 @@ namespace jimpilier
 		{
 			std::string thisval = "this";
 			std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parentTy);
-			ty = std::make_unique<PointerToTypeExpr>(ty); //TODO Implement references
+			ty = std::make_unique<ReferenceToTypeExpr>(ty);
 			out.name = thisval;
 			out.ty = parentTy == "" ? NULL : std::move(ty);
 			tokens.next();
@@ -959,6 +959,9 @@ namespace jimpilier
 				return NULL;
 			}
 			break;
+		case VOID:
+			type = std::make_unique<VoidTypeExpr>(); 
+			break; 
 		default:
 			tokens.go_back();
 			return NULL;
@@ -968,7 +971,7 @@ namespace jimpilier
 			tokens.next();
 			type = std::make_unique<PointerToTypeExpr>(type);
 		}
-		if(tokens.peek() == REFRENCETO) type = std::make_unique<ReferenceToTypeExpr>(type); 
+		if(tokens.peek() == REFRENCETO && tokens.next() == REFRENCETO) type = std::make_unique<ReferenceToTypeExpr>(type); 
 		return type;
 	}
 	/**
