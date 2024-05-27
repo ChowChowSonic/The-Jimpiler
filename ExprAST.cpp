@@ -234,7 +234,7 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
-			if (operators[bsval->getType()]["["][offv->getType()] == NULL)
+			if (operators[bsval->getType()]["["][offv->getType()] != NULL)
 			{
 				return builder->CreateCall(operators[bsval->getType()]["["][offv->getType()], {bsval, offv}, "operator[]call");
 			}
@@ -1406,7 +1406,7 @@ namespace jimpilier{
 				return NULL;
 			}
 
-			for (unsigned i = 0; i < CalleeF->arg_size(); ++i)
+			for (unsigned i = 0; i < Args.size(); ++i) //CalleeF->arg_size()
 			{
 				ArgsV.push_back(Args[i]->codegen());
 				if (!ArgsV.back())
@@ -1639,7 +1639,14 @@ namespace jimpilier{
 		PrototypeAST(const std::string &name,
 					 std::vector<Variable> &args,
 					 std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
-			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent) {}
+			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent) {
+				if(parent != ""){
+					std::string name = "this"; 
+					std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent); 
+					ty = std::make_unique<ReferenceToTypeExpr>(ty); 
+					Args.emplace(Args.begin(), Variable(name, ty)); 
+				}
+			}
 
 		const std::string &getName() const { return Name; }
 		std::vector<llvm::Type *> getArgTypes() const
@@ -1655,11 +1662,6 @@ namespace jimpilier{
 		{
 			std::vector<std::string> Argnames;
 			std::vector<llvm::Type *> Argt;
-			if (AliasMgr(parent) != NULL)
-			{
-				Argnames.push_back("this");
-				Argt.push_back(AliasMgr(parent)->getPointerTo());
-			}
 			for (auto &x : Args)
 			{
 				Argnames.push_back(x.name);
@@ -1728,8 +1730,8 @@ namespace jimpilier{
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
-				AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()};
-				// dtypes[name] = Arg.getType();
+				//std::cout << Proto->Name <<" " << Proto->Args.size() << Arg.getArgNo() << currentFunction->arg_size() <<endl; 
+				AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()}; 
 			}
 
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
