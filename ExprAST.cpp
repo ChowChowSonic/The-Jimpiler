@@ -15,8 +15,8 @@
 #ifndef ast
 #define ast
 #include "globals.cpp" 
-#include "TypeExpr.cpp" 
-#include "AliasManager.cpp"
+#include "TypeExpr.h" 
+#include "AliasManager.h"
 using namespace std; 
 namespace jimpilier{
 
@@ -1316,7 +1316,7 @@ namespace jimpilier{
 				int ctr = 0;
 				for (auto &x : ArgsT)
 				{
-					std::cout << AliasMgr.getTypeName(x);
+					//std::cout << AliasMgr.getTypeName(x);
 					if (ctr < ArgsT.size() - 1)
 						std::cout << ", ";
 				}
@@ -1356,7 +1356,7 @@ namespace jimpilier{
 	};
 
 	/**
-	 * @brief ObjectFunctionCallExprAST - Expression class for constructor calls from objects. This acts just like regular function calls,
+	 * @brief ObjectFunctionCallExprAST - Expression class for function calls from objects. This acts just like regular function calls,
 	 * but this adds an implicit pointer to the object refrencing the call, so it needs its own ExprAST to function properly
 	 * @example vector<T> obj;
 	 * obj.push_back(x); //"obj" is the object refrencing the call, so push_back() becomes: push_back(&obj, x)
@@ -1405,10 +1405,8 @@ namespace jimpilier{
 				std::cout << ')' << std::endl;
 				return NULL;
 			}
-
-			for (unsigned i = 0; i < Args.size(); ++i) //CalleeF->arg_size()
+			for (unsigned i = 0; i < CalleeF->arg_size(); ++i) //CalleeF->arg_size()
 			{
-				ArgsV.push_back(Args[i]->codegen());
 				if (!ArgsV.back())
 				{
 					std::cout << "Error saving function args";
@@ -1541,7 +1539,7 @@ namespace jimpilier{
 			}
 
 			llvm::Value *RetVal = bod->codegen();
-			builder->CreateRet(AliasMgr["this"].val);
+			builder->CreateRet(builder->CreateLoad(AliasMgr["this"].val->getType()->getNonOpaquePointerElementType(), AliasMgr["this"].val));
 			// Validate the generated code, checking for consistency.
 			verifyFunction(*currentFunction);
 			if (DEBUGGING)
@@ -1556,8 +1554,8 @@ namespace jimpilier{
 			// {
 			// 	AliasMgr[x.first] = NULL; //builder->CreateGEP(x.second.second, (llvm::Value *)thisfunc->getArg(0), offset, "ObjMemberAccessTmp");
 			// }
-			AliasMgr.functions.addFunction(objName, currentFunction, argtypes);
-			AliasMgr.objects.addConstructor(AliasMgr(objName), currentFunction, argtypes);
+			AliasMgr.functions.addFunction(objName, currentFunction, argslist);
+			AliasMgr.objects.addConstructor(AliasMgr(objName), currentFunction, argslist);
 			llvm::Function *thisfunc = currentFunction;
 			currentFunction = lastfunc;
 			if (currentFunction != NULL)
@@ -1683,7 +1681,7 @@ namespace jimpilier{
 			{
 				Arg.setName(Argnames[Idx++]);
 			}
-			AliasMgr.functions.addFunction(Name, F, Argt);
+			AliasMgr.functions.addFunction(Name, F, Args);
 			return F;
 		}
 	};
@@ -1744,16 +1742,16 @@ namespace jimpilier{
 				if (DEBUGGING)
 					std::cout << "//end of " << Proto->getName() << std::endl;
 				// remove the arguments now that they're out of scope
-				for (auto &Arg : currentFunction->args())
-				{
-					AliasMgr[std::string(Arg.getName())] = {NULL, false};
-					// dtypes[std::string(Arg.getName())] = NULL;
-				}
 			}
 			else
 			{
 				currentFunction->deleteBody();
 			}
+			for (auto &Arg : currentFunction->args())
+				{
+					AliasMgr[std::string(Arg.getName())] = {NULL, false};
+					// dtypes[std::string(Arg.getName())] = NULL;
+				}
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
@@ -1849,16 +1847,16 @@ namespace jimpilier{
 					std::cout << "//end of " << Proto.getName() << std::endl;
 				operators[argtypes[0]][oper][argtypes[1]] = currentFunction;
 				// remove the arguments now that they're out of scope
-				for (auto &Arg : currentFunction->args())
-				{
-					AliasMgr[std::string(Arg.getName())] = {NULL, false};
-					// dtypes[std::string(Arg.getName())] = NULL;
-				}
 			}
 			else
 			{
 				currentFunction->deleteBody();
 			}
+							for (auto &Arg : currentFunction->args())
+				{
+					AliasMgr[std::string(Arg.getName())] = {NULL, false};
+					// dtypes[std::string(Arg.getName())] = NULL;
+				}
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
