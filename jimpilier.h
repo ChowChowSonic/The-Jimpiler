@@ -695,21 +695,6 @@ namespace jimpilier
 		std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
 		return std::make_unique<ConstructorExprAST>((args), body, obj);
 	}
-	// TODO: Get this fuction off the ground
-	/**
-	 * @brief Parses a destructor for a class
-	 *
-	 *
-	 * @param tokens
-	 * @return std::unique_ptr<ExprAST>
-	 */
-	std::unique_ptr<ExprAST> destruct(Stack<Token> &tokens, std::string parentType)
-	{
-		Token t = tokens.next();
-		std::unique_ptr<TypeExpr> v =std::move(std::make_unique<VoidTypeExpr>()); 
-		std::vector<Variable> list;
-		return std::make_unique<FunctionAST>(std::make_unique<PrototypeAST>("destructor@"+parentType, list, v, parentType), std::move(codeBlockExpr(tokens)), parentType);
-	}
 
 	void thisOrFunctionArg(Stack<Token> &tokens, Variable &out, std::string parentTy = "")
 	{
@@ -767,6 +752,13 @@ namespace jimpilier
 		thisOrFunctionArg(tokens, placeholder, parentName);
 		vars.push_back(std::move(placeholder));
 		break; 
+		case AS: 
+		{
+			std::unique_ptr<TypeExpr> casttype = variableTypeStmt(tokens); 
+			//Do not accept variable name as the "AS" operator only accepts a stmt and a type to cast to
+			std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
+			return std::make_unique<AsOperatorOverloadAST>(vars, casttype, ty, body); 
+		}
 		case OPENSQUARE:
 			thisOrFunctionArg(tokens, placeholder, parentName);
 			vars.push_back(std::move(placeholder));
@@ -859,7 +851,6 @@ namespace jimpilier
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> objVars;
 		std::vector<std::unique_ptr<ExprAST>> objFunctions;
 		std::vector<std::unique_ptr<ExprAST>> overloadedOperators;
-		std::unique_ptr<ExprAST> destructor = NULL;
 		if (tokens.peek() == OBJECT)
 			tokens.next();
 		if (tokens.peek() != IDENT)
@@ -883,9 +874,6 @@ namespace jimpilier
 				std::unique_ptr<ExprAST> constructorast = std::move(construct(tokens, objName.name));
 				objFunctions.push_back(std::move(constructorast));
 				continue;
-			}else if(tokens.peek() == DESTRUCTOR){
-				destructor = std::move(destruct(tokens, objName.name)); 
-				continue; 
 			}
 			std::unique_ptr<TypeExpr> ty = std::move(variableTypeStmt(tokens));
 			if (ty == NULL)
@@ -917,7 +905,7 @@ namespace jimpilier
 			objVars.push_back(std::pair<std::string, std::unique_ptr<TypeExpr>>(name.lex, std::move(ty)));
 		}
 		tokens.next();
-		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions, overloadedOperators, destructor);
+		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions, overloadedOperators);
 	}
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens)
 	{

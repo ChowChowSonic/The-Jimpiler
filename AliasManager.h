@@ -53,10 +53,9 @@ namespace jimpilier
 		FunctionAliasManager functions;
 		std::vector<ObjectMember> members;
 		llvm::Type *ptr;
-		llvm::Function *destructor;
 		Object();
 		Object(llvm::Type *ty);
-		Object(llvm::Type *ty, std::vector<llvm::Type *> members, std::vector<std::string> names, llvm::Function *destruct);
+		Object(llvm::Type *ty, std::vector<llvm::Type *> members, std::vector<std::string> names);
 		ObjectMember getMember(int i);
 		ObjectMember getMember(std::string name);
 		bool operator==(llvm::Type *other);
@@ -72,11 +71,10 @@ namespace jimpilier
 		Object getObject(llvm::Type *ty);
 		std::string getObjectName(llvm::Type *ty);
 		Object &getObject(std::string alias);
-		bool addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames, llvm::Function *destructor = NULL);
+		bool addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames);
 		void addObjectMembers(std::string alias, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames);
 		bool addObject(std::string alias, llvm::Type *objType);
 		void addObjectFunction(std::string &objName, std::string &funcAlias, std::vector<Variable> &types, llvm::Function *func);
-		void setObjectDestructor(std::string alias, llvm::Function *des);
 	};
 		class CompileTimeVariable
 		{

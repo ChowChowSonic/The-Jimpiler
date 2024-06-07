@@ -60,10 +60,9 @@ namespace jimpilier
 	Object::Object()
 			{
 				ptr = NULL;
-				destructor = NULL;
 			}
-			Object::Object(llvm::Type *ty) : ptr(ty), destructor(NULL) {}
-			Object::Object(llvm::Type *ty, std::vector<llvm::Type *> members, std::vector<std::string> names, llvm::Function *destruct) : ptr(ty), destructor(destruct)
+			Object::Object(llvm::Type *ty) : ptr(ty){}
+			Object::Object(llvm::Type *ty, std::vector<llvm::Type *> members, std::vector<std::string> names) : ptr(ty)
 			{
 				for (int i = 0; i < members.size(); i++)
 				{
@@ -129,14 +128,14 @@ namespace jimpilier
 			return structTypes[alias];
 		}
 
-		bool ObjectAliasManager::addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames, llvm::Function *destructor)
+		bool ObjectAliasManager::addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames)
 		{
 			if (structTypes[alias].ptr != NULL)
 			{
 
 				return false;
 			}
-			structTypes[alias] = Object(objType, memberTypes, memberNames, destructor);
+			structTypes[alias] = Object(objType, memberTypes, memberNames);
 			return true;
 		}
 
@@ -159,10 +158,6 @@ namespace jimpilier
 		void ObjectAliasManager::addObjectFunction(std::string &objName, std::string &funcAlias, std::vector<Variable> &types, llvm::Function *func)
 		{
 			structTypes[objName].functions.addFunction(funcAlias, func, types);
-		}
-		void ObjectAliasManager::setObjectDestructor(std::string alias, llvm::Function *des)
-		{
-			structTypes[alias].destructor = des;
 		}
 	//ends ObjectAliasManager functions
 

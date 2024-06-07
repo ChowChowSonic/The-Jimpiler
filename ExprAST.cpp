@@ -357,6 +357,10 @@ namespace jimpilier{
 					errored = true;
 				}
 				break;
+			default: 
+				std::cout << "No known conversion (or defined operator overload) when converting " << AliasMgr.getTypeName(init->getType()) << " to a(n) " << AliasMgr.getTypeName(to); 
+				errored = true; 
+				return NULL; 
 			}
 			return builder->CreateCast(op, init, to);
 		}
@@ -546,11 +550,7 @@ namespace jimpilier{
 			}
 			std::vector<llvm::Type*> argstmp; argstmp.push_back(deletedthing->getType()); 
 			std::string nametmp = "destructor@"+AliasMgr.objects.getObjectName(deletedthing->getType()->getContainedType(0)); 
-			llvm::Function* destruct = AliasMgr.functions.getFunction(nametmp, argstmp); 
 			//std::cout << AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr) << std::endl; 
-			if(destruct != NULL) {
-				builder->CreateCall(destruct, {deletedthing}); 
-			}
 			deletedthing = builder->CreateBitCast(deletedthing, llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp");
 			builder->CreateCall((llvm::Function *)freefunc, deletedthing, "freedValue");
 			return NULL;
@@ -1587,11 +1587,10 @@ namespace jimpilier{
 		ObjectHeaderExpr base;
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> vars;
 		std::vector<std::unique_ptr<ExprAST>> functions, ops;
-		std::unique_ptr<ExprAST> destruct; 
 	public:
 		ObjectExprAST(ObjectHeaderExpr name, 
 					  std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> &varArg,
-					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist, std::unique_ptr<ExprAST> &destro) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)), destruct(std::move(destro)){};
+					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)){};
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
@@ -1612,9 +1611,6 @@ namespace jimpilier{
 				{
 					func->codegen();
 				}
-			if(destruct != NULL) {
-				AliasMgr.objects.setObjectDestructor(base.name, (llvm::Function*)destruct->codegen()); 
-			}
 			if (!functions.empty())
 				for (auto &func : functions)
 				{
@@ -1863,6 +1859,99 @@ namespace jimpilier{
 			return operators[argtypes[0]][oper][argtypes[1]];
 		}
 	};
+
+		class AsOperatorOverloadAST : public ExprAST {
+		std::vector<Variable> arg1; 
+		std::unique_ptr<ExprAST> body; 
+		std::unique_ptr<TypeExpr> ty, ret; 
+		std::string name; 
+		public:
+		AsOperatorOverloadAST(std::vector<Variable> &arg1, std::unique_ptr<TypeExpr> &castType, std::unique_ptr<TypeExpr> &retType, std::unique_ptr<ExprAST> &body) : 
+		arg1(std::move(arg1)), body(std::move(body)), ty(std::move(castType)), ret(std::move(retType)) {}; 
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
+			name += "operator_as_";
+			llvm::raw_string_ostream stringstream(name);
+			arg1[0].ty->codegen()->print(stringstream); 
+			name +='_'; 
+			ty->codegen()->print(stringstream); 
+			PrototypeAST Proto(name, arg1, ret);
+			llvm::Function *prevFunction = currentFunction;
+			std::vector<llvm::Type *> argtypes;
+			for (auto &x : Proto.Args)
+				argtypes.push_back(x.ty == NULL ? NULL : x.ty->codegen());
+			argtypes.push_back(ty->codegen()); 
+			// Segment stolen from Proto.codegen()
+			std::vector<std::string> Argnames;
+			std::vector<llvm::Type *> Argt;
+			for (auto &x : Proto.Args)
+				{
+					if(x.ty == NULL) continue; 
+					Argnames.push_back(x.name);
+					Argt.push_back(x.ty->codegen());
+				}
+			llvm::FunctionType *FT =
+				llvm::FunctionType::get(Proto.retType->codegen(), Argt, false);
+			currentFunction =
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Proto.Name, GlobalVarsAndFunctions.get());
+			unsigned Idx = 0;
+			for (auto &Arg : currentFunction->args())
+			{
+				Arg.setName(Argnames[Idx++]);
+			}
+			// end of segment stolen from Proto.codegen()
+
+			if (!currentFunction)
+			{
+				currentFunction = prevFunction;
+				return NULL;
+			}
+			if (!currentFunction->empty())
+			{
+				errored = true;
+				std::cout << "Operator Cannot be redefined: " << currentFunction->getName().str() << std::endl;
+				currentFunction = prevFunction;
+				return NULL;
+			}
+
+			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
+			builder->SetInsertPoint(BB);
+			// Record the function arguments in the Named Values map.
+			for (auto &Arg : currentFunction->args())
+			{
+				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
+				builder->CreateStore(&Arg, storedvar);
+				std::string name = std::string(Arg.getName());
+				AliasMgr[name] = {storedvar, Proto.Args[Arg.getArgNo()].ty->isReference()};
+				// dtypes[name] = Arg.getType();
+			}
+			llvm::Instruction *currentEntry = &BB->getIterator()->back();
+			llvm::Value *RetVal = body == NULL ? NULL : body->codegen();
+
+			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy()))
+			{
+				// Validate the generated code, checking for consistency.
+				verifyFunction(*currentFunction);
+				if (DEBUGGING)
+					std::cout << "//end of " << Proto.getName() << std::endl;
+				operators[argtypes[0]]["AS"][argtypes[1]] = currentFunction;
+				// remove the arguments now that they're out of scope
+			}
+			else
+			{
+				currentFunction->deleteBody();
+			}
+							for (auto &Arg : currentFunction->args())
+				{
+					AliasMgr[std::string(Arg.getName())] = {NULL, false};
+					// dtypes[std::string(Arg.getName())] = NULL;
+				}
+			currentFunction = prevFunction;
+			if (currentFunction != NULL)
+				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
+			return operators[argtypes[0]]["AS"][argtypes[1]];
+		}
+	};
+
 
 }
 #endif
