@@ -8,25 +8,25 @@
 namespace jimpilier
 {
 	class CompileTimeType
-		{
-		public:
-			llvm::Type *ty = NULL;
-			bool isRef = false;
-			CompileTimeType(llvm::Type* t, bool ref) : ty(t), isRef(ref) {}; 
-			bool operator==(CompileTimeType &t);
-		};
+	{
+	public:
+		llvm::Type *ty = NULL;
+		bool isRef = false;
+		CompileTimeType(llvm::Type *t, bool ref) : ty(t), isRef(ref){};
+	};
+	bool operator==(CompileTimeType t1, CompileTimeType t2);
+	bool operator!=(CompileTimeType t1, llvm::Type *t2);
 	class FunctionHeader
 	{
-		
 
 	public:
 		std::vector<CompileTimeType> args;
 		llvm::Function *func;
-		FunctionHeader(std::vector<Variable> &arglist, llvm::Function *func);
-		bool operator==(FunctionHeader &other);
-		bool operator==(std::vector<llvm::Type *> &other);
+		bool returnsRefrence = false; 
+		FunctionHeader(std::vector<Variable> &arglist, llvm::Function *func, bool returnsRefrence = false);
 	};
-
+	bool operator==(FunctionHeader &og, FunctionHeader &other);
+	bool operator==(FunctionHeader &og, std::vector<llvm::Type *> &other);
 	class FunctionAliasManager
 	{
 
@@ -35,11 +35,13 @@ namespace jimpilier
 	public:
 		FunctionAliasManager() {}
 		llvm::Function *getFunction(std::string &name, std::vector<llvm::Type *> &args);
-		void addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args);
+		FunctionHeader &getFunction(llvm::Function* f);
+		FunctionHeader &getFunctionObject(std::string &name, std::vector<llvm::Type *> &args);
+		void addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, bool returnsRef = false);
 		bool hasAlias(std::string &alias);
 	};
 
-		class ObjectMember
+	class ObjectMember
 	{
 	public:
 		std::string name;
@@ -74,14 +76,14 @@ namespace jimpilier
 		bool addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames);
 		void addObjectMembers(std::string alias, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames);
 		bool addObject(std::string alias, llvm::Type *objType);
-		void addObjectFunction(std::string &objName, std::string &funcAlias, std::vector<Variable> &types, llvm::Function *func);
+		void addObjectFunction(std::string &objName, std::string &funcAlias, std::vector<Variable> &types, llvm::Function *func, bool returnsRef = false);
 	};
-		class CompileTimeVariable
-		{
-		public:
-			llvm::Value *val;
-			bool isRef;
-		};
+	class CompileTimeVariable
+	{
+	public:
+		llvm::Value *val;
+		bool isRef;
+	};
 	/**
 	 * @brief An all-in-one wrapper class that manages the frontend names/aliases of functions, variables and objects.
 	 * Variables can be read & modified via the indexing operator (```AliasManager["name"]```).
@@ -142,9 +144,9 @@ namespace jimpilier
 		 * @param alias
 		 * @return a llvm::Value*& that refers to a named variable.
 		 */
-		llvm::Function* operator()(llvm::Type *constructor, std::vector<llvm::Type *> &args)
+		FunctionHeader &operator()(llvm::Type *constructor, std::vector<llvm::Type *> &args)
 		{
-			return objects.getConstructor(constructor, args);
+			return functions.getFunction(objects.getConstructor(constructor, args));
 		}
 		/**
 		 * @brief Returns a struct that represents an object's Nth member. Intended for Read-Only operations

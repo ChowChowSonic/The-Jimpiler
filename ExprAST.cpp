@@ -708,7 +708,7 @@ namespace jimpilier{
 			if (DEBUGGING)
 				std::cout << "return ";
 			if(ret == NULL) return builder->CreateRetVoid(); 
-			llvm::Value *retval = ret->codegen();
+			llvm::Value *retval = ret->codegen(!AliasMgr.functions.getFunction(currentFunction).returnsRefrence);
 			if (retval->getType() != currentFunction->getReturnType())
 			{
 				// builder->CreateCast() //Add type casting here
@@ -1274,60 +1274,6 @@ namespace jimpilier{
 			return ret;
 		}
 	};
-
-	/// CallExprAST - Expression class for function calls.
-	class CallExprAST : public ExprAST
-	{
-		std::string Callee;
-		std::vector<std::unique_ptr<ExprAST>> Args;
-
-	public:
-		CallExprAST(const std::string callee, std::vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
-		{
-		}
-		// : Callee(callee), Args(Arg) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
-		{
-			if (!AliasMgr.functions.hasAlias(Callee))
-			{
-				std::cout << "A function was never declared: " << Callee << std::endl;
-				return NULL;
-			}
-			std::vector<llvm::Value *> ArgsV;
-			std::vector<llvm::Type *> ArgsT;
-			for (unsigned i = 0, e = Args.size(); i != e; ++i)
-			{
-				ArgsV.push_back(Args[i]->codegen());
-				if (!ArgsV.back())
-				{
-					std::cout << "Error saving function args" << std::endl;
-					return nullptr;
-				}
-				ArgsT.push_back(ArgsV.back()->getType());
-			}
-
-			// Look up the name in the global module table.
-
-			llvm::Function *CalleeF = AliasMgr.functions.getFunction(Callee, ArgsT);
-			if (!CalleeF)
-			{
-
-				std::cout << "Unknown function referenced, or incorrect arg types were passed: " << Callee << '(';
-				int ctr = 0;
-				for (auto &x : ArgsT)
-				{
-					//std::cout << AliasMgr.getTypeName(x);
-					if (ctr < ArgsT.size() - 1)
-						std::cout << ", ";
-				}
-				std::cout << ')' << std::endl;
-				return NULL;
-			}
-
-			return CalleeF->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF, ArgsV) : builder->CreateCall(CalleeF, ArgsV, "calltmp");
-		}
-	};
-
 	class MemberAccessExprAST : public ExprAST
 	{
 		std::string member;
@@ -1354,6 +1300,52 @@ namespace jimpilier{
 			return autoDeref ? builder->CreateLoad(returnTy.type, gep, "LoadTmp") : gep;
 		}
 	};
+
+		/// CallExprAST - Expression class for function calls.
+	class CallExprAST : public ExprAST
+	{
+		std::string Callee;
+		std::vector<std::unique_ptr<ExprAST>> Args;
+
+	public:
+		CallExprAST(const std::string callee, std::vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
+		{
+		}
+		// : Callee(callee), Args(Arg) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			if (!AliasMgr.functions.hasAlias(Callee))
+			{
+				std::cout << "A function with name was never declared: " << Callee << std::endl;
+				assert(false); 
+			}
+			std::vector<llvm::Value *> ArgsV;
+			std::vector<llvm::Type *> ArgsT;
+			for (unsigned i = 0, e = Args.size(); i != e; ++i)
+			{
+				ArgsV.push_back(Args[i]->codegen(false));
+				if (!ArgsV.back())
+				{
+					assert(false && "Error saving function args"); 
+				}
+				ArgsT.push_back(ArgsV.back()->getType());
+			}
+
+			// Look up the name in the global module table.
+			FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
+			
+			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
+			{
+				if(!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy()) ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp"); 
+				if (!ArgsV[i])
+				{
+					assert(false && "Error saving function args"); 
+				}
+			}
+			return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ArgsV) : builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
+		}
+	};
+
 
 	/**
 	 * @brief ObjectFunctionCallExprAST - Expression class for function calls from objects. This acts just like regular function calls,
@@ -1382,39 +1374,25 @@ namespace jimpilier{
 
 			for (unsigned i = 0, e = Args.size(); i != e; ++i)
 			{
-				ArgsV.push_back(Args[i]->codegen());
+				ArgsV.push_back(Args[i]->codegen(false));
 				if (!ArgsV.back())
 				{
-					std::cout << "Error saving function args";
-					return nullptr;
+					assert(false && "Error saving function args");
 				}
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
 
-			llvm::Function *CalleeF = AliasMgr.functions.getFunction(Callee, ArgsT);
-			if (!CalleeF)
+			FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
+			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
 			{
-				std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << Callee << '(';
-				int ctr = 0;
-				for (auto &x : ArgsT)
+				if(!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy()) ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp"); 
+				if (!ArgsV[i])
 				{
-					std::cout << AliasMgr.getTypeName(x);
-					if (ctr < ArgsT.size() - 1)
-						std::cout << ", ";
-				}
-				std::cout << ')' << std::endl;
-				return NULL;
-			}
-			for (unsigned i = 0; i < CalleeF->arg_size(); ++i) //CalleeF->arg_size()
-			{
-				if (!ArgsV.back())
-				{
-					std::cout << "Error saving function args";
-					return nullptr;
+					assert(false && "Error saving function args");
 				}
 			}
 
-			return CalleeF->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF, ArgsV) : builder->CreateCall(CalleeF, ArgsV, "calltmp");
+			return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ArgsV) : builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
 		}
 	};
 
@@ -1474,7 +1452,7 @@ namespace jimpilier{
 			// Look up the name in the global module table.
 			for (unsigned i = 0, e = Args.size(); i != e; ++i)
 			{
-				ArgsV.push_back(Args[i]->codegen());
+				ArgsV.push_back(Args[i]->codegen(false));
 				if (!ArgsV.back())
 				{
 					std::cout << "Error saving function args";
@@ -1482,20 +1460,19 @@ namespace jimpilier{
 				}
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
-			llvm::Function *CalleeF;
-			CalleeF = Callee == "" ? AliasMgr(TargetType, ArgsT) : AliasMgr.functions.getFunction(Callee, ArgsT);
-			if (!CalleeF)
-			{
-				std::cout << "Unknown object constructor referenced, or incorrect arg types were passed: " << Callee << std::endl;
-				errored = true;
-				return NULL;
+			
+			FunctionHeader &CalleeF = (Callee == "") ? AliasMgr(TargetType, ArgsT) : AliasMgr.functions.getFunctionObject(Callee, ArgsT);
+
+			for(int i = 0; i < CalleeF.args.size(); i++){
+				if(!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy()) ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp"); 
 			}
 
-			builder->CreateCall(CalleeF, ArgsV, "calltmp");
+			builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
 			return NULL;
 		}
 	};
 
+	//ConstructorExprAST - A class representing the definition of an object constructor
 	class ConstructorExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> bod;
@@ -1677,12 +1654,12 @@ namespace jimpilier{
 			{
 				Arg.setName(Argnames[Idx++]);
 			}
-			AliasMgr.functions.addFunction(Name, F, Args);
+			AliasMgr.functions.addFunction(Name, F, Args, retType->isReference());
 			return F;
 		}
 	};
 	// TODO: Improve object function solution. Current Implementation feels wrong
-	/// FunctionAST - This class represents a function definition itself.
+	/// FunctionAST - This class represents a function definition, rather than a function call.
 	class FunctionAST : public ExprAST
 	{
 		std::unique_ptr<PrototypeAST> Proto;
