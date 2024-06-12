@@ -14,11 +14,12 @@
 #include "llvm/FileCheck/FileCheck.h"
 #ifndef ast
 #define ast
-#include "globals.cpp" 
-#include "TypeExpr.h" 
+#include "globals.cpp"
+#include "TypeExpr.h"
 #include "AliasManager.h"
-using namespace std; 
-namespace jimpilier{
+using namespace std;
+namespace jimpilier
+{
 
 	/// ExprAST - Base class for all expression nodes.
 	class ExprAST
@@ -79,8 +80,9 @@ namespace jimpilier{
 			if (DEBUGGING)
 				std::cout << Name;
 			llvm::Value *V = AliasMgr[Name].val;
-			if(V && AliasMgr[Name].isRef && currentFunction != NULL){ 
-				V = builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp"); 
+			if (V && AliasMgr[Name].isRef && currentFunction != NULL)
+			{
+				V = builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
 			}
 			if (!V)
 			{
@@ -115,7 +117,7 @@ namespace jimpilier{
 			if (currentFunction == NULL || currentFunction == STATIC)
 			{
 				GlobalVarsAndFunctions->getOrInsertGlobal(name, ty);
-				AliasMgr[name] = {(llvm::Value*)GlobalVarsAndFunctions->getNamedGlobal(name) , this->type->isReference()};
+				AliasMgr[name] = {(llvm::Value *)GlobalVarsAndFunctions->getNamedGlobal(name), this->type->isReference()};
 				GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty));
 			}
 			else
@@ -148,9 +150,9 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen(false);
-			if(operators[prefix? NULL: v->getType()][decrement ? "--" : "++"][prefix? v->getType():NULL] != NULL){
-				return builder->CreateCall(operators[prefix? NULL:v->getType()][decrement ? "--" : "++"][prefix? v->getType():NULL], {v}, "IncDecCallTmp");
-			
+			if (operators[prefix ? NULL : v->getType()][decrement ? "--" : "++"][prefix ? v->getType() : NULL] != NULL)
+			{
+				return builder->CreateCall(operators[prefix ? NULL : v->getType()][decrement ? "--" : "++"][prefix ? v->getType() : NULL], {v}, "IncDecCallTmp");
 			}
 			if (prefix)
 			{
@@ -178,8 +180,8 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen();
-			if(operators[NULL]["!"][v->getType()] != NULL)
-				return builder->CreateCall(operators[NULL]["!"][v->getType()], {v}, "notcalltmp"); 
+			if (operators[NULL]["!"][v->getType()] != NULL)
+				return builder->CreateCall(operators[NULL]["!"][v->getType()], {v}, "notcalltmp");
 
 			if (v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
 				return builder->CreateNot(v, "negationtmp");
@@ -213,8 +215,8 @@ namespace jimpilier{
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			llvm::Value *v = val->codegen(autoDeref);
-			if(operators[NULL]["@"][v->getType()] != NULL)
-				return builder->CreateCall(operators[NULL]["@"][v->getType()], {v}, "derefcalltmp"); 
+			if (operators[NULL]["@"][v->getType()] != NULL)
+				return builder->CreateCall(operators[NULL]["@"][v->getType()], {v}, "derefcalltmp");
 			if (v != NULL && v->getType()->isPointerTy())
 				return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
 			else
@@ -271,7 +273,8 @@ namespace jimpilier{
 			llvm::Value *init = from->codegen();
 			llvm::Instruction::CastOps op;
 
-			if(operators[init->getType()]["AS"][to] != NULL){
+			if (operators[init->getType()]["AS"][to] != NULL)
+			{
 				return builder->CreateCall(operators[init->getType()]["AS"][to], {init}, "typecasttmp");
 			}
 
@@ -357,10 +360,10 @@ namespace jimpilier{
 					errored = true;
 				}
 				break;
-			default: 
-				std::cout << "No known conversion (or defined operator overload) when converting " << AliasMgr.getTypeName(init->getType()) << " to a(n) " << AliasMgr.getTypeName(to); 
-				errored = true; 
-				return NULL; 
+			default:
+				std::cout << "No known conversion (or defined operator overload) when converting " << AliasMgr.getTypeName(init->getType()) << " to a(n) " << AliasMgr.getTypeName(to);
+				errored = true;
+				return NULL;
 			}
 			return builder->CreateCast(op, init, to);
 		}
@@ -539,8 +542,8 @@ namespace jimpilier{
 		{
 			llvm::Value *freefunc = GlobalVarsAndFunctions->getOrInsertFunction("free", {llvm::Type::getInt8PtrTy(*ctxt)}, llvm::Type::getInt8PtrTy(*ctxt)).getCallee();
 			llvm::Value *deletedthing = val->codegen(true);
-			if(operators[NULL]["DELETE"][deletedthing->getType()] != NULL)
-				return builder->CreateCall(operators[NULL]["DELETE"][deletedthing->getType()], {deletedthing}, "deletecalltmp"); 
+			if (operators[NULL]["DELETE"][deletedthing->getType()] != NULL)
+				return builder->CreateCall(operators[NULL]["DELETE"][deletedthing->getType()], {deletedthing}, "deletecalltmp");
 			if (!deletedthing->getType()->isPointerTy())
 			{
 				std::cout << "Remember: Objects on the stack are accessed directly, you only need to delete pointers that point to the heap" << std::endl;
@@ -548,9 +551,10 @@ namespace jimpilier{
 				errored = true;
 				return NULL;
 			}
-			std::vector<llvm::Type*> argstmp; argstmp.push_back(deletedthing->getType()); 
-			std::string nametmp = "destructor@"+AliasMgr.objects.getObjectName(deletedthing->getType()->getContainedType(0)); 
-			//std::cout << AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr) << std::endl; 
+			std::vector<llvm::Type *> argstmp;
+			argstmp.push_back(deletedthing->getType());
+			std::string nametmp = "destructor@" + AliasMgr.objects.getObjectName(deletedthing->getType()->getContainedType(0));
+			// std::cout << AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr) << std::endl;
 			deletedthing = builder->CreateBitCast(deletedthing, llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp");
 			builder->CreateCall((llvm::Function *)freefunc, deletedthing, "freedValue");
 			return NULL;
@@ -707,14 +711,15 @@ namespace jimpilier{
 		{
 			if (DEBUGGING)
 				std::cout << "return ";
-			if(ret == NULL) return builder->CreateRetVoid(); 
+			if (ret == NULL)
+				return builder->CreateRetVoid();
 			llvm::Value *retval = ret->codegen(!AliasMgr.functions.getFunction(currentFunction).returnsRefrence);
 			if (retval->getType() != currentFunction->getReturnType())
 			{
 				// builder->CreateCast() //Add type casting here
 			}
-			
-			return builder->CreateRet(retval); 
+
+			return builder->CreateRet(retval);
 		}
 	};
 
@@ -869,9 +874,9 @@ namespace jimpilier{
 					return div ? builder->CreateFDiv(lhs, rhs, "divtmp") : builder->CreateFMul(lhs, rhs, "multmp");
 				}
 				default:
-						errored = true;
-						std::cout << "Operator " << (div ? '/' : '*') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
-						return NULL;
+					errored = true;
+					std::cout << "Operator " << (div ? '/' : '*') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+					return NULL;
 				}
 			}
 			else
@@ -926,9 +931,9 @@ namespace jimpilier{
 				return sub ? builder->CreateFSub(lhs, rhs, "subtmp") : builder->CreateFAdd(lhs, rhs, "addtmp");
 			}
 			default:
-					errored = true;
-					std::cout << "Operator " << (sub ? '-' : '+') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
-					return NULL;
+				errored = true;
+				std::cout << "Operator " << (sub ? '-' : '+') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+				return NULL;
 			}
 		}
 	};
@@ -948,7 +953,7 @@ namespace jimpilier{
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
-			
+
 			if (operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()] != nullptr)
 				return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
 
@@ -979,9 +984,9 @@ namespace jimpilier{
 					return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
 				}
 				default:
-						errored = true;
-						std::cout << "Operator " << (sub ? '<' : '>') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
-						return NULL;
+					errored = true;
+					std::cout << "Operator " << (sub ? '<' : '>') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+					return NULL;
 				}
 			}
 			else
@@ -1020,12 +1025,13 @@ namespace jimpilier{
 															llvm::FunctionType::get(doublety, {doublety, doublety}, false));
 			}
 			llvm::Function *powfunc = GlobalVarsAndFunctions->getFunction("pow");
-			
+
 			switch (lhs->getType()->getTypeID())
 			{
 			case llvm::Type::IntegerTyID:
-				//TODO: Create type alignment system
-				if(mod) return builder->CreateSRem(lhs, rhs, "modtmp"); 
+				// TODO: Create type alignment system
+				if (mod)
+					return builder->CreateSRem(lhs, rhs, "modtmp");
 				lhs = builder->CreateCast(llvm::Instruction::CastOps::SIToFP, lhs, llvm::Type::getDoubleTy(*ctxt), "floatConversionTmp");
 				if (rhs->getType()->isIntegerTy())
 				{
@@ -1054,12 +1060,12 @@ namespace jimpilier{
 				{
 					rhs = builder->CreateFPExt(rhs, doublety, "floatExtendTmp");
 				}
-				return mod? builder->CreateFRem(lhs, rhs) : builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
+				return mod ? builder->CreateFRem(lhs, rhs) : builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
 			}
 			default:
-					errored = true;
-					std::cout << "Operator " << (mod ? '%' : '^') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
-					return NULL;
+				errored = true;
+				std::cout << "Operator " << (mod ? '%' : '^') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+				return NULL;
 			}
 		}
 	};
@@ -1282,7 +1288,7 @@ namespace jimpilier{
 
 	public:
 		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset, bool deref = false) : base(std::move(base)), member(offset), dereferenceParent(deref) {}
-		//TODO: FIX ME
+		// TODO: FIX ME
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			// return NULL;
@@ -1301,7 +1307,7 @@ namespace jimpilier{
 		}
 	};
 
-		/// CallExprAST - Expression class for function calls.
+	/// CallExprAST - Expression class for function calls.
 	class CallExprAST : public ExprAST
 	{
 		std::string Callee;
@@ -1317,7 +1323,7 @@ namespace jimpilier{
 			if (!AliasMgr.functions.hasAlias(Callee))
 			{
 				std::cout << "A function with name was never declared: " << Callee << std::endl;
-				assert(false); 
+				assert(false);
 			}
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
@@ -1326,26 +1332,26 @@ namespace jimpilier{
 				ArgsV.push_back(Args[i]->codegen(false));
 				if (!ArgsV.back())
 				{
-					assert(false && "Error saving function args"); 
+					assert(false && "Error saving function args");
 				}
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
 
 			// Look up the name in the global module table.
 			FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
-			
+
 			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
 			{
-				if(!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy()) ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp"); 
+				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy())
+					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
 				if (!ArgsV[i])
 				{
-					assert(false && "Error saving function args"); 
+					assert(false && "Error saving function args");
 				}
 			}
 			return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ArgsV) : builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
 		}
 	};
-
 
 	/**
 	 * @brief ObjectFunctionCallExprAST - Expression class for function calls from objects. This acts just like regular function calls,
@@ -1385,7 +1391,8 @@ namespace jimpilier{
 			FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
 			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
 			{
-				if(!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy()) ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp"); 
+				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy())
+					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
 				if (!ArgsV[i])
 				{
 					assert(false && "Error saving function args");
@@ -1460,11 +1467,13 @@ namespace jimpilier{
 				}
 				ArgsT.push_back(ArgsV.back()->getType());
 			}
-			
+
 			FunctionHeader &CalleeF = (Callee == "") ? AliasMgr(TargetType, ArgsT) : AliasMgr.functions.getFunctionObject(Callee, ArgsT);
 
-			for(int i = 0; i < CalleeF.args.size(); i++){
-				if(!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy()) ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp"); 
+			for (int i = 0; i < CalleeF.args.size(); i++)
+			{
+				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy())
+					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
 			}
 
 			builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
@@ -1472,7 +1481,7 @@ namespace jimpilier{
 		}
 	};
 
-	//ConstructorExprAST - A class representing the definition of an object constructor
+	// ConstructorExprAST - A class representing the definition of an object constructor
 	class ConstructorExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> bod;
@@ -1490,8 +1499,8 @@ namespace jimpilier{
 			std::vector<std::string> argnames;
 			std::vector<llvm::Type *> argtypes;
 			std::unique_ptr<TypeExpr> retType = std::make_unique<StructTypeExpr>(objName);
-			retType = std::make_unique<ReferenceToTypeExpr>(retType); 
-			argslist.emplace(argslist.begin(), Variable("this", retType)); 
+			retType = std::make_unique<ReferenceToTypeExpr>(retType);
+			argslist.emplace(argslist.begin(), Variable("this", retType));
 			for (auto &x : argslist)
 			{
 				argnames.push_back(x.name);
@@ -1512,7 +1521,7 @@ namespace jimpilier{
 				Arg.setName(name);
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
-				AliasMgr[name] = {storedvar, argslist[Idx-1].ty->isReference()};
+				AliasMgr[name] = {storedvar, argslist[Idx - 1].ty->isReference()};
 			}
 
 			llvm::Value *RetVal = bod->codegen();
@@ -1564,8 +1573,9 @@ namespace jimpilier{
 		ObjectHeaderExpr base;
 		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> vars;
 		std::vector<std::unique_ptr<ExprAST>> functions, ops;
+
 	public:
-		ObjectExprAST(ObjectHeaderExpr name, 
+		ObjectExprAST(ObjectHeaderExpr name,
 					  std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> &varArg,
 					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)){};
 
@@ -1610,14 +1620,16 @@ namespace jimpilier{
 		PrototypeAST(const std::string &name,
 					 std::vector<Variable> &args,
 					 std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
-			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent) {
-				if(parent != ""){
-					std::string name = "this"; 
-					std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent); 
-					ty = std::make_unique<ReferenceToTypeExpr>(ty); 
-					Args.emplace(Args.begin(), Variable(name, ty)); 
-				}
+			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent)
+		{
+			if (parent != "")
+			{
+				std::string name = "this";
+				std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
+				ty = std::make_unique<ReferenceToTypeExpr>(ty);
+				Args.emplace(Args.begin(), Variable(name, ty));
 			}
+		}
 
 		const std::string &getName() const { return Name; }
 		std::vector<llvm::Type *> getArgTypes() const
@@ -1701,8 +1713,8 @@ namespace jimpilier{
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
-				//std::cout << Proto->Name <<" " << Proto->Args.size() << Arg.getArgNo() << currentFunction->arg_size() <<endl; 
-				AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()}; 
+				// std::cout << Proto->Name <<" " << Proto->Args.size() << Arg.getArgNo() << currentFunction->arg_size() <<endl;
+				AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()};
 			}
 
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
@@ -1710,6 +1722,9 @@ namespace jimpilier{
 
 			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy()))
 			{
+				if(currentFunction->getReturnType()->isVoidTy())
+				builder->CreateRetVoid(); 
+				else builder->CreateRet(llvm::ConstantAggregateZero::get(currentFunction->getReturnType())); 
 				// Validate the generated code, checking for consistency.
 				verifyFunction(*currentFunction);
 				if (DEBUGGING)
@@ -1721,10 +1736,10 @@ namespace jimpilier{
 				currentFunction->deleteBody();
 			}
 			for (auto &Arg : currentFunction->args())
-				{
-					AliasMgr[std::string(Arg.getName())] = {NULL, false};
-					// dtypes[std::string(Arg.getName())] = NULL;
-				}
+			{
+				AliasMgr[std::string(Arg.getName())] = {NULL, false};
+				// dtypes[std::string(Arg.getName())] = NULL;
+			}
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
@@ -1752,7 +1767,8 @@ namespace jimpilier{
 			llvm::raw_string_ostream stringstream(name);
 			for (auto t = args.begin(); t < args.end(); t++)
 			{
-				if(t->ty == NULL) continue; 
+				if (t->ty == NULL)
+					continue;
 				llvm::Type *typev = t->ty->codegen();
 				if (typev->isStructTy())
 					name += typev->getStructName();
@@ -1769,11 +1785,12 @@ namespace jimpilier{
 			std::vector<std::string> Argnames;
 			std::vector<llvm::Type *> Argt;
 			for (auto &x : Proto.Args)
-				{
-					if(x.ty == NULL) continue; 
-					Argnames.push_back(x.name);
-					Argt.push_back(x.ty->codegen());
-				}
+			{
+				if (x.ty == NULL)
+					continue;
+				Argnames.push_back(x.name);
+				Argt.push_back(x.ty->codegen());
+			}
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(Proto.retType->codegen(), Argt, false);
 			currentFunction =
@@ -1825,11 +1842,11 @@ namespace jimpilier{
 			{
 				currentFunction->deleteBody();
 			}
-							for (auto &Arg : currentFunction->args())
-				{
-					AliasMgr[std::string(Arg.getName())] = {NULL, false};
-					// dtypes[std::string(Arg.getName())] = NULL;
-				}
+			for (auto &Arg : currentFunction->args())
+			{
+				AliasMgr[std::string(Arg.getName())] = {NULL, false};
+				// dtypes[std::string(Arg.getName())] = NULL;
+			}
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
@@ -1837,35 +1854,38 @@ namespace jimpilier{
 		}
 	};
 
-		class AsOperatorOverloadAST : public ExprAST {
-		std::vector<Variable> arg1; 
-		std::unique_ptr<ExprAST> body; 
-		std::unique_ptr<TypeExpr> ty, ret; 
-		std::string name; 
-		public:
-		AsOperatorOverloadAST(std::vector<Variable> &arg1, std::unique_ptr<TypeExpr> &castType, std::unique_ptr<TypeExpr> &retType, std::unique_ptr<ExprAST> &body) : 
-		arg1(std::move(arg1)), body(std::move(body)), ty(std::move(castType)), ret(std::move(retType)) {}; 
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
+	class AsOperatorOverloadAST : public ExprAST
+	{
+		std::vector<Variable> arg1;
+		std::unique_ptr<ExprAST> body;
+		std::unique_ptr<TypeExpr> ty, ret;
+		std::string name;
+
+	public:
+		AsOperatorOverloadAST(std::vector<Variable> &arg1, std::unique_ptr<TypeExpr> &castType, std::unique_ptr<TypeExpr> &retType, std::unique_ptr<ExprAST> &body) : arg1(std::move(arg1)), body(std::move(body)), ty(std::move(castType)), ret(std::move(retType)){};
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
 			name += "operator_as_";
 			llvm::raw_string_ostream stringstream(name);
-			arg1[0].ty->codegen()->print(stringstream); 
-			name +='_'; 
-			ty->codegen()->print(stringstream); 
+			arg1[0].ty->codegen()->print(stringstream);
+			name += '_';
+			ty->codegen()->print(stringstream);
 			PrototypeAST Proto(name, arg1, ret);
 			llvm::Function *prevFunction = currentFunction;
 			std::vector<llvm::Type *> argtypes;
 			for (auto &x : Proto.Args)
 				argtypes.push_back(x.ty == NULL ? NULL : x.ty->codegen());
-			argtypes.push_back(ty->codegen()); 
+			argtypes.push_back(ty->codegen());
 			// Segment stolen from Proto.codegen()
 			std::vector<std::string> Argnames;
 			std::vector<llvm::Type *> Argt;
 			for (auto &x : Proto.Args)
-				{
-					if(x.ty == NULL) continue; 
-					Argnames.push_back(x.name);
-					Argt.push_back(x.ty->codegen());
-				}
+			{
+				if (x.ty == NULL)
+					continue;
+				Argnames.push_back(x.name);
+				Argt.push_back(x.ty->codegen());
+			}
 			llvm::FunctionType *FT =
 				llvm::FunctionType::get(Proto.retType->codegen(), Argt, false);
 			currentFunction =
@@ -1917,18 +1937,51 @@ namespace jimpilier{
 			{
 				currentFunction->deleteBody();
 			}
-							for (auto &Arg : currentFunction->args())
-				{
-					AliasMgr[std::string(Arg.getName())] = {NULL, false};
-					// dtypes[std::string(Arg.getName())] = NULL;
-				}
+			for (auto &Arg : currentFunction->args())
+			{
+				AliasMgr[std::string(Arg.getName())] = {NULL, false};
+				// dtypes[std::string(Arg.getName())] = NULL;
+			}
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
 			return operators[argtypes[0]]["AS"][argtypes[1]];
 		}
 	};
-
+//TODO: Fix bug where a lone assert stmt in a function won't generate code 
+	class AssertionExprAST : public ExprAST
+	{
+		std::unique_ptr<ExprAST> msg=NULL, condition=NULL;
+		int line; 
+		public: 
+		AssertionExprAST(std::unique_ptr<ExprAST> &message, std::unique_ptr<ExprAST> &condition, int line) : line(line), msg(std::move(message)), condition(std::move(condition)) {}
+		AssertionExprAST(std::unique_ptr<ExprAST> &condition, int line) : line(line), condition(std::move(condition)) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			llvm::FunctionCallee abortfunc = GlobalVarsAndFunctions->getOrInsertFunction("abort",
+																						 llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false));
+			llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
+																						 llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
+			llvm::Value *strval = msg == NULL? builder->CreateGlobalStringPtr("<No Message Provided>"): msg->codegen();
+			llvm::Value *boolval = condition->codegen();
+			llvm::BasicBlock *assertblock = llvm::BasicBlock::Create(*ctxt, "assertionIfFalseBlock", currentFunction);
+			llvm::BasicBlock *passblock = llvm::BasicBlock::Create(*ctxt, "assertionIfTrueBlock", currentFunction); 
+			builder->CreateCondBr(boolval, passblock, assertblock); 
+			builder->SetInsertPoint(assertblock);
+			std::string assertstr = "Assertion failed in: %s:%d - \"%s\"\n"; 
+			llvm::Value* assertstrptr = builder->CreateGlobalStringPtr(assertstr);
+			llvm::Value* filenameptr = builder->CreateGlobalStringPtr(currentFile); 
+			builder->CreateCall(printfunc, {assertstrptr, filenameptr, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, line)), strval}, "printlntmp"); 
+			builder->CreateCall(abortfunc); 
+			if(currentFunction->getReturnType()->getTypeID() != llvm::Type::VoidTyID){
+				builder->CreateRet(llvm::ConstantAggregateZero::get(currentFunction->getReturnType()));
+			}else{
+				builder->CreateRetVoid(); 
+			}
+			builder->SetInsertPoint(passblock);
+			return boolval; 
+		}
+	};
 
 }
 #endif

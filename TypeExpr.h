@@ -11,6 +11,7 @@ namespace jimpilier
 		virtual ~TypeExpr(){};
 		virtual llvm::Type *codegen(bool testforval = false) = 0;
 		virtual std::unique_ptr<TypeExpr> clone() = 0;
+		virtual void replaceTemplate(std::string& name, std::unique_ptr<TypeExpr> &replacement){}
 		virtual bool isReference()
 		{
 			return false;
@@ -84,10 +85,15 @@ namespace jimpilier
 	class TemplateTypeExpr : public TypeExpr
 	{
 		std::string name;
-
+		llvm::Type* replacement = NULL;
 	public:
 		TemplateTypeExpr(const std::string name);
 		llvm::Type *codegen(bool testforval = false);
+		virtual void replaceTemplate(std::string& name, std::unique_ptr<TypeExpr> &replacement){
+			if(this->name == name){
+				this->replacement = replacement->codegen(); 
+			}
+		}
 		std::unique_ptr<TypeExpr> clone();
 	};
 

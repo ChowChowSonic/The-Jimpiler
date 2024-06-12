@@ -36,6 +36,7 @@ namespace jimpilier{
 	 */
 	std::stack<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> escapeBlock;
 	std::map<llvm::Type *, std::map<std::string, std::map<llvm::Type *, llvm::Function *>>> operators;
+	std::string currentFile; 
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;

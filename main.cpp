@@ -42,6 +42,7 @@ int main(int argc, char**args){
     }
     time_t now = time(nullptr); 
     Stack<Token> tokens = jimpilier::loadTokens(all_args[0]);
+    jimpilier::currentFile = all_args[0]; 
     std::unique_ptr<jimpilier::ExprAST> x; 
     while(!tokens.eof()) {
         x = jimpilier::getValidStmt(tokens); 

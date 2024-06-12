@@ -97,9 +97,11 @@ namespace jimpilier
 		if (tokens.next() != IMPORT)
 			return NULL;
 		std::unique_ptr<ExprAST> x;
+		std::string oldfile = currentFile; 
 		do
-		{
-			Stack<Token> tokens2 = loadTokens(getFilePath(tokens));
+		{	
+			currentFile = getFilePath(tokens); 
+			Stack<Token> tokens2 = loadTokens(currentFile);
 			while (!tokens2.eof())
 			{
 				x = getValidStmt(tokens2);
@@ -110,6 +112,7 @@ namespace jimpilier
 				if (DEBUGGING)
 					std::cout << endl;
 			}
+			currentFile = oldfile; 
 		} while (!errored && tokens.peek() == COMMA && tokens.next() == COMMA);
 
 		return x;
@@ -1390,6 +1393,19 @@ namespace jimpilier
 		return std::make_unique<ThrowStmtAST>(obj);
 	}
 
+	std::unique_ptr<ExprAST> assertStmt(Stack<Token> &tokens){
+		Token t = tokens.next(); 
+		bool hasparen = false; 
+		assert(t == ASSERT && "Attempted to parse an assert stmt where there was none."); 
+		if(tokens.peek() == LPAREN) {tokens.next(); hasparen = true; }
+		std::unique_ptr<ExprAST> condition = std::move(declareStmt(tokens)); 
+		if(tokens.peek() != COMMA) return std::make_unique<AssertionExprAST>(condition, t.ln); 
+		tokens.next(); 
+		std::unique_ptr<ExprAST> msg = std::move(declareStmt(tokens)); 
+		if(hasparen && tokens.next() != RPAREN) assert(false && "Error: Mismatched parenthesis when attempting to make assertion"); 
+		return std::make_unique<AssertionExprAST>(msg, condition, t.ln); 
+	}
+
 	/**
 	 * @brief Get the next Valid Stmt in the code file provided.
 	 *
@@ -1441,6 +1457,8 @@ namespace jimpilier
 			return std::make_unique<ContinueExprAST>();
 		case THROW:
 			return std::move(jimpilier::throwStmt(tokens));
+		case ASSERT: 
+			return std::move(assertStmt(tokens)); 
 		default:
 			return std::move(declareStmt(tokens));
 		}
