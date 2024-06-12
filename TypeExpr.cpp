@@ -67,7 +67,10 @@ namespace jimpilier
 		}
 
 		TemplateTypeExpr::TemplateTypeExpr(const std::string name) : name(name) {}
-		llvm::Type *TemplateTypeExpr::codegen(bool testforval) { return llvm::StructType::create(name, {}); };
+		llvm::Type *TemplateTypeExpr::codegen(bool testforval) { 
+			if(this->replacement != NULL) return this->replacement; 
+			return llvm::StructType::create(name, {}); 
+		};
 		std::unique_ptr<TypeExpr> TemplateTypeExpr::clone()
 		{
 			return std::unique_ptr<TypeExpr>(new TemplateTypeExpr(name));

@@ -56,7 +56,7 @@ namespace jimpilier
 			for (auto &fheader : f2.second)
 				if (fheader.func == f)
 					return fheader;
-		assert(false);
+		assert(false && "Function not found");
 	};
 
 	llvm::Function *FunctionAliasManager::getFunction(std::string &name, std::vector<llvm::Type *> &args)
