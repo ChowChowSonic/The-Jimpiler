@@ -786,6 +786,7 @@ namespace jimpilier
 		case REFRENCETO:
 		case PRINT:
 		case PRINTLN:
+		case DEL: 
 			placeholder.ty = NULL; 
 			vars.push_back(std::move(placeholder));
 			thisOrFunctionArg(tokens, placeholder, parentName);

@@ -713,11 +713,11 @@ namespace jimpilier
 				std::cout << "return ";
 			if (ret == NULL)
 				return builder->CreateRetVoid();
-			llvm::Value *retval = ret->codegen(!AliasMgr.functions.getFunction(currentFunction).returnsRefrence);
-			if (retval->getType() != currentFunction->getReturnType())
-			{
+			llvm::Value *retval = ret->codegen();
+			//if (retval->getType() != currentFunction->getReturnType())
+			//{
 				// builder->CreateCast() //Add type casting here
-			}
+			//}
 
 			return builder->CreateRet(retval);
 		}
@@ -1167,17 +1167,17 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			// Dear Lord how the fuck does this linker work
-			// GlobalVarsAndFunctions->getOrInsertFunction("__cxa_allocate_exception", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt64Ty(*ctxt)}, false));
-			// GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt)},false));
-			// llvm::Value* ziti = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTIi", llvm::Type::getInt8PtrTy(*ctxt));
-
-			// llvm::Value* ballval = builder->CreateAlloca();
-			// ball->codegen(ballval);
-			// std::cout << (ballval == NULL) <<endl;
-			// llvm::Value* error = builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_allocate_exception"), {AliasMgr.getTypeSize(ballval->getType(), ctxt, DataLayout)}, "errorAllocatmp");
+			GlobalVarsAndFunctions->getOrInsertFunction("__cxa_allocate_exception", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt64Ty(*ctxt)}, false));
+			GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt)},false));
+			llvm::Value* ziti = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTIi", llvm::Type::getInt8PtrTy(*ctxt));
+			if(ziti == NULL) return NULL; 
+			llvm::Value* ballval = ball->codegen();
+			llvm::Value* error = builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_allocate_exception"), {AliasMgr.getTypeSize(ballval->getType(), ctxt, DataLayout)}, "errorAllocatmp");
 			// TODO: FIX ME????
-			// return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"), {error, ziti, AliasMgr.objects.getObject(ballval->getType()).destructor}, "throwtmp");
-			return NULL;
+			if(ballval == NULL) assert(false && "Attempt to throw null object"); 
+			//if(operators[NULL]["DELETE"][ballval->getType()] == NULL)
+			//	assert(false && "Attempt to throw object with no defined destructor");
+			return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"), {error, builder->CreateLoad(llvm::Type::getInt8PtrTy(*ctxt), ziti), builder->CreateBitCast(operators[NULL]["DELETE"][ballval->getType()], llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp")});
 		}
 	};
 
@@ -1765,11 +1765,18 @@ namespace jimpilier
 
 			name += oper + "_";
 			llvm::raw_string_ostream stringstream(name);
+			std::vector<llvm::Type *> nullableArgtypes;
 			for (auto t = args.begin(); t < args.end(); t++)
 			{
-				if (t->ty == NULL)
+				if (t->ty == NULL){
+					nullableArgtypes.push_back(NULL);
+					args.erase(t); 
+					t--;
 					continue;
+					}
+
 				llvm::Type *typev = t->ty->codegen();
+				nullableArgtypes.push_back(typev); 
 				if (typev->isStructTy())
 					name += typev->getStructName();
 				else
@@ -1778,9 +1785,6 @@ namespace jimpilier
 			}
 			Proto = PrototypeAST(name, args, retType);
 			llvm::Function *prevFunction = currentFunction;
-			std::vector<llvm::Type *> argtypes;
-			for (auto &x : Proto.Args)
-				argtypes.push_back(x.ty == NULL ? NULL : x.ty->codegen());
 			// Segment stolen from Proto.codegen()
 			std::vector<std::string> Argnames;
 			std::vector<llvm::Type *> Argt;
@@ -1823,7 +1827,8 @@ namespace jimpilier
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
-				AliasMgr[name] = {storedvar, Proto.Args[Arg.getArgNo()].ty->isReference()};
+				Variable &v = Proto.Args[Arg.getArgNo()]; 
+				AliasMgr[name] = {storedvar, v.ty->isReference()};
 				// dtypes[name] = Arg.getType();
 			}
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
@@ -1835,7 +1840,9 @@ namespace jimpilier
 				verifyFunction(*currentFunction);
 				if (DEBUGGING)
 					std::cout << "//end of " << Proto.getName() << std::endl;
-				operators[argtypes[0]][oper][argtypes[1]] = currentFunction;
+				transform(oper.begin(), oper.end(), oper.begin(), ::toupper); 
+				std::cout << AliasMgr.getTypeName(nullableArgtypes[0]) << " " << oper << " " << AliasMgr.getTypeName(nullableArgtypes[1]) <<endl; 
+				operators[nullableArgtypes[0]][oper][nullableArgtypes[1]] = currentFunction;
 				// remove the arguments now that they're out of scope
 			}
 			else
@@ -1850,7 +1857,7 @@ namespace jimpilier
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
-			return operators[argtypes[0]][oper][argtypes[1]];
+			return operators[nullableArgtypes[0]][oper][nullableArgtypes[1]];
 		}
 	};
 
