@@ -1172,12 +1172,21 @@ namespace jimpilier
 			llvm::Value* ziti = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTIi", llvm::Type::getInt8PtrTy(*ctxt));
 			if(ziti == NULL) return NULL; 
 			llvm::Value* ballval = ball->codegen();
+			if(!ballval->hasName()){
+				llvm::Value* tmpv = builder->CreateAlloca(ballval->getType(), NULL, "allocatmp"); 
+				builder->CreateStore(ballval, tmpv, "storetmp"); 
+				ballval = tmpv; 
+			}
 			llvm::Value* error = builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_allocate_exception"), {AliasMgr.getTypeSize(ballval->getType(), ctxt, DataLayout)}, "errorAllocatmp");
+			//builder->CreateStore(ballval, error); 
 			// TODO: FIX ME????
-			if(ballval == NULL) assert(false && "Attempt to throw null object"); 
-			//if(operators[NULL]["DELETE"][ballval->getType()] == NULL)
-			//	assert(false && "Attempt to throw object with no defined destructor");
-			return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"), {error, builder->CreateLoad(llvm::Type::getInt8PtrTy(*ctxt), ziti), builder->CreateBitCast(operators[NULL]["DELETE"][ballval->getType()], llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp")});
+			assert(ballval != NULL && "Attempt to throw null object"); 
+			assert(operators[NULL]["DELETE"][ballval->getType()->getPointerTo()] != NULL && "Attempt to throw object with no defined destructor");
+			llvm::Function *deleter = operators[NULL]["DELETE"][ballval->getType()->getPointerTo()];
+			return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"), 
+			{error, 
+			builder->CreateLoad(llvm::Type::getInt8PtrTy(*ctxt),ziti, "loadtmp"), 
+			builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
 		}
 	};
 
@@ -1342,7 +1351,7 @@ namespace jimpilier
 
 			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
 			{
-				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy())
+				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy() && ArgsT[i] != CalleeF.args[i].ty)
 					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
 				if (!ArgsV[i])
 				{
@@ -1391,7 +1400,7 @@ namespace jimpilier
 			FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
 			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
 			{
-				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy())
+				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy() && ArgsT[i] != CalleeF.args[i].ty)
 					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
 				if (!ArgsV[i])
 				{
@@ -1472,7 +1481,7 @@ namespace jimpilier
 
 			for (int i = 0; i < CalleeF.args.size(); i++)
 			{
-				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy())
+				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy() && ArgsT[i] != CalleeF.args[i].ty)
 					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
 			}
 
