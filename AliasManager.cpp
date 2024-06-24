@@ -246,7 +246,7 @@ namespace jimpilier
 		return size;
 	}
 
-	std::string AliasManager::getTypeName(llvm::Type *ty)
+	std::string AliasManager::getTypeName(llvm::Type *ty, bool prettyname)
 	{
 		if (ty == NULL)
 			return "null";
@@ -263,23 +263,26 @@ namespace jimpilier
 			llvm::Type *type2 = ty;
 			do
 			{
-				ret += type2->isPointerTy() ? "pointer to a " : "array of ";
-				type2 = type2->isPointerTy() ? type2->getNonOpaquePointerElementType() : type2->getContainedType(0);
+				bool isptr = type2->isPointerTy(); 
+				ret += isptr ? (prettyname ? "pointer to a " : "->") : (prettyname ? "array of " : "[");
+				type2 = isptr ? type2->getNonOpaquePointerElementType() : type2->getContainedType(0);
+				if(!prettyname && !isptr) ret+= ']'; 
 			} while (type2->isPointerTy() || type2->isArrayTy());
-			return ret + getTypeName(type2);
+			return ret + getTypeName(type2, prettyname);
 		}
 		case llvm::Type::DoubleTyID:
 			return "double";
 		case llvm::Type::StructTyID:
-			ret += "structure named ";
+			ret += prettyname ? "structure named " : "";
 			ret += this->objects.getObjectName(ty);
 			return ret;
 		case llvm::Type::FunctionTyID:
 		{
 			llvm::FunctionType *ft = (llvm::FunctionType *)ty;
-			ret += "function that returns a(n) ";
+			ret += prettyname ? "function that returns a(n) " : "";
 			ret += this->getTypeName(ft->getReturnType());
-			ret += " with exactly ";
+			ret += prettyname ? " with exactly " : " ";
+			if(prettyname) return ret; 
 			ret += std::to_string((int)ft->getNumParams());
 			ret += " fixed arguments";
 			ret += ft->isVarArg() ? ", and has at least 1 set of varadic arguments" : ".";

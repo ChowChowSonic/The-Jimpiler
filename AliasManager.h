@@ -158,7 +158,7 @@ namespace jimpilier
 			return objects.getObject(alias).getMember(member);
 		}
 		llvm::Value *getTypeSize(llvm::Type *ty, std::unique_ptr<llvm::LLVMContext> &ctxt, std::unique_ptr<llvm::DataLayout> &DataLayout);
-		std::string getTypeName(llvm::Type *ty);
+		std::string getTypeName(llvm::Type *ty, bool prettyname = true);
 	};
 }
 #endif
