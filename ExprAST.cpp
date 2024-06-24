@@ -1166,26 +1166,31 @@ namespace jimpilier
 		ThrowStmtAST(std::unique_ptr<ExprAST> &ball) : ball(std::move(ball)) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			// Dear Lord how the fuck does this linker work
 			GlobalVarsAndFunctions->getOrInsertFunction("__cxa_allocate_exception", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt64Ty(*ctxt)}, false));
 			GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt),llvm::Type::getInt8PtrTy(*ctxt)},false));
-			llvm::Value* ziti = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTIi", llvm::Type::getInt8PtrTy(*ctxt));
-			if(ziti == NULL) return NULL; 
+			llvm::StructType* errorMetadataType = llvm::StructType::get(llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt));
 			llvm::Value* ballval = ball->codegen();
-			if(!ballval->hasName()){
-				llvm::Value* tmpv = builder->CreateAlloca(ballval->getType(), NULL, "allocatmp"); 
-				builder->CreateStore(ballval, tmpv, "storetmp"); 
-				ballval = tmpv; 
-			}
+			assert(ballval != NULL && "Fatal error when trying to throw an error: Object provided failed to return a useful value"); 
+			llvm::Value* classinfo = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTVN10__cxxabiv117__class_type_infoE", llvm::Type::getInt8PtrTy(*ctxt));
+			assert(classinfo != NULL && "Fatal error trying to generate throw statement");  
 			llvm::Value* error = builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_allocate_exception"), {AliasMgr.getTypeSize(ballval->getType(), ctxt, DataLayout)}, "errorAllocatmp");
-			//builder->CreateStore(ballval, error); 
-			// TODO: FIX ME????
-			assert(ballval != NULL && "Attempt to throw null object"); 
-			assert(operators[NULL]["DELETE"][ballval->getType()->getPointerTo()] != NULL && "Attempt to throw object with no defined destructor");
-			llvm::Function *deleter = operators[NULL]["DELETE"][ballval->getType()->getPointerTo()];
+			assert(error != NULL && "Fatal error creating space for the error you're trying to throw"); 
+			llvm::Constant* typeStringVal = builder->CreateGlobalStringPtr(AliasMgr.getTypeName(ballval->getType(), false));
+			assert(typeStringVal != NULL && "Fatal error trying to generate throw statement");  
+			llvm::GlobalVariable* thrownerror = (llvm::GlobalVariable*)GlobalVarsAndFunctions->getOrInsertGlobal("_Ztis", errorMetadataType);
+			assert(thrownerror != NULL && "Fatal error trying to generate throw statement");  
+			//TODO: Decide whether or not deletion operators should be manditory for throwable objects
+			llvm::Value *deleter = ballval->getType()->isStructTy() ? operators[NULL]["DELETE"][ballval->getType()->getPointerTo()] : (llvm::Value*)llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt));
+			//assert(deleter != NULL && "Fatal error: You tried to throw an object that has no deletion operator");	
+			//initialize the globals: 
+			classinfo = builder->CreateGEP(llvm::Type::getInt8PtrTy(*ctxt), classinfo, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 2))); 
+			classinfo = builder->CreateBitCast(classinfo, llvm::Type::getInt8PtrTy(*ctxt)); 
+			thrownerror->setInitializer(llvm::ConstantStruct::get(errorMetadataType, (llvm::Constant*)classinfo, typeStringVal));
+			//builder->CreateStore(ballval, error, "storetmp");  
+
 			return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"), 
 			{error, 
-			builder->CreateLoad(llvm::Type::getInt8PtrTy(*ctxt),ziti, "loadtmp"), 
+			builder->CreateBitCast(thrownerror, llvm::Type::getInt8PtrTy(*ctxt)), 
 			builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
 		}
 	};
@@ -1827,7 +1832,7 @@ namespace jimpilier
 				currentFunction = prevFunction;
 				return NULL;
 			}
-
+			
 			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
 			builder->SetInsertPoint(BB);
 			// Record the function arguments in the Named Values map.
@@ -1842,7 +1847,7 @@ namespace jimpilier
 			}
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
 			llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen();
-
+			
 			if (RetVal != NULL && (!RetVal->getType()->isPointerTy() || !RetVal->getType()->getNonOpaquePointerElementType()->isFunctionTy()))
 			{
 				// Validate the generated code, checking for consistency.
@@ -1850,14 +1855,14 @@ namespace jimpilier
 				if (DEBUGGING)
 					std::cout << "//end of " << Proto.getName() << std::endl;
 				transform(oper.begin(), oper.end(), oper.begin(), ::toupper); 
-				std::cout << AliasMgr.getTypeName(nullableArgtypes[0]) << " " << oper << " " << AliasMgr.getTypeName(nullableArgtypes[1]) <<endl; 
-				operators[nullableArgtypes[0]][oper][nullableArgtypes[1]] = currentFunction;
-				// remove the arguments now that they're out of scope
 			}
 			else
 			{
 				currentFunction->deleteBody();
 			}
+			// std::cout << AliasMgr.getTypeName(nullableArgtypes[0]) << " " << oper << " " << AliasMgr.getTypeName(nullableArgtypes[1]) <<endl;
+			operators[nullableArgtypes[0]][oper][nullableArgtypes[1]] = currentFunction;
+			// remove the arguments now that they're out of scope
 			for (auto &Arg : currentFunction->args())
 			{
 				AliasMgr[std::string(Arg.getName())] = {NULL, false};
