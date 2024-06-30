@@ -1166,6 +1166,8 @@ class TryStmtAST : public ExprAST{
 
   llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
     llvm::FunctionCallee typeidfor = GlobalVarsAndFunctions->getOrInsertFunction("@llvm.eh.typeid.for", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    llvm::FunctionCallee personalityfunc = GlobalVarsAndFunctions->getOrInsertFunction("__gxx_personality_v0", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    currentFunction->setPersonalityFn((llvm::Constant*)personalityfunc.getCallee()); 
     std::vector<llvm::BasicBlock*> catchBlocks; 
     llvm::BasicBlock* tryBlock = llvm::BasicBlock::Create(*ctxt, "tryentry", currentFunction), *tryEnd = llvm::BasicBlock::Create(*ctxt, "tryend", currentFunction); 
     builder->CreateBr(tryBlock);  
@@ -1217,9 +1219,7 @@ public:
     llvm::StructType* errorMetadataType = llvm::StructType::get(llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt));
     llvm::Value* ballval = ball->codegen();
     assert(ballval != NULL && "Fatal error when trying to throw an error: Object provided failed to return a useful value"); 
-    llvm::Value* classinfo = GlobalVarsAndFunctions->getOrInsertGlobal("_"+AliasMgr.getTypeName(ballval->getType(), false)+"__cxxabiv117__class_type_infoE", llvm::Type::getInt8PtrTy(*ctxt));
-    std::cout << AliasMgr.getTypeName(ballval->getType(), true) <<endl; 
-    classInfoVals[ballval->getType()] = classinfo; 
+    llvm::Value* classinfo = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTVN10__cxxabiv117__class_type_infoE", llvm::Type::getInt8PtrTy(*ctxt));
     assert(classinfo != NULL && "Fatal error trying to generate throw statement");  
     llvm::Value* error = builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_allocate_exception"), {AliasMgr.getTypeSize(ballval->getType(), ctxt, DataLayout)}, "errorAllocatmp");
     assert(error != NULL && "Fatal error creating space for the error you're trying to throw"); 
@@ -1227,6 +1227,8 @@ public:
     assert(typeStringVal != NULL && "Fatal error trying to generate throw statement");  
     std::string thrownerrorname = "_error@"+AliasMgr.getTypeName(ballval->getType(), false);
     llvm::GlobalVariable* thrownerror = (llvm::GlobalVariable*)GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
+    //std::cout << AliasMgr.getTypeName(ballval->getType(), true) <<endl; 
+    classInfoVals[ballval->getType()] = thrownerror; 
     assert(thrownerror != NULL && "Fatal error trying to generate throw statement");  
     //TODO: Decide whether or not deletion operators should be manditory for throwable objects
     llvm::Value *deleter = ballval->getType()->isStructTy() ? operators[NULL]["DELETE"][ballval->getType()->getPointerTo()] : (llvm::Value*)llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt));
