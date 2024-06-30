@@ -12,7 +12,7 @@ enum KeyToken{
     EQUALCMP, EQUALS, NOTEQUAL, GREATER, GREATEREQUALS, LESS, LESSEQUALS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
     OPENCURL, CLOSECURL, OPENSQUARE, CLOSESQUARE, LPAREN, RPAREN, COMMA, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, AS, SIZEOF, HEAP, DEL, //Done
-    IF, ELSE, FOR, DO, WHILE, CASE, SWITCH, BREAK, CONTINUE, DEFAULT, RET, PRINT, PRINTLN, ASSERT,//Done
+    IF, ELSE, FOR, DO, WHILE, CASE, SWITCH, BREAK, CONTINUE, DEFAULT, RET, PRINT, PRINTLN, ASSERT, TRY, CATCH,//Done
     OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, COLON, PERIOD,//Done
     CONST, SINGULAR, VOLATILE, PUBLIC, PRIVATE, PROTECTED, OPERATOR, THROW,//Done
     SCONST, NUMCONST, //Done
@@ -21,7 +21,7 @@ enum KeyToken{
 
 map<string, KeyToken> keywords = {
     {"", IDENT}, {"in", IN}, {"and",AND}, {"or",OR}, {"true", TRU}, {"false", FALS}, {"not", NOT},{"import", IMPORT},
-    {"if", IF}, {"else", ELSE}, {"for", FOR}, {"do", DO},{"while", WHILE}, {"case", CASE}, {"switch", SWITCH}, {"break", BREAK}, {"continue", CONTINUE}, {"default", DEFAULT}, {"return", RET}, {"print",PRINT}, {"println", PRINTLN}, {"assert", ASSERT},
+    {"if", IF}, {"else", ELSE}, {"for", FOR}, {"do", DO},{"while", WHILE}, {"case", CASE}, {"switch", SWITCH}, {"break", BREAK}, {"continue", CONTINUE}, {"default", DEFAULT}, {"return", RET}, {"print",PRINT}, {"println", PRINTLN}, {"assert", ASSERT}, {"try", TRY}, {"catch", CATCH}, 
     {"object", OBJECT}, {"constructor", CONSTRUCTOR}, {"destructor", DESTRUCTOR}, {"as", AS}, {"sizeof", SIZEOF}, {"heap", HEAP}, {"delete", DEL}, 
     {"const", CONST}, {"singular", SINGULAR}, {"volatile", VOLATILE}, {"public", PUBLIC}, {"private", PRIVATE}, {"protected", PROTECTED}, {"operator", OPERATOR}, {"throw", THROW}, 
     {"int", INT}, {"short", SHORT}, {"long", LONG}, {"pointer", POINTER}, {"ptr", POINTER}, {"float", FLOAT}, {"double", DOUBLE}, {"string", STRING}, {"bool", BOOL}, {"char", CHAR}, {"byte", BYTE}, {"void", VOID}, {"auto", AUTO}
@@ -32,7 +32,7 @@ string keytokens[] {
     "EQUALCMP","EQUALS", "NOTEQUAL", "GREATER", "GREATEREQUALS", "LESS", "LESSEQUALS", "INSERTION","REMOVAL", "INCREMENT", "DECREMENT",
     "OPENCURL","CLOSECURL", "OPENSQUARE", "CLOSESQUARE", "LPAREN","RPAREN", "COMMA",
     "PLUS","MINUS","MULT","DIV","LEFTOVER","POWERTO","POINTERTO","REFRENCETO", "AS", "SIZEOF", "HEAP", "DELETE", 
-    "IF","ELSE","FOR","DO","WHILE","CASE","SWITCH", "BREAK", "CONTINUE", "DEFAULT", "RET", "PRINT", "PRINTLN", "ASSERT", 
+    "IF","ELSE","FOR","DO","WHILE","CASE","SWITCH", "BREAK", "CONTINUE", "DEFAULT", "RET", "PRINT", "PRINTLN", "ASSERT", "TRY", "CATCH", 
     "OBJECT","CONSTRUCTOR","DESTRUCTOR","SEMICOL", "COLON", "PERIOD",
     "CONST","SINGULAR", "VOLATILE", "PUBLIC","PRIVATE","PROTECTED","OPERATOR", "THROW", 
     "SCONST", "NUMCONST",
