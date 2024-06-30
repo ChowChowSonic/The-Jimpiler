@@ -24,7 +24,8 @@ namespace jimpilier{
 	AliasManager AliasMgr;
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
-	/**
+	
+  /**
 	 * @brief function where any code put into a static block is placed. Eventually all code in this will be drained into the beginning of main() if it exists
 	 * 
 	 */
@@ -36,7 +37,8 @@ namespace jimpilier{
 	 */
 	std::stack<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> escapeBlock;
 	std::map<llvm::Type *, std::map<std::string, std::map<llvm::Type *, llvm::Function *>>> operators;
-	std::string currentFile; 
+std::map<llvm::Type*, llvm::Value*> classInfoVals; 
+  std::string currentFile; 
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
 	bool errored = false;
