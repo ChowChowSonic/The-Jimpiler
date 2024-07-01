@@ -29,6 +29,12 @@ namespace jimpilier
 			args.push_back(CompileTimeType(x.ty->codegen(), x.ty->isReference()));
 	}
 
+	FunctionHeader::FunctionHeader(std::vector<Variable> &arglist, std::vector<llvm::Type*> &throwables, llvm::Function *func, bool returnsRefrence)
+		: func(func), returnsRefrence(returnsRefrence), throwableTypes(throwables)
+	{
+		for (auto &x : arglist)
+			args.push_back(CompileTimeType(x.ty->codegen(), x.ty->isReference()));
+	}
 	bool operator==(FunctionHeader &h, std::vector<llvm::Type *> &other)
 	{
 		if (h.args.size() != other.size())
@@ -95,6 +101,10 @@ namespace jimpilier
 	void FunctionAliasManager::addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, bool returnsRef)
 	{
 		functionAliases[name].push_back(FunctionHeader(args, func, returnsRef));
+	}
+	void FunctionAliasManager::addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, std::vector<llvm::Type*> &throwables, bool returnsRef)
+	{
+		functionAliases[name].push_back(FunctionHeader(args, throwables,func,returnsRef));
 	}
 	bool FunctionAliasManager::hasAlias(std::string &alias)
 	{

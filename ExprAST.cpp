@@ -1165,17 +1165,19 @@ class TryStmtAST : public ExprAST{
   TryStmtAST( std::unique_ptr<ExprAST> &body, std::map<std::unique_ptr<TypeExpr>, std::unique_ptr<ExprAST>> &catchStmts ) : body(std::move(body)), catchStmts(std::move(catchStmts)){}; 
 
   llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
-    llvm::FunctionCallee typeidfor = GlobalVarsAndFunctions->getOrInsertFunction("@llvm.eh.typeid.for", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    llvm::FunctionCallee typeidfor = GlobalVarsAndFunctions->getOrInsertFunction("llvm.eh.typeid.for", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
     llvm::FunctionCallee personalityfunc = GlobalVarsAndFunctions->getOrInsertFunction("__gxx_personality_v0", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
     currentFunction->setPersonalityFn((llvm::Constant*)personalityfunc.getCallee()); 
     std::vector<llvm::BasicBlock*> catchBlocks; 
     llvm::BasicBlock* tryBlock = llvm::BasicBlock::Create(*ctxt, "tryentry", currentFunction), *tryEnd = llvm::BasicBlock::Create(*ctxt, "tryend", currentFunction); 
+    llvm::BasicBlock *landingpad= llvm::BasicBlock::Create(*ctxt, "landingpad", currentFunction, tryEnd), *oldLP = currentUnwindBlock; 
     builder->CreateBr(tryBlock);  
     builder->SetInsertPoint(tryBlock);
+    currentUnwindBlock = landingpad; 
     body->codegen();
     builder->CreateBr(tryEnd);
-    llvm::BasicBlock *landingpad= llvm::BasicBlock::Create(*ctxt, "landingpad", currentFunction, tryEnd); 
-    builder->SetInsertPoint(landingpad); 
+    builder->SetInsertPoint(landingpad);
+
     llvm::Type * errorMetadata = llvm::StructType::get(*ctxt, {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt32Ty(*ctxt)});
     llvm::LandingPadInst *lpval = builder->CreateLandingPad(errorMetadata,1, "catchBlockLP");
     llvm::Value *extractedval = builder->CreateExtractValue(lpval, {0u}), 
@@ -1197,11 +1199,12 @@ class TryStmtAST : public ExprAST{
       nextblock = catchCheckBlock; 
 
       builder->SetInsertPoint(catchBlock); 
-      x->first->codegen(); 
+      x->second->codegen(); 
       builder->CreateBr(tryEnd); 
       catchBlocks.push_back(catchBlock);
     }
     builder->SetInsertPoint(tryEnd); 
+    currentUnwindBlock = oldLP; 
     return tryBlock; 
   }
 }; 
@@ -1414,7 +1417,13 @@ public:
         assert(false && "Error saving function args");
       }
     }
+    if(!CalleeF.canThrow())
     return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ArgsV) : builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
+    assert(currentUnwindBlock != NULL && "Attempted to call a function that throws errors with no way to catch the error!"); 
+    llvm::BasicBlock* normalUnwindBlock = llvm::BasicBlock::Create(*ctxt, "NormalExecBlock", currentFunction); 
+    llvm::Value* retval = CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock,ArgsV) : builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock, ArgsV, "calltmp");
+    builder->SetInsertPoint(normalUnwindBlock); 
+    return retval; 
   }
 };
 
@@ -1681,11 +1690,28 @@ public:
   std::string Name, parent;
   std::unique_ptr<TypeExpr> retType;
   std::vector<Variable> Args;
+  std::vector<std::unique_ptr<TypeExpr>> throwableTypes;
+
   PrototypeAST(){};
+  
   PrototypeAST(const std::string &name,
                std::vector<Variable> &args,
                std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
   : Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent)
+  {
+    if (parent != "")
+    {
+      std::string name = "this";
+      std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
+      ty = std::make_unique<ReferenceToTypeExpr>(ty);
+      Args.emplace(Args.begin(), Variable(name, ty));
+    }
+  }
+  PrototypeAST(const std::string &name,
+               std::vector<Variable> &args,
+               std::vector<std::unique_ptr<TypeExpr>> &throwables, 
+               std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
+  : Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent), throwableTypes(std::move(throwables))
   {
     if (parent != "")
     {
@@ -1710,10 +1736,14 @@ public:
   {
     std::vector<std::string> Argnames;
     std::vector<llvm::Type *> Argt;
+    std::vector<llvm::Type *> Errt;
     for (auto &x : Args)
     {
       Argnames.push_back(x.name);
       Argt.push_back(x.ty->codegen());
+    }
+    for(auto& x : throwableTypes){
+      Errt.push_back(x->codegen()); 
     }
     llvm::FunctionType *FT =
       llvm::FunctionType::get(retType->codegen(), Argt, false);
@@ -1731,7 +1761,7 @@ public:
     {
       Arg.setName(Argnames[Idx++]);
     }
-    AliasMgr.functions.addFunction(Name, F, Args, retType->isReference());
+    AliasMgr.functions.addFunction(Name, F, Args, Errt, retType->isReference());
     return F;
   }
 };

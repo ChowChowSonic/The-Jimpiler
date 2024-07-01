@@ -1113,16 +1113,18 @@ std::unique_ptr<FunctionAST> functionDecl(Stack<Token> &tokens, std::unique_ptr<
 
   tokens.next();
   args = std::move(functionArgList(tokens));
-  if (tokens.peek() == RPAREN)
-  {
-    tokens.next();
-    std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, args, dtype, objBase);
+  assert(tokens.next() == RPAREN &&"Expected a closing parenthesis here:");
+  std::vector<std::unique_ptr<TypeExpr>> throwables; 
+  if(tokens.peek() == THROWS && tokens.next() == THROWS){
+    do{
+      std::unique_ptr<TypeExpr> ty = variableTypeStmt(tokens);
+      throwables.push_back(std::move(ty)); 
+    }while(tokens.peek()==COMMA && tokens.next() == COMMA); 
+  }
+    std::unique_ptr<PrototypeAST> proto = std::make_unique<PrototypeAST>(name, args, throwables, dtype, objBase);
     std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens));
     std::unique_ptr<FunctionAST> func = std::make_unique<FunctionAST>(std::move(proto), std::move(body));
     return func;
-  }
-  logError("Expected a closing parenthesis here:", tokens.currentToken());
-  return NULL;
 }
 std::unique_ptr<ExprAST> doWhileStmt(Stack<Token> &tokens)
 {

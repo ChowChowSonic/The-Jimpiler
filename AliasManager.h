@@ -1,5 +1,6 @@
 #pragma once
 #include <map>
+#include <memory.h>
 #include "llvm/IR/Function.h"
 #ifndef aliasmgr
 #define aliasmgr
@@ -21,9 +22,15 @@ namespace jimpilier
 
 	public:
 		std::vector<CompileTimeType> args;
+		std::vector<llvm::Type*> throwableTypes;
 		llvm::Function *func;
 		bool returnsRefrence = false; 
+
 		FunctionHeader(std::vector<Variable> &arglist, llvm::Function *func, bool returnsRefrence = false);
+		FunctionHeader(std::vector<Variable> &arglist, std::vector<llvm::Type*> &throwables, llvm::Function *func, bool returnsRefrence = false);
+		bool canThrow(){
+			return !throwableTypes.empty(); 
+		}
 	};
 	bool operator==(FunctionHeader &og, FunctionHeader &other);
 	bool operator==(FunctionHeader &og, std::vector<llvm::Type *> &other);
@@ -38,6 +45,7 @@ namespace jimpilier
 		FunctionHeader &getFunction(llvm::Function* f);
 		FunctionHeader &getFunctionObject(std::string &name, std::vector<llvm::Type *> &args);
 		void addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, bool returnsRef = false);
+		void addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, std::vector<llvm::Type*> &throwables, bool returnsRef = false);
 		bool hasAlias(std::string &alias);
 	};
 
