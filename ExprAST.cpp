@@ -1157,7 +1157,85 @@ public:
     }
   }
 };
+/**
+ * an inline catch operator that is completely seperate from try/catch blocks. 
+ * This operator behaves like a try statement that automatically catches all possible errors thrown by a function. 
+ * However, instead of defining bodies manually for each landingpad, this operator simply makes calls to `operator catch <type>` for the thrown error.
+ * In theory, a user can create instances of fatal/nonfatal errors that could behave a certain way each time they're thrown regardless of where.
+ * I.E. a user can log all errors thrown when they're thrown, and not have to rewrite code for it a billion times.  
+ */
+class CatchOperatorAST: public ExprAST{
+  std::string callee;
+  std::vector<std::unique_ptr<ExprAST>> args;
+  public:
+  CatchOperatorAST(std::string &callee, std::vector<std::unique_ptr<ExprAST>> &Args ) : args(std::move(Args)), callee(callee) {}; 
 
+  llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
+    llvm::FunctionCallee typeidfor = GlobalVarsAndFunctions->getOrInsertFunction("llvm.eh.typeid.for", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    llvm::FunctionCallee personalityfunc = GlobalVarsAndFunctions->getOrInsertFunction("__gxx_personality_v0", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    llvm::FunctionCallee begin_catch = GlobalVarsAndFunctions->getOrInsertFunction("__cxa_begin_catch", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    llvm::FunctionCallee end_catch= GlobalVarsAndFunctions->getOrInsertFunction("__cxa_end_catch", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false)); 
+    currentFunction->setPersonalityFn((llvm::Constant*)personalityfunc.getCallee()); 
+    std::vector<llvm::Type*> argTypes; 
+    std::vector<llvm::Value*> argVals; 
+    for(auto&x: args){
+      llvm::Value* v = x->codegen(false);
+      argTypes.push_back(v->getType()); 
+      argVals.push_back(v); 
+    }
+    
+    FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(callee, argTypes);
+
+    for (unsigned i = 0; i < CalleeF.args.size(); ++i){
+      if (!CalleeF.args[i].isRef && argTypes[i]->isPointerTy() && argTypes[i] != CalleeF.args[i].ty)
+        argVals[i] = builder->CreateLoad(argTypes[i]->getNonOpaquePointerElementType(), argVals[i], "dereftmp");
+        assert(argVals[i] && "Error saving function args");
+    }
+    std::vector<llvm::BasicBlock*> catchBlocks; 
+    llvm::BasicBlock* tryBlock = llvm::BasicBlock::Create(*ctxt, "tryentry", currentFunction), *tryEnd = llvm::BasicBlock::Create(*ctxt, "tryend", currentFunction); 
+    llvm::BasicBlock *landingpad= llvm::BasicBlock::Create(*ctxt, "landingpad", currentFunction, tryEnd), *oldLP = currentUnwindBlock; 
+    builder->CreateBr(tryBlock);  
+    builder->SetInsertPoint(tryBlock);
+    currentUnwindBlock = landingpad; 
+    llvm::Value* retval = builder->CreateInvoke(CalleeF.func, tryEnd, landingpad, argVals, CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? "" : "invoketmp"); 
+    builder->CreateBr(tryEnd);
+    builder->SetInsertPoint(landingpad);
+
+    llvm::Type * errorMetadata = llvm::StructType::get(*ctxt, {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt32Ty(*ctxt)});
+    llvm::LandingPadInst *lpval = builder->CreateLandingPad(errorMetadata,1, "catchBlockLP");
+    llvm::Value *extractedval = builder->CreateExtractValue(lpval, {0u}), 
+                *extractedint = builder->CreateExtractValue(lpval, {1u}); 
+    llvm::BasicBlock *catchCheckBlock = llvm::BasicBlock::Create(*ctxt, "catchcheck", currentFunction, tryEnd); 
+    builder->CreateBr(catchCheckBlock); 
+    llvm::BasicBlock *nextblock = tryEnd; 
+    
+    for(auto x :CalleeF.throwableTypes){
+      assert(x != NULL && "Unable to generate class for object");  
+      //TODO: Remove this assertion, generate the error metadata here instead
+      assert(classInfoVals[x] != NULL && "Unable to find class info for object; make sure your code throws an instance of each type it tries to catch. This error happens whenever you try to catch an error that cannot be thrown at this point in the code");  
+      lpval->addClause((llvm::Constant*)builder->CreateBitCast(classInfoVals[x], llvm::Type::getInt8PtrTy(*ctxt))); 
+      if(nextblock != tryEnd)
+        catchCheckBlock = llvm::BasicBlock::Create(*ctxt, "catchcheck", currentFunction, tryEnd); 
+      llvm::BasicBlock *catchBlock = llvm::BasicBlock::Create(*ctxt, "catchblock", currentFunction, tryEnd); 
+      builder->SetInsertPoint(catchCheckBlock); 
+      llvm::Value *objTypeID = builder->CreateCall(typeidfor, {builder->CreateBitCast(classInfoVals[x], llvm::Type::getInt8PtrTy(*ctxt))}, "getTypeID"); 
+      llvm::Value* condition = builder->CreateICmpEQ(extractedint, objTypeID, "cmptmp"); 
+      builder->CreateCondBr(condition, catchBlock, nextblock);
+      nextblock = catchCheckBlock; 
+
+      builder->SetInsertPoint(catchBlock); 
+      builder->CreateCall(begin_catch, {extractedval}, "error"); 
+      if(operators[NULL]["CATCH"][x] != NULL)
+        builder->CreateCall(operators[NULL]["CATCH"][x], {extractedval}); 
+      builder->CreateCall(end_catch); 
+      builder->CreateBr(tryEnd); 
+      catchBlocks.push_back(catchBlock);
+    }
+    builder->SetInsertPoint(tryEnd); 
+    currentUnwindBlock = oldLP; 
+    return tryBlock; 
+  }
+}; 
 class TryStmtAST : public ExprAST{
   std::unique_ptr<ExprAST> body; 
   std::map<std::unique_ptr<TypeExpr>, std::unique_ptr<ExprAST>> catchStmts; 
@@ -1167,6 +1245,8 @@ class TryStmtAST : public ExprAST{
   llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL){
     llvm::FunctionCallee typeidfor = GlobalVarsAndFunctions->getOrInsertFunction("llvm.eh.typeid.for", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
     llvm::FunctionCallee personalityfunc = GlobalVarsAndFunctions->getOrInsertFunction("__gxx_personality_v0", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    llvm::FunctionCallee begin_catch = GlobalVarsAndFunctions->getOrInsertFunction("__cxa_begin_catch", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false)); 
+    llvm::FunctionCallee end_catch= GlobalVarsAndFunctions->getOrInsertFunction("__cxa_end_catch", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false)); 
     currentFunction->setPersonalityFn((llvm::Constant*)personalityfunc.getCallee()); 
     std::vector<llvm::BasicBlock*> catchBlocks; 
     llvm::BasicBlock* tryBlock = llvm::BasicBlock::Create(*ctxt, "tryentry", currentFunction), *tryEnd = llvm::BasicBlock::Create(*ctxt, "tryend", currentFunction); 
@@ -1187,7 +1267,8 @@ class TryStmtAST : public ExprAST{
     llvm::BasicBlock *nextblock = tryEnd; 
     for(auto x = catchStmts.rbegin(); x != catchStmts.rend(); ++x){
       assert(x->first != NULL && x->first->codegen() != NULL && "Unable to generate class for object");  
-      assert(classInfoVals[x->first->codegen()] != NULL && "Unable to find class info for object");  
+      //TODO: Remove this assertion, generate the error metadata here instead
+      assert(classInfoVals[x->first->codegen()] != NULL && "Unable to find class info for object; make sure your code throws an instance of each type it tries to catch. This error happens whenever you try to catch an error that cannot be thrown at this point in the code");  
       lpval->addClause((llvm::Constant*)builder->CreateBitCast(classInfoVals[x->first->codegen()], llvm::Type::getInt8PtrTy(*ctxt))); 
       if(nextblock != tryEnd)
         catchCheckBlock = llvm::BasicBlock::Create(*ctxt, "catchcheck", currentFunction, tryEnd); 
@@ -1199,7 +1280,9 @@ class TryStmtAST : public ExprAST{
       nextblock = catchCheckBlock; 
 
       builder->SetInsertPoint(catchBlock); 
+      builder->CreateCall(begin_catch, {extractedval}, "errorval"); 
       x->second->codegen(); 
+      builder->CreateCall(end_catch, {}); 
       builder->CreateBr(tryEnd); 
       catchBlocks.push_back(catchBlock);
     }
