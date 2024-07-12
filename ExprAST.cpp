@@ -225,7 +225,7 @@ namespace jimpilier
         return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
       else
       {
-        std::cout << "Attempt to derefrence non-pointer type found: Aborting..." << std::endl;
+        logError("Attempt to derefrence non-pointer type found: Aborting...");
         return NULL;
       }
     }
@@ -246,15 +246,12 @@ namespace jimpilier
       }
       else if (!bsval->getType()->isPointerTy())
       {
-        std::cout << "Error: You tried to take an offset of a non-pointer, non-array type! " << std::endl
-                  << "Make sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!" << std::endl;
-        errored = true;
+        logError("Error: You tried to take an offset of a non-pointer, non-array type!\nMake sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!"); 
         return NULL;
       }
       else if (!offv->getType()->isIntegerTy())
       {
-        std::cout << "Error when trying to take an offset: The value provided must be an integer. Cast it to an int if possible" << std::endl;
-        errored = true;
+        logError("Error when trying to take an offset: The value provided must be an integer. Cast it to an int if possible");
         return NULL;
       }
       llvm::Value *indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
@@ -305,9 +302,7 @@ namespace jimpilier
         }
         else
         {
-          std::cout << "Attempted conversion failed: "
-                    << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << std::endl;
-          errored = true;
+          logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
         }
         break;
       case (llvm::Type::HalfTyID):
@@ -327,9 +322,7 @@ namespace jimpilier
         }
         else
         {
-          std::cout << "Attempted conversion failed: "
-                    << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << std::endl;
-          errored = true;
+          logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"); 
         }
         break;
       case (llvm::Type::DoubleTyID):
@@ -347,9 +340,7 @@ namespace jimpilier
           op = llvm::Instruction::CastOps::FPToSI;
         else
         {
-          std::cout << "Attempted conversion failed: "
-                    << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << std::endl;
-          errored = true;
+          logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"); 
         }
         break;
       case (llvm::Type::PointerTyID):
@@ -359,14 +350,12 @@ namespace jimpilier
           op = llvm::Instruction::CastOps::BitCast;
         else
         {
-          std::cout << "Attempted conversion failed: "
-                    << "Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us" << std::endl;
-          errored = true;
+          logError("Attempted conversion failed:\
+                    Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
         }
         break;
       default:
-        std::cout << "No known conversion (or defined operator overload) when converting " << AliasMgr.getTypeName(init->getType()) << " to a(n) " << AliasMgr.getTypeName(to);
-        errored = true;
+        logError("No known conversion (or defined operator overload) when converting " + AliasMgr.getTypeName(init->getType()) + " to a(n) " + AliasMgr.getTypeName(to));
         return NULL;
       }
       return builder->CreateCast(op, init, to, "typecasttmp");
@@ -408,34 +397,30 @@ namespace jimpilier
   class SwitchExprAST : public ExprAST
   {
   public:
-    std::vector<std::unique_ptr<ExprAST>> condition, body;
+    std::vector<std::pair<std::set<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> cases;
     std::unique_ptr<ExprAST> comp;
-    int def;
     bool autoBr;
-    SwitchExprAST(std::unique_ptr<ExprAST> comparator, std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod, bool autoBreak, int defaultLoc = -1) : condition(std::move(cond)), body(std::move(bod)), comp(std::move(comparator)), autoBr(autoBreak), def(defaultLoc) {}
+    SwitchExprAST(std::unique_ptr<ExprAST> &comparator, std::vector<std::pair<std::set<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> &cases, bool autoBreak) : cases(std::move(cases)), comp(std::move(comparator)), autoBr(autoBreak){}
     llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
     {
       std::vector<llvm::BasicBlock *> bodBlocks;
       llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
-      llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, body.size());
+      llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, cases.size());
       escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
-      int i = body.size() - 1;
-      do
-      {
+      
+      for(auto caseExpr = cases.rbegin(); caseExpr!= cases.rend(); caseExpr++){
         llvm::BasicBlock *currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody);
         bodBlocks.push_back(currentbody);
         builder->SetInsertPoint(currentbody);
-        body[i]->codegen();
+        caseExpr->second->codegen();
         builder->CreateBr(autoBr ? glblend : lastbody);
-        if (condition[i] != NULL)
-          val->addCase((llvm::ConstantInt *)condition[i]->codegen(), currentbody);
+        for(auto& x : caseExpr->first)
+            val->addCase((llvm::ConstantInt *)x->codegen(), currentbody);
+        if (caseExpr->first.empty()) val->setDefaultDest(currentbody);
         lastbody = currentbody;
-        i -= 1;
         escapeBlock.pop();
         escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
-      } while (i >= 0);
-      if (def >= 0)
-        val->setDefaultDest(bodBlocks[bodBlocks.size() - 1 - def]);
+      }  
       builder->SetInsertPoint(glblend);
       escapeBlock.pop();
       return val;
@@ -494,9 +479,7 @@ namespace jimpilier
     {
       if (!type && !target)
       {
-        errored = true;
-        std::cout << "Invalid target for sizeof: The expression you're taking the size of doesn't do what you think it does" << std::endl;
-        return NULL;
+        logError("Invalid target for sizeof: The expression you're taking the size of doesn't do what you think it does");
       }
       llvm::Type *ty = this->type == NULL ? target->codegen()->getType() : this->type->codegen();
       switch (ty->getTypeID())
@@ -550,9 +533,7 @@ namespace jimpilier
         return builder->CreateCall(operators[NULL]["DELETE"][deletedthing->getType()], {deletedthing}, "deletecalltmp");
       if (!deletedthing->getType()->isPointerTy())
       {
-        std::cout << "Remember: Objects on the stack are accessed directly, you only need to delete pointers that point to the heap" << std::endl;
-        std::cout << "You might've tried to delete an object (directly) by mistake rather than a pointer to that object" << std::endl;
-        errored = true;
+        logError("Remember: Objects on the stack are accessed directly, you only need to delete pointers that point to the heap\nYou might've tried to delete an object (directly) by mistake rather than a pointer to that object");
         return NULL;
       }
       std::vector<llvm::Type *> argstmp;
@@ -753,14 +734,12 @@ namespace jimpilier
         {
           if (!llvm::isa<llvm::GlobalVariable>(lval))
           {
-            errored = true;
-            std::cout << "Error: Global variable not found " << lval->getName().str();
+            logError("Error: Global variable not found " + lval->getName().str());
             return NULL;
           }
           else if (!llvm::isa<llvm::Constant>(rval) || lval->getType() != rval->getType()->getPointerTo())
           {
-            errored = true;
-            std::cout << "Error: Global variable " << lval->getName().str() << " is not being set to a constant value" << std::endl;
+            logError("Error: Global variable " + lval->getName().str()+" is not being set to a constant value");
             return NULL;
           }
           llvm::dyn_cast<llvm::GlobalVariable>(lval)->setInitializer(llvm::dyn_cast<llvm::Constant>(rval));
@@ -769,8 +748,7 @@ namespace jimpilier
         {
           if (lval->getType() != rval->getType()->getPointerTo())
           {
-            std::cout << "Error when attempting to assign a value: The type of the right side (" << AliasMgr.getTypeName(lval->getType()) << ") does not match the left side (" << AliasMgr.getTypeName(rval->getType()) << ")." << std::endl;
-            errored = true;
+            logError("Error when attempting to assign a value: The type of the right side (" + AliasMgr.getTypeName(lval->getType()) + ") does not match the left side (" + AliasMgr.getTypeName(rval->getType()) + ").");
             return NULL;
           }
           builder->CreateStore(rval, lval);
@@ -823,15 +801,14 @@ namespace jimpilier
           return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp");
         }
         default:
-          errored = true;
-          std::cout << "Operator " << (notval ? "!=" : "==") << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+          std::string s = notval ? "!=" : "==";
+          logError("Operator " + s + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
           return NULL;
         }
       }
       else
       {
-        errored = true;
-        std::cout << "Error when attempting to compare two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+        logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) +" and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -882,15 +859,15 @@ namespace jimpilier
           return div ? builder->CreateFDiv(lhs, rhs, "divtmp") : builder->CreateFMul(lhs, rhs, "multmp");
         }
         default:
-          errored = true;
-          std::cout << "Operator " << (div ? '/' : '*') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+        std::string c = div ? "/" : "*"; 
+          logError("Operator " + c + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
           return NULL;
         }
       }
       else
       {
-        errored = true;
-        std::cout << "Error when attempting to " << (div ? "divide" : "multiply") << " two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+        std::string s = (div ? "divide" : "multiply"); 
+        logError("Error when attempting to " + s + " two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -939,8 +916,8 @@ namespace jimpilier
         return sub ? builder->CreateFSub(lhs, rhs, "subtmp") : builder->CreateFAdd(lhs, rhs, "addtmp");
       }
       default:
-        errored = true;
-        std::cout << "Operator " << (sub ? '-' : '+') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+        std::string s = sub ? "-" : "+";
+        logError("Operator " +s+ " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -992,15 +969,14 @@ namespace jimpilier
           return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
         }
         default:
-          errored = true;
-          std::cout << "Operator " << (sub ? '<' : '>') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+        std::string s = (sub ? "<": ">"); 
+          logError("Operator " +s+ " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()) );
           return NULL;
         }
       }
       else
       {
-        errored = true;
-        std::cout << "Error when attempting to compare two types (these should match): " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType());
+        logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) +" and " +AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -1055,8 +1031,7 @@ namespace jimpilier
         }
         if (!(rhs->getType()->isFloatingPointTy() || rhs->getType()->isIntegerTy()))
         {
-          errored = true;
-          std::cout << "Error when attempting to raise a number to a power: the right-hand-side is not an integer or float" << std::endl;
+          logError("Error when attempting to raise a number to a power: the right-hand-side is not an integer or float");
           return NULL;
         }
         if (rhs->getType()->isIntegerTy())
@@ -1071,8 +1046,8 @@ namespace jimpilier
         return mod ? builder->CreateFRem(lhs, rhs) : builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
       }
       default:
-        errored = true;
-        std::cout << "Operator " << (mod ? '%' : '^') << " never overloaded to support " << AliasMgr.getTypeName(lhs->getType()) << " and " << AliasMgr.getTypeName(rhs->getType()) << std::endl;
+        std::string s = mod ? "%": "^"; 
+        logError("Operator " +s+ " never overloaded to support " +AliasMgr.getTypeName(lhs->getType()) +" and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -1270,6 +1245,7 @@ namespace jimpilier
       GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt)}, false));
       llvm::StructType *errorMetadataType = llvm::StructType::get(llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt));
       llvm::Value *ballval = ball->codegen();
+      this->throwables.insert(ballval->getType()); 
       assert(ballval != NULL && "Fatal error when trying to throw an error: Object provided failed to return a useful value");
       llvm::Value *classinfo = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTVN10__cxxabiv117__class_type_infoE", llvm::Type::getInt8PtrTy(*ctxt));
       assert(classinfo != NULL && "Fatal error trying to generate throw statement");
@@ -1280,7 +1256,7 @@ namespace jimpilier
       llvm::Constant *typeStringVal = builder->CreateGlobalStringPtr(AliasMgr.getTypeName(ballval->getType(), false));
       assert(typeStringVal != NULL && "Fatal error trying to generate throw statement");
       std::string thrownerrorname = "_error@" + AliasMgr.getTypeName(ballval->getType(), false);
-      llvm::GlobalVariable *thrownerror = (llvm::GlobalVariable *)GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
+      llvm::GlobalVariable *thrownerror = (llvm::GlobalVariable*) GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
       // std::cout << AliasMgr.getTypeName(ballval->getType(), true) <<endl;
       classInfoVals[ballval->getType()] = thrownerror;
       assert(thrownerror != NULL && "Fatal error trying to generate throw statement");
@@ -1417,8 +1393,7 @@ namespace jimpilier
       auto returnTy = AliasMgr(lhs->getType()->getContainedType(0), member);
       if (returnTy.index == -1)
       {
-        std::cout << "No object member or function with name '" << member << "' found in object of type: " << AliasMgr.getTypeName(lhs->getType()->getContainedType(0)) << std::endl;
-        errored = true;
+        logError("No object member or function with name '" + member + "' found in object of type: " + AliasMgr.getTypeName(lhs->getType()->getContainedType(0))); 
         return NULL;
       }
       llvm::Constant *offset = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, returnTy.index));
@@ -1443,7 +1418,7 @@ namespace jimpilier
     {
       if (!AliasMgr.functions.hasAlias(Callee))
       {
-        std::cout << "A function with name was never declared: " << Callee << std::endl;
+        logError("A function with name was never declared: " + Callee );
         assert(false);
       }
       std::vector<llvm::Value *> ArgsV;
@@ -1580,8 +1555,7 @@ namespace jimpilier
         other = builder->CreateAlloca(TargetType, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(1, 32)), "objConstructorTmp");
       if (other->getType() != TargetType->getPointerTo())
       {
-        errored = true;
-        std::cout << "Error when attempting to assign a constructor value: The type of the left side (" << AliasMgr.getTypeName(other->getType()) << ") does not match the right side (" << AliasMgr.getTypeName(target == NULL ? TargetType : TargetType->getPointerTo()) << ")." << std::endl;
+        logError("Error when attempting to assign a constructor value: The type of the left side (" + AliasMgr.getTypeName(other->getType()) + ") does not match the right side (" + AliasMgr.getTypeName(target == NULL ? TargetType : TargetType->getPointerTo()) + ")."); 
         return NULL;
       }
       if (TargetType->getTypeID() != llvm::Type::StructTyID)
@@ -1859,8 +1833,7 @@ namespace jimpilier
       }
       if (!currentFunction->empty())
       {
-        errored = true;
-        std::cout << "Function Cannot be redefined: " << currentFunction->getName().str() << std::endl;
+        logError("Function Cannot be redefined: " + currentFunction->getName().str() ); 
         currentFunction = prevFunction;
         return NULL;
       }
@@ -1873,7 +1846,7 @@ namespace jimpilier
         llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
         builder->CreateStore(&Arg, storedvar);
         std::string name = std::string(Arg.getName());
-        // std::cout << Proto->Name <<" " << Proto->Args.size() << Arg.getArgNo() << currentFunction->arg_size() <<endl;
+        // std::cout + Proto->Name +" " + Proto->Args.size() + Arg.getArgNo() + currentFunction->arg_size() +endl;
         AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()};
       }
 
@@ -1975,8 +1948,7 @@ namespace jimpilier
       }
       if (!currentFunction->empty())
       {
-        errored = true;
-        std::cout << "Operator Cannot be redefined: " << currentFunction->getName().str() << std::endl;
+        logError("Operator Cannot be redefined: " + currentFunction->getName().str() ); 
         currentFunction = prevFunction;
         return NULL;
       }
@@ -2073,10 +2045,7 @@ namespace jimpilier
       }
       if (!currentFunction->empty())
       {
-        errored = true;
-        std::cout << "Operator Cannot be redefined: " << currentFunction->getName().str() << std::endl;
-        currentFunction = prevFunction;
-        return NULL;
+        logError("Operator Cannot be redefined: " + currentFunction->getName().str());
       }
 
       llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);

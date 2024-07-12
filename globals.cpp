@@ -9,6 +9,7 @@
 #include "llvm/IR/Type.h"
 #ifndef globals
 #define globals
+#include "tokenizer.cpp"
 #include "AliasManager.h"
 namespace jimpilier{
 	class AliasManager; 
@@ -41,6 +42,18 @@ namespace jimpilier{
 	std::string currentFile; 
 	/* Strictly for testing purposes, not meant for releases*/
 	const bool DEBUGGING = false;
-	bool errored = false;
+
+		// <-- BEGINNING OF UTILITY FUNCTIONS -->
+
+	void logError(const std::string& s, Token t)
+	{
+		std::cout << s << ' ' << t.toString() << std::endl;
+		assert(false);
+	}
+	void logError(const std::string& s)
+	{
+		std::cout << s << ' '<<std::endl; 
+		assert(false); 
+	}
 }
 #endif

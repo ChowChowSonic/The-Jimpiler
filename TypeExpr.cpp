@@ -82,8 +82,7 @@ namespace jimpilier
 			llvm::Type *ty = AliasMgr(name);
 			if (!testforval && ty == NULL)
 			{
-				std::cout << "Unknown object of name: " << name << std::endl;
-				errored = true;
+				logError("Unknown object of name: " + name);
 				return NULL;
 			}
 			return ty;
