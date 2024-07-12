@@ -787,6 +787,7 @@ std::unique_ptr<ExprAST> operatorOverloadStmt(Stack<Token> &tokens, std::unique_
     case PRINT:
     case PRINTLN:
     case DEL: 
+    case CATCH:
       placeholder.ty = NULL; 
       vars.push_back(std::move(placeholder));
       thisOrFunctionArg(tokens, placeholder, parentName);
@@ -1388,12 +1389,12 @@ std::unique_ptr<ExprAST> printStmt(Stack<Token> &tokens)
 std::unique_ptr<ExprAST> tryStmt(Stack<Token> &tokens){
   assert(tokens.next() == TRY && "Attempted to parse a try stmt where there was none."); 
   std::unique_ptr<ExprAST> body = std::move(codeBlockExpr(tokens)); 
-  std::map<std::unique_ptr<TypeExpr>, std::unique_ptr<ExprAST>> catches; 
+  std::map<std::unique_ptr<TypeExpr>, std::pair<std::unique_ptr<ExprAST>, std::string>> catches; 
   while(tokens.peek() == CATCH && tokens.next() == CATCH){
     std::unique_ptr<TypeExpr> errorv = std::move(variableTypeStmt(tokens));
     std::string name = tokens.next().lex; 
     //Variable v = Variable(name, errorv); 
-    catches[std::move(errorv)] = std::move(codeBlockExpr(tokens)); 
+    catches[std::move(errorv)] = std::pair<std::unique_ptr<ExprAST>, std::string>(std::move(codeBlockExpr(tokens)), name); 
   }
   return std::make_unique<TryStmtAST>(body, catches); 
 }
