@@ -12,7 +12,7 @@ enum KeyToken{
     EQUALCMP, EQUALS, NOTEQUAL, GREATER, GREATEREQUALS, LESS, LESSEQUALS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
     OPENCURL, CLOSECURL, OPENSQUARE, CLOSESQUARE, LPAREN, RPAREN, COMMA, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, AS, SIZEOF, HEAP, DEL, //Done
-    IF, ELSE, FOR, DO, WHILE, CASE, SWITCH, BREAK, CONTINUE, DEFAULT, RET, PRINT, PRINTLN, ASSERT, TRY, CATCH,//Done
+    IF, ELSE, FOR, DO, WHILE, CASE, SWITCH, BREAK, CONTINUE, DEFAULT, RET, PRINT, PRINTLN, ASSERT, TRY, CATCH, ASSEMBLY,//Done
     OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, COLON, PERIOD,//Done
     CONST, SINGULAR, VOLATILE, PUBLIC, PRIVATE, PROTECTED, OPERATOR, THROW, THROWS,//Done
     SCONST, NUMCONST, //Done
@@ -23,7 +23,7 @@ map<string, KeyToken> keywords = {
     {"", IDENT}, {"in", IN}, {"and",AND}, {"or",OR}, {"true", TRU}, {"false", FALS}, {"not", NOT},{"import", IMPORT},
     {"if", IF}, {"else", ELSE}, {"for", FOR}, {"do", DO},{"while", WHILE}, {"case", CASE}, {"switch", SWITCH}, {"break", BREAK}, {"continue", CONTINUE}, {"default", DEFAULT}, {"return", RET}, {"print",PRINT}, {"println", PRINTLN}, {"assert", ASSERT}, {"try", TRY}, {"catch", CATCH}, 
     {"object", OBJECT}, {"constructor", CONSTRUCTOR}, {"destructor", DESTRUCTOR}, {"as", AS}, {"sizeof", SIZEOF}, {"heap", HEAP}, {"delete", DEL}, 
-    {"const", CONST}, {"singular", SINGULAR}, {"volatile", VOLATILE}, {"public", PUBLIC}, {"private", PRIVATE}, {"protected", PROTECTED}, {"operator", OPERATOR}, {"throw", THROW}, {"throws", THROWS}, 
+    {"const", CONST}, {"singular", SINGULAR}, {"volatile", VOLATILE}, {"public", PUBLIC}, {"private", PRIVATE}, {"protected", PROTECTED}, {"operator", OPERATOR}, {"throw", THROW}, {"throws", THROWS}, {"assembly", ASSEMBLY},
     {"int", INT}, {"short", SHORT}, {"long", LONG}, {"pointer", POINTER}, {"ptr", POINTER}, {"float", FLOAT}, {"double", DOUBLE}, {"string", STRING}, {"bool", BOOL}, {"char", CHAR}, {"byte", BYTE}, {"void", VOID}, {"auto", AUTO}
 };
 
@@ -106,6 +106,28 @@ bool isValidInt(char ch){
 }
 bool isValidIdent(char ch){
     return (isalnum(ch) || ch == '_') && ch != ';' && ch != '.';
+}
+/**
+ * @brief Parses inline assembly bounded by a opening and closing curly brace
+ * 
+ *
+ */
+Token parseAsm(istream &s, int &line){
+    int startingline = line, bracecount = 1; 
+    std::string assembly = "";
+    char currentchar; 
+    while(currentchar != '{'){
+        (s >> currentchar); 
+    }
+    do{
+        s >> currentchar; 
+        if(currentchar == '{') bracecount++; 
+        else if(currentchar == '}') bracecount--; 
+        if(currentchar == '\n') line++; 
+        if(bracecount > 0 )
+        assembly+= currentchar; 
+    }while(bracecount > 0); 
+    return Token(ASSEMBLY, assembly, startingline); 
 }
 /**
  * @brief Get the Next Token object in the stringstream provided. Also takes a 'line' variable to keep track of possible errors.
@@ -211,7 +233,11 @@ Token getNextToken(istream & s, int & line){
             bool isvalidchar = isValidIdent(ch);// && isValidIdent(nextchar);
             bool isnextvalid = isValidIdent(nextchar);
             if(isvalidchar && !isspace(ch))lexeme+=ch; 
-            if(!isnextvalid) return Token(keywords[(lexeme)], lexeme, line); 
+            if(!isnextvalid) { 
+                Token t(keywords[(lexeme)], lexeme, line);
+                if(t.token == ASSEMBLY) return parseAsm(s, line); 
+                return t; 
+            } 
             break;
             }
             case INNUM:{

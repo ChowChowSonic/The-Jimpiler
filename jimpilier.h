@@ -1473,6 +1473,8 @@ namespace jimpilier
 			return std::move(jimpilier::throwStmt(tokens));
 		case ASSERT:
 			return std::move(assertStmt(tokens));
+		case ASSEMBLY:
+			return std::make_unique<ASMExprAST>(tokens.next().lex); 
 		default:
 			return std::move(declareStmt(tokens));
 		}

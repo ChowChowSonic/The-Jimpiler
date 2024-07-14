@@ -10,8 +10,10 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/FileCheck/FileCheck.h"
+
 #ifndef ast
 #define ast
 #include "globals.cpp"
@@ -2123,6 +2125,16 @@ namespace jimpilier
       return boolval;
     }
   };
-
+  class ASMExprAST : public ExprAST{
+    std::string assembly; 
+    public:
+    ASMExprAST(const std::string& assembly) : assembly(assembly){}
+    llvm::Value* codegen(bool autoderef = true, llvm::Value *other= NULL){
+      //logError(assembly); 
+      llvm::InlineAsm* v = llvm::InlineAsm::get(llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false), assembly, "~{dirflag},~{fpsr},~{flags}", true, false, llvm::InlineAsm::AD_ATT);
+      builder->CreateCall(v, {}); 
+      return v;
+    }
+  };
 }
 #endif
