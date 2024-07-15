@@ -135,6 +135,15 @@ namespace jimpilier
       return AliasMgr[name].val;
     }
   };
+  // TODO: Decide whether or not deletion operators should be manditory for throwable objects
+
+  // TODO: Improve object function solution. Current Implementation feels wrong
+  // TODO: Double check ObjectConstructorCallExprAST.codegen(), make sure it works properly
+  // TODO: Get labels working if possible
+  // TODO: Implement forEach statements
+  // TODO: Finish implementing list objects (Implement as a fat pointer struct)
+  // TODO: Break BinaryStmtAST up into several ExprAST objects for each operator
+  // TODO: Finalize boolean support
   // TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr != null (@objptr).func()"
   // TODO: Add implicit type casting (maybe)
   // TODO: Completely revamp data type system to be almost exclusively front-end
@@ -248,7 +257,7 @@ namespace jimpilier
       }
       else if (!bsval->getType()->isPointerTy())
       {
-        logError("Error: You tried to take an offset of a non-pointer, non-array type!\nMake sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!"); 
+        logError("Error: You tried to take an offset of a non-pointer, non-array type!\nMake sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!");
         return NULL;
       }
       else if (!offv->getType()->isIntegerTy())
@@ -324,7 +333,7 @@ namespace jimpilier
         }
         else
         {
-          logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"); 
+          logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
         }
         break;
       case (llvm::Type::DoubleTyID):
@@ -342,7 +351,7 @@ namespace jimpilier
           op = llvm::Instruction::CastOps::FPToSI;
         else
         {
-          logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us"); 
+          logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
         }
         break;
       case (llvm::Type::PointerTyID):
@@ -402,33 +411,35 @@ namespace jimpilier
     std::vector<std::pair<std::set<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> cases;
     std::unique_ptr<ExprAST> comp;
     bool autoBr;
-    SwitchExprAST(std::unique_ptr<ExprAST> &comparator, std::vector<std::pair<std::set<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> &cases, bool autoBreak) : cases(std::move(cases)), comp(std::move(comparator)), autoBr(autoBreak){}
+    SwitchExprAST(std::unique_ptr<ExprAST> &comparator, std::vector<std::pair<std::set<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> &cases, bool autoBreak) : cases(std::move(cases)), comp(std::move(comparator)), autoBr(autoBreak) {}
     llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
     {
       std::vector<llvm::BasicBlock *> bodBlocks;
       llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
       llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, cases.size());
       escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
-      
-      for(auto caseExpr = cases.rbegin(); caseExpr!= cases.rend(); caseExpr++){
+
+      for (auto caseExpr = cases.rbegin(); caseExpr != cases.rend(); caseExpr++)
+      {
         llvm::BasicBlock *currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody);
         bodBlocks.push_back(currentbody);
         builder->SetInsertPoint(currentbody);
         caseExpr->second->codegen();
         builder->CreateBr(autoBr ? glblend : lastbody);
-        for(auto& x : caseExpr->first)
-            val->addCase((llvm::ConstantInt *)x->codegen(), currentbody);
-        if (caseExpr->first.empty()) val->setDefaultDest(currentbody);
+        for (auto &x : caseExpr->first)
+          val->addCase((llvm::ConstantInt *)x->codegen(), currentbody);
+        if (caseExpr->first.empty())
+          val->setDefaultDest(currentbody);
         lastbody = currentbody;
         escapeBlock.pop();
         escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
-      }  
+      }
       builder->SetInsertPoint(glblend);
       escapeBlock.pop();
       return val;
     }
   };
-  // TODO: Get labels working if possible
+
   /**
    * @brief represents a break statement with optional label.
    * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none
@@ -502,7 +513,6 @@ namespace jimpilier
       return NULL;
     }
   };
-  // TODO: Add constructors for the primitive types
   class HeapExprAST : public ExprAST
   {
 
@@ -547,8 +557,6 @@ namespace jimpilier
       return NULL;
     }
   };
-
-  // TODO: Implement forEach statements
   /**
    * @brief Represents a for loop in LLVM IR, currently does not support for each statements
    *
@@ -601,7 +609,6 @@ namespace jimpilier
       return retval;
     }
   };
-  // TODO: Finish implementing list objects (Implement as a fat pointer struct)
   /**
    * Represents a list of items in code, usually represented by a string such as "[1, 2, 3, 4, 5]" alongside an optional semicolon on the end
    */
@@ -741,7 +748,7 @@ namespace jimpilier
           }
           else if (!llvm::isa<llvm::Constant>(rval) || lval->getType() != rval->getType()->getPointerTo())
           {
-            logError("Error: Global variable " + lval->getName().str()+" is not being set to a constant value");
+            logError("Error: Global variable " + lval->getName().str() + " is not being set to a constant value");
             return NULL;
           }
           llvm::dyn_cast<llvm::GlobalVariable>(lval)->setInitializer(llvm::dyn_cast<llvm::Constant>(rval));
@@ -810,7 +817,7 @@ namespace jimpilier
       }
       else
       {
-        logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) +" and " + AliasMgr.getTypeName(rhs->getType()));
+        logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -861,14 +868,14 @@ namespace jimpilier
           return div ? builder->CreateFDiv(lhs, rhs, "divtmp") : builder->CreateFMul(lhs, rhs, "multmp");
         }
         default:
-        std::string c = div ? "/" : "*"; 
+          std::string c = div ? "/" : "*";
           logError("Operator " + c + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
           return NULL;
         }
       }
       else
       {
-        std::string s = (div ? "divide" : "multiply"); 
+        std::string s = (div ? "divide" : "multiply");
         logError("Error when attempting to " + s + " two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
@@ -919,7 +926,7 @@ namespace jimpilier
       }
       default:
         std::string s = sub ? "-" : "+";
-        logError("Operator " +s+ " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
+        logError("Operator " + s + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -971,14 +978,14 @@ namespace jimpilier
           return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
         }
         default:
-        std::string s = (sub ? "<": ">"); 
-          logError("Operator " +s+ " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()) );
+          std::string s = (sub ? "<" : ">");
+          logError("Operator " + s + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
           return NULL;
         }
       }
       else
       {
-        logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) +" and " +AliasMgr.getTypeName(rhs->getType()));
+        logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
@@ -1048,14 +1055,12 @@ namespace jimpilier
         return mod ? builder->CreateFRem(lhs, rhs) : builder->CreateCall(powfunc, {lhs, rhs}, "powtmp");
       }
       default:
-        std::string s = mod ? "%": "^"; 
-        logError("Operator " +s+ " never overloaded to support " +AliasMgr.getTypeName(lhs->getType()) +" and " + AliasMgr.getTypeName(rhs->getType()));
+        std::string s = mod ? "%" : "^";
+        logError("Operator " + s + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
         return NULL;
       }
     }
   };
-
-  // TODO: Break this up into several ExprAST objects for each operator
   /** BinaryStmtAST - Expression class for a binary operator.
    *
    *
@@ -1146,10 +1151,10 @@ namespace jimpilier
   class TryStmtAST : public ExprAST
   {
     std::unique_ptr<ExprAST> body;
-    std::map<std::unique_ptr<TypeExpr>, std::pair<std::unique_ptr<ExprAST>,std::string>> catchStmts;
+    std::map<std::unique_ptr<TypeExpr>, std::pair<std::unique_ptr<ExprAST>, std::string>> catchStmts;
 
   public:
-    TryStmtAST(std::unique_ptr<ExprAST> &body, std::map<std::unique_ptr<TypeExpr>, std::pair<std::unique_ptr<ExprAST>,std::string>> &catchStmts) : body(std::move(body)), catchStmts(std::move(catchStmts)){};
+    TryStmtAST(std::unique_ptr<ExprAST> &body, std::map<std::unique_ptr<TypeExpr>, std::pair<std::unique_ptr<ExprAST>, std::string>> &catchStmts) : body(std::move(body)), catchStmts(std::move(catchStmts)){};
 
     llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
     {
@@ -1175,12 +1180,26 @@ namespace jimpilier
       llvm::BasicBlock *catchCheckBlock = llvm::BasicBlock::Create(*ctxt, "catchcheck", currentFunction, tryEnd);
       builder->CreateBr(catchCheckBlock);
       llvm::BasicBlock *nextblock = tryEnd;
+      llvm::StructType *errorMetadataType = llvm::StructType::get(llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt));
+
       if (!catchStmts.empty())
       {
         for (auto x = catchStmts.rbegin(); x != catchStmts.rend(); ++x)
         {
           assert(x->first != NULL && x->first->codegen() != NULL && "Unable to generate class for object");
-          // TODO: Remove this assertion, generate the error metadata here instead
+
+          if (classInfoVals[x->first->codegen()] == NULL)
+          {
+            std::string thrownerrorname = "_error@" + AliasMgr.getTypeName(x->first->codegen(), false);
+            llvm::GlobalVariable *thrownerror = (llvm::GlobalVariable *)GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
+            classInfoVals[x->first->codegen()] = thrownerror;
+            llvm::Value *classinfo = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTVN10__cxxabiv117__class_type_infoE", llvm::Type::getInt8PtrTy(*ctxt));
+            classinfo = builder->CreateGEP(llvm::Type::getInt8PtrTy(*ctxt), classinfo, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 2)));
+            classinfo = builder->CreateBitCast(classinfo, llvm::Type::getInt8PtrTy(*ctxt));
+            thrownerror->setInitializer(llvm::ConstantStruct::get(errorMetadataType, (llvm::Constant *)classinfo, builder->CreateGlobalStringPtr(AliasMgr.getTypeName(x->first->codegen(), false), AliasMgr.getTypeName(x->first->codegen(), false))));
+            // logError(classinfo == NULL ? "true" : "false");
+          }
+
           assert(classInfoVals[x->first->codegen()] != NULL && "Unable to find class info for object; make sure your code throws an instance of each type it tries to catch. This error happens whenever you try to catch an error that cannot be thrown at this point in the code");
           lpval->addClause((llvm::Constant *)builder->CreateBitCast(classInfoVals[x->first->codegen()], llvm::Type::getInt8PtrTy(*ctxt)));
           if (nextblock != tryEnd)
@@ -1193,13 +1212,13 @@ namespace jimpilier
           nextblock = catchCheckBlock;
 
           builder->SetInsertPoint(catchBlock);
-          AliasMgr[x->second.second] = {(llvm::Value*)builder->CreateBitCast(builder->CreateCall(begin_catch, {extractedval}), x->first->codegen()->getPointerTo(), "errorptr"), false};
+          AliasMgr[x->second.second] = {(llvm::Value *)builder->CreateBitCast(builder->CreateCall(begin_catch, {extractedval}), x->first->codegen()->getPointerTo(), "errorptr"), false};
           if (operators[NULL]["CATCH"][x->first->codegen()->getPointerTo()] != NULL)
-            builder->CreateCall(operators[NULL]["CATCH"][x->first->codegen()->getPointerTo()], {AliasMgr[x->second.second].val}); 
+            builder->CreateCall(operators[NULL]["CATCH"][x->first->codegen()->getPointerTo()], {AliasMgr[x->second.second].val});
           x->second.first->codegen();
           builder->CreateCall(end_catch, {});
           builder->CreateBr(tryEnd);
-          AliasMgr[x->second.second] = {NULL, false}; 
+          AliasMgr[x->second.second] = {NULL, false};
           catchBlocks.push_back(catchBlock);
         }
       }
@@ -1209,7 +1228,18 @@ namespace jimpilier
         {
           assert(x != NULL && "Unable to generate class for object");
           // TODO: Remove this assertion, generate the error metadata here instead
-          assert(classInfoVals[x] != NULL && "Unable to find class info for object; make sure your code throws an instance of each type it tries to catch. This error happens whenever you try to catch an error that cannot be thrown at this point in the code");
+
+          if (classInfoVals[x] == NULL)
+          {
+            std::string thrownerrorname = "_error@" + AliasMgr.getTypeName(x, false);
+            llvm::GlobalVariable *thrownerror = (llvm::GlobalVariable *)GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
+            llvm::Value *classinfo = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTVN10__cxxabiv117__class_type_infoE", llvm::Type::getInt8PtrTy(*ctxt));
+            classinfo = builder->CreateGEP(llvm::Type::getInt8PtrTy(*ctxt), classinfo, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 2)));
+            classinfo = builder->CreateBitCast(classinfo, llvm::Type::getInt8PtrTy(*ctxt));
+            thrownerror->setInitializer(llvm::ConstantStruct::get(errorMetadataType, (llvm::Constant *)classinfo, builder->CreateGlobalStringPtr(AliasMgr.getTypeName(x, false))));
+            classInfoVals[x] = thrownerror;
+          }
+
           lpval->addClause((llvm::Constant *)builder->CreateBitCast(classInfoVals[x], llvm::Type::getInt8PtrTy(*ctxt)));
           if (nextblock != tryEnd)
             catchCheckBlock = llvm::BasicBlock::Create(*ctxt, "catchcheck", currentFunction, tryEnd);
@@ -1221,7 +1251,7 @@ namespace jimpilier
           nextblock = catchCheckBlock;
 
           builder->SetInsertPoint(catchBlock);
-          llvm::Value* errorval = builder->CreateCall(begin_catch, {extractedval}, "error");
+          llvm::Value *errorval = builder->CreateCall(begin_catch, {extractedval}, "error");
           if (operators[NULL]["CATCH"][x->getPointerTo()] != NULL)
             builder->CreateCall(operators[NULL]["CATCH"][x->getPointerTo()], {builder->CreateBitCast(errorval, x->getPointerTo())});
           builder->CreateCall(end_catch);
@@ -1247,38 +1277,44 @@ namespace jimpilier
       GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt)}, false));
       llvm::StructType *errorMetadataType = llvm::StructType::get(llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt));
       llvm::Value *ballval = ball->codegen();
-      this->throwables.insert(ballval->getType()); 
+      this->throwables.insert(ballval->getType());
       assert(ballval != NULL && "Fatal error when trying to throw an error: Object provided failed to return a useful value");
       llvm::Value *classinfo = GlobalVarsAndFunctions->getOrInsertGlobal("_ZTVN10__cxxabiv117__class_type_infoE", llvm::Type::getInt8PtrTy(*ctxt));
       assert(classinfo != NULL && "Fatal error trying to generate throw statement");
       llvm::Value *error = builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_allocate_exception"), {AliasMgr.getTypeSize(ballval->getType(), ctxt, DataLayout)}, "errorAllocatmp");
-      llvm::Value* error2 = builder->CreateBitCast(error, ballval->getType()->getPointerTo(), "bitcasttmp"); 
-      builder->CreateStore(ballval, error2); 
+      llvm::Value *error2 = builder->CreateBitCast(error, ballval->getType()->getPointerTo(), "bitcasttmp");
+      builder->CreateStore(ballval, error2);
       assert(error != NULL && "Fatal error creating space for the error you're trying to throw");
-      llvm::Constant *typeStringVal = builder->CreateGlobalStringPtr(AliasMgr.getTypeName(ballval->getType(), false));
+      llvm::Constant *typeStringVal = NULL;
+      if (classInfoVals[ballval->getType()] == NULL)
+      {
+        typeStringVal = builder->CreateGlobalStringPtr(AliasMgr.getTypeName(ballval->getType(), false), AliasMgr.getTypeName(ballval->getType(), false));
+      }
+      else
+        typeStringVal = GlobalVarsAndFunctions->getGlobalVariable(AliasMgr.getTypeName(ballval->getType(), false), true);
       assert(typeStringVal != NULL && "Fatal error trying to generate throw statement");
       std::string thrownerrorname = "_error@" + AliasMgr.getTypeName(ballval->getType(), false);
-      llvm::GlobalVariable *thrownerror = (llvm::GlobalVariable*) GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
-      // std::cout << AliasMgr.getTypeName(ballval->getType(), true) <<endl;
-      classInfoVals[ballval->getType()] = thrownerror;
-      assert(thrownerror != NULL && "Fatal error trying to generate throw statement");
-      // TODO: Decide whether or not deletion operators should be manditory for throwable objects
+      if (classInfoVals[ballval->getType()] == NULL)
+      {
+        llvm::GlobalVariable *thrownerror = (llvm::GlobalVariable *)GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
+        // std::cout << AliasMgr.getTypeName(ballval->getType(), true) <<endl;
+        classInfoVals[ballval->getType()] = thrownerror;
+        assert(thrownerror != NULL && "Fatal error trying to generate throw statement");
+        // initialize the globals:
+        classinfo = builder->CreateGEP(llvm::Type::getInt8PtrTy(*ctxt), classinfo, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 2)));
+        classinfo = builder->CreateBitCast(classinfo, llvm::Type::getInt8PtrTy(*ctxt));
+        thrownerror->setInitializer(llvm::ConstantStruct::get(errorMetadataType, (llvm::Constant *)classinfo, typeStringVal));
+        // builder->CreateStore(ballval, error, "storetmp");
+      }
       llvm::Value *deleter = ballval->getType()->isStructTy() ? operators[NULL]["DELETE"][ballval->getType()->getPointerTo()] : (llvm::Value *)llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt));
       // assert(deleter != NULL && "Fatal error: You tried to throw an object that has no deletion operator");
-      // initialize the globals:
-      classinfo = builder->CreateGEP(llvm::Type::getInt8PtrTy(*ctxt), classinfo, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 2)));
-      classinfo = builder->CreateBitCast(classinfo, llvm::Type::getInt8PtrTy(*ctxt));
-      thrownerror->setInitializer(llvm::ConstantStruct::get(errorMetadataType, (llvm::Constant *)classinfo, typeStringVal));
-      // builder->CreateStore(ballval, error, "storetmp");
 
       return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"),
                                  {error,
-                                  builder->CreateBitCast(thrownerror, llvm::Type::getInt8PtrTy(*ctxt)),
+                                  builder->CreateBitCast(classInfoVals[ballval->getType()], llvm::Type::getInt8PtrTy(*ctxt)),
                                   builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
     }
   };
-
-  // TODO: Finalize boolean support
   /**
      * Class representing a print statement in the Abstract Syntax Tree (AST)
      * Inherits from ExprAST base class
@@ -1395,7 +1431,7 @@ namespace jimpilier
       auto returnTy = AliasMgr(lhs->getType()->getContainedType(0), member);
       if (returnTy.index == -1)
       {
-        logError("No object member or function with name '" + member + "' found in object of type: " + AliasMgr.getTypeName(lhs->getType()->getContainedType(0))); 
+        logError("No object member or function with name '" + member + "' found in object of type: " + AliasMgr.getTypeName(lhs->getType()->getContainedType(0)));
         return NULL;
       }
       llvm::Constant *offset = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, returnTy.index));
@@ -1420,7 +1456,7 @@ namespace jimpilier
     {
       if (!AliasMgr.functions.hasAlias(Callee))
       {
-        logError("A function with name was never declared: " + Callee );
+        logError("A function with name was never declared: " + Callee);
         assert(false);
       }
       std::vector<llvm::Value *> ArgsV;
@@ -1518,7 +1554,6 @@ namespace jimpilier
     }
   };
 
-  // TODO: Double check this codegen function, make sure it works properly
   /**
    * @brief ObjectConstructorCallExprAST - Expression class for constructor calls from objects. This acts just like regular function calls,
    * but this adds an implicit pointer to the object refrencing the call, so it needs its own ExprAST to function properly
@@ -1557,7 +1592,7 @@ namespace jimpilier
         other = builder->CreateAlloca(TargetType, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(1, 32)), "objConstructorTmp");
       if (other->getType() != TargetType->getPointerTo())
       {
-        logError("Error when attempting to assign a constructor value: The type of the left side (" + AliasMgr.getTypeName(other->getType()) + ") does not match the right side (" + AliasMgr.getTypeName(target == NULL ? TargetType : TargetType->getPointerTo()) + ")."); 
+        logError("Error when attempting to assign a constructor value: The type of the left side (" + AliasMgr.getTypeName(other->getType()) + ") does not match the right side (" + AliasMgr.getTypeName(target == NULL ? TargetType : TargetType->getPointerTo()) + ").");
         return NULL;
       }
       if (TargetType->getTypeID() != llvm::Type::StructTyID)
@@ -1607,7 +1642,6 @@ namespace jimpilier
         std::vector<Variable> &argList,
         std::unique_ptr<ExprAST> &body,
         std::string objName) : argslist(std::move(argList)), bod(std::move(body)), objName(objName){};
-    // TODO: Review this, double check that nothing is broken
     llvm::Value *codegen(bool autoderef = false, llvm::Value *other = NULL)
     {
       std::vector<std::string> argnames;
@@ -1806,7 +1840,6 @@ namespace jimpilier
       return F;
     }
   };
-  // TODO: Improve object function solution. Current Implementation feels wrong
   /// FunctionAST - This class represents a function definition, rather than a function call.
   class FunctionAST : public ExprAST
   {
@@ -1835,7 +1868,7 @@ namespace jimpilier
       }
       if (!currentFunction->empty())
       {
-        logError("Function Cannot be redefined: " + currentFunction->getName().str() ); 
+        logError("Function Cannot be redefined: " + currentFunction->getName().str());
         currentFunction = prevFunction;
         return NULL;
       }
@@ -1950,7 +1983,7 @@ namespace jimpilier
       }
       if (!currentFunction->empty())
       {
-        logError("Operator Cannot be redefined: " + currentFunction->getName().str() ); 
+        logError("Operator Cannot be redefined: " + currentFunction->getName().str());
         currentFunction = prevFunction;
         return NULL;
       }
@@ -2125,14 +2158,17 @@ namespace jimpilier
       return boolval;
     }
   };
-  class ASMExprAST : public ExprAST{
-    std::string assembly; 
-    public:
-    ASMExprAST(const std::string& assembly) : assembly(assembly){}
-    llvm::Value* codegen(bool autoderef = true, llvm::Value *other= NULL){
-      //logError(assembly); 
-      llvm::InlineAsm* v = llvm::InlineAsm::get(llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false), assembly, "~{dirflag},~{fpsr},~{flags}", true, false, llvm::InlineAsm::AD_ATT);
-      builder->CreateCall(v, {}); 
+
+  class ASMExprAST : public ExprAST
+  {
+    std::string assembly;
+
+  public:
+    ASMExprAST(const std::string &assembly) : assembly(assembly) {}
+    llvm::Value *codegen(bool autoderef = true, llvm::Value *other = NULL)
+    {
+      llvm::InlineAsm *v = llvm::InlineAsm::get(llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false), assembly, "~{dirflag},~{fpsr},~{flags}", true, false, llvm::InlineAsm::AD_ATT);
+      builder->CreateCall(v, {});
       return v;
     }
   };
