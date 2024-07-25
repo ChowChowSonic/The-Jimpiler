@@ -45,6 +45,7 @@ namespace jimpilier
   public:
     NumberExprAST(double Val) : Val(Val) {}
     NumberExprAST(int Val) : Val(Val) { isInt = true; }
+    NumberExprAST(long Val) : Val(Val) { isInt = true; }
     NumberExprAST(bool Val) : Val(Val) { isBool = true; }
     llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
     {

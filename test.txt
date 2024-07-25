@@ -39,11 +39,11 @@ int main(int args, string pointer argv)
             println 0
             continue
         }
-        case 1{
+        case 1, 2{
             println 1
             continue
         }
-        case 2{
+        case 5 ... 10, 20 ... 30{
             println 2
         }
         default{
