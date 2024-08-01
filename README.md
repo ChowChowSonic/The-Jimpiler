@@ -23,7 +23,7 @@ Here is the shell command that I use to test any code I write:
 ```
 I plan to have Jimbo files use a `.jmb` file extension, but this is currently low on my priority list. 
 # Special features of the Jimbo Programming Language
-## Inline debug statements
+## Inline debug printing
 This is a fairly straightforward operator -  
 This prints the value & line of whatever is passed to it...
 then returns the value of what it just printed
@@ -39,39 +39,39 @@ println temp
 Once again, this is fairly straightforward, it makes the following two blocks of code equivalent:
 ```
 switch auto break variable{
-        case 0{
-            continue
-        }
-        case 1, 2{
-            continue
-        }
-        default{
-            println "default reached:", variable
-			continue
-		}
-		case 3{
-		}
-		case 4{
-			throw exception
-		}
-    }
+	case 0{
+		continue
+	}
+	case 1, 2{
+		continue
+	}
+	default{
+		println "default reached:", variable
+		continue
+	}
+	case 3{
+	}
+	case 4{
+		throw exception
+	}
+}
 ```
 ```
 switch variable{
-        case 0{
-        }
-        case 1, 2{
-        }
-        default{
-            println "default reached:", variable
-        }
-		case 3{
-			break
-		}
-		case 4{
-			throw exception; 
-		}
-    }
+	case 0{
+	}
+	case 1, 2{
+	}
+	default{
+		println "default reached:", variable
+	}
+	case 3{
+		break
+	}
+	case 4{
+		throw exception; 
+	}
+}
 ```
 ## Case-Range statements
 This is a convenience notation, meant to handle large amounts of constant consecutive integers without having to use if statements. 
@@ -79,11 +79,11 @@ This is a convenience notation, meant to handle large amounts of constant consec
 ```
 switch something {
 	case 5 ... 10, 20 ... 30{
-        println "This will print when (something >=5 && something < 10) || (something >= 20 && something < 30)"
-    }
+		println "This will print when (something >=5 && something < 10) || (something >= 20 && something < 30)"
+	}
     case 0 ... 5:2{
-        println "This will print when something is 0, 2, or 4"
-    }
+		println "This will print when something is 0, 2, or 4"
+	}
 }
 ```
 10 & 30 in the first case (& 5 in the second case) are exclusive. Don't worry about overlapping values as long as they're all part of the same case stmt.
@@ -113,12 +113,15 @@ int x = 5;
 > Debug value (Line 1): [1,2,3,4,5]
 ```
 
-## N-way equivalency relations (TO BE IMPLEMENTED)
+## N-way equivalency relations (EXPERIMENTAL)
 ```
-if (x == y == z == 5 > 4) doSomething()
+if (x == y == z == 5 > 4) doSomething() //y,z,5 get evaluated twice; functions/operators will only be called once
 //alternatively...
-if (x == y && y == z && z == 5 && 5 > 4) doSomething()
+if (x == y && y == z && z == 5 && 5 > 4) doSomething() // y,z,5 evaluated twice, but functions will be called twice if not saved to a variable
 ```
+## Implicit Main (EXPERIMENTAL)
+I hope to have the language not require a main method, instead placing all code into a 'static_main' method that will never allocate variables on the stack. Once compilation is done, the compiler will check if a main method exists - if it doesn't, it renames the static method to 'main'. <br>
+Any variables allocated in the implicit main method will be promoted to a global variable; this will ultimately hit performance if you go for the implicit main route, but is still very good for rapid prototyping. 
 ## Check out my progress
 Right now my main priority is getting the language off the ground (When i'm not in class); `TypeExpr.cpp` contains the type & Variable objects, `globals.cpp` contains, well, globals; `ExprAST.cpp` contains the IR generating abstract syntax tree (& related) objects, while `jimpilier.h` contains the parsing code. 
 I have various TODO markers spread out throughout `jimpilier.h` and `ExprAST.cpp` reminding me that I still have a lot of progress to make. Feel free to take a look through and see my progress! 

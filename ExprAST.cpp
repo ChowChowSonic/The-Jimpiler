@@ -374,6 +374,93 @@ namespace jimpilier
 		}
 	};
 
+	class ComparisonStmtAST : public ExprAST
+	{
+		std::vector<std::unique_ptr<ExprAST>> items;
+		std::vector<KeyToken> operations;
+		bool sub;
+
+	public:
+		ComparisonStmtAST(std::vector<std::unique_ptr<ExprAST>> &items, std::vector<KeyToken> &operations)
+			: items(std::move(items)), operations(std::move(operations)) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			// std::vector<llvm::Value*> oldcomparisons;
+			llvm::Value *RHS = NULL, *comparison = NULL;
+			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, other->getType()->isLabelTy() ? (llvm::BasicBlock*)other : NULL);
+			for (int i = 0; i < operations.size(); i++)
+			{
+				llvm::Value *LHS = RHS == NULL ? items[i]->codegen() : RHS;
+				RHS = items[i + 1]->codegen();
+				llvm::BasicBlock *nextconditional = NULL;
+				if (i < operations.size() - 1)
+					nextconditional = llvm::BasicBlock::Create(*ctxt, "ShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
+				// if(comparison != NULL) oldcomparisons.push_back(comparison);
+				switch (operations[i])
+				{
+				case EQUALCMP:
+					if (operators[LHS->getType()]["=="][RHS->getType()] != NULL)
+						comparison = builder->CreateCall(operators[LHS->getType()]["=="][RHS->getType()], {LHS, RHS}, "calltmp");
+					else
+						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpEQ(LHS, RHS, "cmptmp") : builder->CreateFCmpOEQ(LHS, RHS, "cmptmp");
+					break;
+				case NOTEQUAL:
+					if (operators[LHS->getType()]["!="][RHS->getType()] != NULL)
+						comparison = builder->CreateCall(operators[LHS->getType()]["!="][RHS->getType()], {LHS, RHS}, "calltmp");
+					else
+						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpNE(LHS, RHS, "cmptmp") : builder->CreateFCmpONE(LHS, RHS, "cmptmp");
+					break;
+				case GREATER:
+					if (operators[LHS->getType()][">"][RHS->getType()] != NULL)
+						comparison = builder->CreateCall(operators[LHS->getType()][">"][RHS->getType()], {LHS, RHS}, "calltmp");
+					else
+						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGT(LHS, RHS, "cmptmp") : builder->CreateFCmpOGT(LHS, RHS, "cmptmp");
+					break;
+				case GREATEREQUALS:
+					if (operators[LHS->getType()][">="][RHS->getType()] != NULL)
+						comparison = builder->CreateCall(operators[LHS->getType()][">="][RHS->getType()], {LHS, RHS}, "calltmp");
+					else
+						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGE(LHS, RHS, "cmptmp") : builder->CreateFCmpOGE(LHS, RHS, "cmptmp");
+					break;
+				case LESS:
+					if (operators[LHS->getType()]["<"][RHS->getType()] != NULL)
+						comparison = builder->CreateCall(operators[LHS->getType()]["<"][RHS->getType()], {LHS, RHS}, "calltmp");
+					else
+						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLT(LHS, RHS, "cmptmp") : builder->CreateFCmpOLT(LHS, RHS, "cmptmp");
+					break;
+				case LESSEQUALS:
+					if (operators[LHS->getType()]["<="][RHS->getType()] != NULL)
+						comparison = builder->CreateCall(operators[LHS->getType()]["<="][RHS->getType()], {LHS, RHS}, "calltmp");
+					else
+						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLE(LHS, RHS, "cmptmp") : builder->CreateFCmpOLE(LHS, RHS, "cmptmp");
+					break;
+				default:
+					logError("Unknown comparision operator: " + keytokens[operations[i]]);
+				}
+				if (nextconditional != NULL)
+				{
+					builder->CreateCondBr(comparison, nextconditional, shortCircuitEvalEnd);
+					builder->SetInsertPoint(nextconditional);
+				}
+			}
+			if (other->getType()->isLabelTy())
+			{
+				builder->CreateCondBr(comparison, (llvm::BasicBlock *)other, shortCircuitEvalEnd);
+			}
+			// else
+			// {
+			// 	builder->CreateStore(comparison, other, "storetmp");
+			// }
+			builder->SetInsertPoint(shortCircuitEvalEnd);
+			// comparison = oldcomparisons[0];
+			// for( int i = 1; i < oldcomparisons.size(); i++){
+			// 	comparison = builder->CreateLogicalAnd(comparison, oldcomparisons[i], "andtmp");
+			// }
+			return shortCircuitEvalEnd;
+		}
+	};
+
+
 	class IfExprAST : public ExprAST
 	{
 	public:
@@ -387,12 +474,12 @@ namespace jimpilier
 			for (i = 0; i < std::min(condition.size(), body.size()); i++)
 			{
 				start = llvm::BasicBlock::Create(*ctxt, "ifstart", currentFunction, glblend);
-				end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
-				builder->CreateCondBr(condition[i]->codegen(), start, end);
+				// end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
+				llvm::Value* end = condition[i]->codegen(false, start);
 				builder->SetInsertPoint(start);
 				body[i]->codegen();
 				builder->CreateBr(glblend);
-				builder->SetInsertPoint(end);
+				builder->SetInsertPoint((llvm::BasicBlock*)end);
 			}
 
 			while (i < body.size())
@@ -631,70 +718,86 @@ namespace jimpilier
 				for (auto &x : end->throwables)
 					this->throwables.insert(x);
 			}
-			if(operators[begin->getType()]["RANGE"][fin->getType()] != NULL){
-				return operators[begin->getType()]["RANGE"][fin->getType()]->getReturnType()->isVoidTy() ? builder->CreateCall(operators[begin->getType()]["RANGE"][fin->getType()], {begin, fin}) : builder->CreateCall(operators[begin->getType()]["RANGE"][fin->getType()], {begin, fin}, "calltmp"); 
+			if (operators[begin->getType()]["RANGE"][fin->getType()] != NULL)
+			{
+				return operators[begin->getType()]["RANGE"][fin->getType()]->getReturnType()->isVoidTy() ? builder->CreateCall(operators[begin->getType()]["RANGE"][fin->getType()], {begin, fin}) : builder->CreateCall(operators[begin->getType()]["RANGE"][fin->getType()], {begin, fin}, "calltmp");
 			}
 			if (llvm::isa<llvm::ConstantInt>(begin) && llvm::isa<llvm::ConstantInt>(fin) && llvm::isa<llvm::ConstantInt>(delta))
 			{
 				llvm::ConstantInt *cbegin = (llvm::ConstantInt *)begin, *cend = (llvm::ConstantInt *)fin, *cdelta = (llvm::ConstantInt *)delta;
 				long bval = cbegin->getSExtValue(), eval = cend->getSExtValue(), dval = cdelta->getSExtValue();
-				assert(dval != 0 && "Ranges must have a non-zero delta value. How are we supposed to move through a range when we can't move?"); 
-				if(bval > eval && dval > 0){
-					dval *=-1; 
-				}else if(bval < eval && dval < 0){
-					dval*=-1 ; 
+				assert(dval != 0 && "Ranges must have a non-zero delta value. How are we supposed to move through a range when we can't move?");
+				if (bval > eval && dval > 0)
+				{
+					dval *= -1;
+				}
+				else if (bval < eval && dval < 0)
+				{
+					dval *= -1;
 				}
 				std::vector<llvm::Constant *> constarray;
 				for (long l = bval; (bval > eval && dval < 0 ? l > eval : l < eval); l += dval)
 					constarray.push_back(llvm::ConstantInt::get(cbegin->getType(), llvm::APInt(cbegin->getBitWidth(), l)));
 				llvm::ArrayType *arrtype = llvm::ArrayType::get(cbegin->getType(), constarray.size());
-				llvm::GlobalVariable *glbl = new llvm::GlobalVariable(*GlobalVarsAndFunctions, (llvm::Type*)arrtype, true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantArray::get(arrtype, constarray)); 
+				llvm::GlobalVariable *glbl = new llvm::GlobalVariable(*GlobalVarsAndFunctions, (llvm::Type *)arrtype, true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantArray::get(arrtype, constarray));
 				ret = glbl;
-			}else if(llvm::isa<llvm::ConstantFP>(begin) && llvm::isa<llvm::Constant>(fin) && llvm::isa<llvm::Constant>(delta)){
-				llvm::ConstantFP *cbegin = (llvm::ConstantFP*)begin, *cend = fin->getType()->isFloatingPointTy() ? (llvm::ConstantFP*)fin : (llvm::ConstantFP*)builder->CreateCast(llvm::Instruction::CastOps::SIToFP, fin, cbegin->getType()), *cdelta = delta->getType()->isIntegerTy() ? (llvm::ConstantFP*)builder->CreateCast(llvm::Instruction::CastOps::SIToFP, delta, cbegin->getType()) :(llvm::ConstantFP*) delta; 
-				double bval = cbegin->getValue().convertToDouble(), eval = cend->getValue().convertToDouble(), dval = cdelta->getValue().convertToDouble(); 
-				assert(dval != 0.0 && "Ranges must have a non-zero delta value. How are we supposed to move through a range when we can't move?"); 
-				if(bval > eval && dval > 0.0){
-					dval *=-1.0; 
-				}else if(bval < eval && dval < 0.0){
-					dval*=-1.0 ; 
+			}
+			else if (llvm::isa<llvm::ConstantFP>(begin) && llvm::isa<llvm::Constant>(fin) && llvm::isa<llvm::Constant>(delta))
+			{
+				llvm::ConstantFP *cbegin = (llvm::ConstantFP *)begin, *cend = fin->getType()->isFloatingPointTy() ? (llvm::ConstantFP *)fin : (llvm::ConstantFP *)builder->CreateCast(llvm::Instruction::CastOps::SIToFP, fin, cbegin->getType()), *cdelta = delta->getType()->isIntegerTy() ? (llvm::ConstantFP *)builder->CreateCast(llvm::Instruction::CastOps::SIToFP, delta, cbegin->getType()) : (llvm::ConstantFP *)delta;
+				double bval = cbegin->getValue().convertToDouble(), eval = cend->getValue().convertToDouble(), dval = cdelta->getValue().convertToDouble();
+				assert(dval != 0.0 && "Ranges must have a non-zero delta value. How are we supposed to move through a range when we can't move?");
+				if (bval > eval && dval > 0.0)
+				{
+					dval *= -1.0;
+				}
+				else if (bval < eval && dval < 0.0)
+				{
+					dval *= -1.0;
 				}
 				std::vector<llvm::Constant *> constarray;
-				for (double l = bval; (bval > eval && dval < 0.0 ? l > eval : l < eval); l += dval){
-					if(cbegin->getType()->isFloatTy()){
-					constarray.push_back(llvm::ConstantFP::get(cbegin->getType(), llvm::APFloat((float) l)));
-					}else{
+				for (double l = bval; (bval > eval && dval < 0.0 ? l > eval : l < eval); l += dval)
+				{
+					if (cbegin->getType()->isFloatTy())
+					{
+						constarray.push_back(llvm::ConstantFP::get(cbegin->getType(), llvm::APFloat((float)l)));
+					}
+					else
+					{
 						constarray.push_back(llvm::ConstantFP::get(cbegin->getType(), llvm::APFloat(l)));
 					}
 				}
 				llvm::ArrayType *arrtype = llvm::ArrayType::get(cbegin->getType(), constarray.size());
-				llvm::GlobalVariable *glbl = new llvm::GlobalVariable(*GlobalVarsAndFunctions, (llvm::Type*)arrtype, true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantArray::get(arrtype, constarray)); 
+				llvm::GlobalVariable *glbl = new llvm::GlobalVariable(*GlobalVarsAndFunctions, (llvm::Type *)arrtype, true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantArray::get(arrtype, constarray));
 				ret = glbl;
-			}else{
-				assert(delta->getType() == begin->getType() && begin->getType() == fin->getType()); 
-				
-				llvm::Value* arrsize = builder->CreateFSub(builder->CreateCast(llvm::Instruction::CastOps::SIToFP, fin, llvm::Type::getDoubleTy(*ctxt)), builder->CreateCast(llvm::Instruction::CastOps::SIToFP, begin, llvm::Type::getDoubleTy(*ctxt)), "subtmp"); 
-				arrsize = builder->CreateFDiv(arrsize, builder->CreateCast(llvm::Instruction::CastOps::SIToFP, delta, llvm::Type::getDoubleTy(*ctxt),"divtmp"), "divtmp"); 
-				arrsize = builder->CreateCall(GlobalVarsAndFunctions->getOrInsertFunction("round", llvm::Type::getDoubleTy(*ctxt),llvm::Type::getDoubleTy(*ctxt)), {arrsize}, "calltmp"); 
-				llvm::Value *arrsizeval = builder->CreateCast(llvm::Instruction::CastOps::FPToUI,arrsize, llvm::Type::getInt32Ty(*ctxt), "typecasttmp");
-				llvm::Value *arrlocation = builder->CreateAlloca(begin->getType(), arrsizeval,  "rangeallocation"); 
-				llvm::BasicBlock *loopstart = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *loopend = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction); 
+			}
+			else
+			{
+				// TODO: Swap implementation with something similar to Python's RangeObject implementation
+				assert(delta->getType() == begin->getType() && begin->getType() == fin->getType());
+
+				llvm::Value *arrsize = builder->CreateFSub(builder->CreateCast(llvm::Instruction::CastOps::SIToFP, fin, llvm::Type::getDoubleTy(*ctxt)), builder->CreateCast(llvm::Instruction::CastOps::SIToFP, begin, llvm::Type::getDoubleTy(*ctxt)), "subtmp");
+				arrsize = builder->CreateFDiv(arrsize, builder->CreateCast(llvm::Instruction::CastOps::SIToFP, delta, llvm::Type::getDoubleTy(*ctxt), "divtmp"), "divtmp");
+				arrsize = builder->CreateCall(GlobalVarsAndFunctions->getOrInsertFunction("round", llvm::Type::getDoubleTy(*ctxt), llvm::Type::getDoubleTy(*ctxt)), {arrsize}, "calltmp");
+				llvm::Value *arrsizeval = builder->CreateCast(llvm::Instruction::CastOps::FPToUI, arrsize, llvm::Type::getInt32Ty(*ctxt), "typecasttmp");
+				llvm::Value *arrlocation = builder->CreateAlloca(begin->getType(), arrsizeval, "rangeallocation");
+				llvm::BasicBlock *loopstart = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *loopend = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
 				llvm::Value *accum = builder->CreateAlloca(llvm::Type::getInt32Ty(*ctxt), NULL, "accumtmp");
-				builder->CreateStore(llvm::ConstantAggregateZero::get(llvm::Type::getInt32Ty(*ctxt)), accum);  
-				llvm::Value *brcond = builder->CreateFCmp(llvm::CmpInst::Predicate::FCMP_OEQ,arrsize, llvm::ConstantAggregateZero::get(arrsize->getType()), "cmptmp"); 
-				builder->CreateCondBr(brcond, loopend, loopstart); 
-				builder->SetInsertPoint(loopstart); 
-				llvm::Value* v= builder->CreateLoad(llvm::Type::getInt32Ty(*ctxt), accum, "accumtmp");
-				llvm::Value* v2 = delta->getType()->isFloatingPointTy() ? builder->CreateFMul(delta, builder->CreateCast(llvm::Instruction::CastOps::SIToFP, v, delta->getType(), "casttmp"), "multmp") : builder->CreateMul(delta, v, "multmp"); 
-				v2 = begin->getType()->isFloatingPointTy() ? builder->CreateFAdd(begin, v2, "addtmp"): builder->CreateAdd(begin, v2, "addtmp"); 
-				llvm::Value *locationval = builder->CreateGEP(begin->getType(), arrlocation, v, "indextmp"); 
-				builder->CreateStore(v2, locationval); 
-				v = builder->CreateAdd(v, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, 1)), "addtmp");  
-				builder->CreateStore(v, accum); 
-				ret = arrlocation; 
-				llvm::Value *cond = builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_SLT, v, arrsizeval, "cmptmp"); 
-				builder->CreateCondBr(cond, loopstart, loopend); 
-				builder->SetInsertPoint(loopend); 
+				builder->CreateStore(llvm::ConstantAggregateZero::get(llvm::Type::getInt32Ty(*ctxt)), accum);
+				llvm::Value *brcond = builder->CreateFCmp(llvm::CmpInst::Predicate::FCMP_OEQ, arrsize, llvm::ConstantAggregateZero::get(arrsize->getType()), "cmptmp");
+				builder->CreateCondBr(brcond, loopend, loopstart);
+				builder->SetInsertPoint(loopstart);
+				llvm::Value *v = builder->CreateLoad(llvm::Type::getInt32Ty(*ctxt), accum, "accumtmp");
+				llvm::Value *v2 = delta->getType()->isFloatingPointTy() ? builder->CreateFMul(delta, builder->CreateCast(llvm::Instruction::CastOps::SIToFP, v, delta->getType(), "casttmp"), "multmp") : builder->CreateMul(delta, v, "multmp");
+				v2 = begin->getType()->isFloatingPointTy() ? builder->CreateFAdd(begin, v2, "addtmp") : builder->CreateAdd(begin, v2, "addtmp");
+				llvm::Value *locationval = builder->CreateGEP(begin->getType(), arrlocation, v, "indextmp");
+				builder->CreateStore(v2, locationval);
+				v = builder->CreateAdd(v, llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, 1)), "addtmp");
+				builder->CreateStore(v, accum);
+				ret = arrlocation;
+				llvm::Value *cond = builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_SLT, v, arrsizeval, "cmptmp");
+				builder->CreateCondBr(cond, loopstart, loopend);
+				builder->SetInsertPoint(loopend);
 			}
 			return ret;
 		}
@@ -858,62 +961,6 @@ namespace jimpilier
 		}
 	};
 	/**
-	 * Handles == and != operators
-	 */
-	class CompareStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> LHS, RHS;
-		bool notval;
-
-	public:
-		CompareStmtAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool neq = false)
-			: LHS(std::move(LHS)), RHS(std::move(RHS)), notval(neq) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
-		{
-			llvm::Value *lhs = LHS->codegen();
-			llvm::Value *rhs = RHS->codegen();
-			if (operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()] != nullptr)
-				return builder->CreateCall(operators[lhs->getType()][notval ? "!=" : "=="][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
-			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
-			{
-				switch (lhs->getType()->getTypeID())
-				{
-				case llvm::Type::IntegerTyID:
-				{
-					llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
-					lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
-					rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
-					return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp");
-				}
-				case llvm::Type::PointerTyID:
-				{
-					lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-					rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-					return notval ? builder->CreateICmpNE(lhs, rhs, "cmptmp") : builder->CreateICmpEQ(lhs, rhs, "cmptmp");
-				}
-				case llvm::Type::FloatTyID:
-				case llvm::Type::DoubleTyID:
-				case llvm::Type::HalfTyID:
-				{
-					llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
-					lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
-					rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
-					return notval ? builder->CreateFCmpONE(lhs, rhs, "cmptmp") : builder->CreateFCmpOEQ(lhs, rhs, "cmptmp");
-				}
-				default:
-					std::string s = notval ? "!=" : "==";
-					logError("Operator " + s + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
-					return NULL;
-				}
-			}
-			else
-			{
-				logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
-				return NULL;
-			}
-		}
-	};
-	/**
 	 * Handles multiplication and division (* and /) statments
 	 */
 	class MultDivStmtAST : public ExprAST
@@ -1018,65 +1065,6 @@ namespace jimpilier
 			default:
 				std::string s = sub ? "-" : "+";
 				logError("Operator " + s + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
-				return NULL;
-			}
-		}
-	};
-
-	/**
-	 * Handles greater than and less than (< and >) statments
-	 */
-	class GtLtStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> LHS, RHS;
-		bool sub;
-
-	public:
-		GtLtStmtAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool isSub)
-			: LHS(std::move(LHS)), RHS(std::move(RHS)), sub(isSub) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
-		{
-			llvm::Value *lhs = LHS->codegen();
-			llvm::Value *rhs = RHS->codegen();
-
-			if (operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()] != nullptr)
-				return builder->CreateCall(operators[lhs->getType()][sub ? "<" : ">"][rhs->getType()], {lhs, rhs}, "operatorcalltmp");
-
-			if (lhs->getType()->getTypeID() == rhs->getType()->getTypeID())
-			{
-				switch (lhs->getType()->getTypeID())
-				{
-				case llvm::Type::IntegerTyID:
-				{
-					llvm::Value *larger = lhs->getType()->getIntegerBitWidth() >= rhs->getType()->getIntegerBitWidth() ? lhs : rhs;
-					lhs = builder->CreateSExtOrBitCast(lhs, larger->getType(), "signExtendTmp");
-					rhs = builder->CreateSExtOrBitCast(rhs, larger->getType(), "signExtendTmp");
-					return sub ? builder->CreateICmpSLT(lhs, rhs, "subtmp") : builder->CreateICmpSGT(lhs, rhs, "addtemp");
-				}
-				case llvm::Type::PointerTyID:
-				{
-					lhs = builder->CreatePtrToInt(lhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-					rhs = builder->CreatePtrToInt(rhs, llvm::Type::getInt64Ty(*ctxt), "ptrcasttmp");
-					return sub ? builder->CreateICmpULT(lhs, rhs, "subtmp") : builder->CreateICmpUGT(lhs, rhs, "addtmp");
-				}
-				case llvm::Type::FloatTyID:
-				case llvm::Type::DoubleTyID:
-				case llvm::Type::HalfTyID:
-				{
-					llvm::Type *larger = DataLayout->getTypeSizeInBits(lhs->getType()).getFixedSize() > DataLayout->getTypeSizeInBits(rhs->getType()).getFixedSize() ? lhs->getType() : rhs->getType();
-					lhs = builder->CreateFPExt(lhs, larger, "floatExtendTmp");
-					rhs = builder->CreateFPExt(rhs, larger, "floatExtendTmp");
-					return sub ? builder->CreateFCmpOLT(lhs, rhs, "subtmp") : builder->CreateFCmpOGT(lhs, rhs, "addtmp");
-				}
-				default:
-					std::string s = (sub ? "<" : ">");
-					logError("Operator " + s + " never overloaded to support " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
-					return NULL;
-				}
-			}
-			else
-			{
-				logError("Error when attempting to compare two types (these should match): " + AliasMgr.getTypeName(lhs->getType()) + " and " + AliasMgr.getTypeName(rhs->getType()));
 				return NULL;
 			}
 		}

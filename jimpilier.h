@@ -464,45 +464,28 @@ namespace jimpilier
 		return std::make_unique<AddSubStmtAST>(std::move(LHS), std::move(RHS), t == MINUS);
 	}
 
-	std::unique_ptr<ExprAST> greaterLessStmt(Stack<Token> &tokens)
-	{
-		std::unique_ptr<ExprAST> LHS = std::move(mathExpr(tokens));
-		if (tokens.peek() != GREATER && tokens.peek() != LESS)
-			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(mathExpr(tokens));
-		while ((tokens.peek() == GREATER || tokens.peek() == LESS))
-		{
-			Token T = tokens.next();
-			RHS = std::make_unique<GtLtStmtAST>(std::move(RHS), std::move(mathExpr(tokens)), T == LESS);
-		}
-		return std::make_unique<GtLtStmtAST>(std::move(LHS), std::move(RHS), t == LESS);
-	}
-	// TODO: Fix and/or statements, make them n-way like addition or subtraction
 	/**
-	 * @brief checks for a basic <IDENT> (["=="|"!="] <IDENT>)* However,
-	 * I am torn between enabling N-way comparison (I.E.: "x == y == z == a == b").
-	 * No other programming languages that I know of include this, and I have a
-	 * feeling it's for good reason... But at the same time, I want to add it as I
-	 * feel that is extremely convienent in the situations it comes up in.
-	 *
+	 * @brief checks for a basic <IDENT> (["=="|"!="|">"|">="|"<"|"<="] <IDENT>)*
 	 * @param tokens
 	 * @return true - if it is a valid statement,
 	 * @return NULL otherwise
 	 */
 	std::unique_ptr<ExprAST> compareStmt(Stack<Token> &tokens)
 	{
-		std::unique_ptr<ExprAST> LHS = std::move(greaterLessStmt(tokens));
-		if (tokens.peek() != EQUALCMP && tokens.peek() != NOTEQUAL)
+		std::vector<std::unique_ptr<ExprAST>> terms; 
+		std::vector<KeyToken> operations; 
+		std::unique_ptr<ExprAST> LHS = std::move(mathExpr(tokens));
+		if (tokens.peek() != EQUALCMP && tokens.peek() != NOTEQUAL && tokens.peek() != GREATER && tokens.peek() != GREATEREQUALS && tokens.peek() != LESS && tokens.peek() != LESSEQUALS)
 			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(greaterLessStmt(tokens));
-		while ((tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL))
+		terms.push_back(std::move(LHS)); 
+		while (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL || tokens.peek() == GREATER || tokens.peek() == GREATEREQUALS || tokens.peek() == LESS || tokens.peek() == LESSEQUALS)
 		{
-			Token t2 = tokens.next();
-			RHS = std::make_unique<CompareStmtAST>(std::move(RHS), std::move(greaterLessStmt(tokens)), t2 == NOTEQUAL);
+			Token t = tokens.next();
+			operations.push_back(t.token); 
+			LHS = std::move(mathExpr(tokens)); 
+			terms.push_back(std::move(LHS)); 
 		}
-		return std::make_unique<CompareStmtAST>(std::move(LHS), std::move(RHS), t == NOTEQUAL);
+		return std::make_unique<ComparisonStmtAST>(terms, operations);
 	}
 
 	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
