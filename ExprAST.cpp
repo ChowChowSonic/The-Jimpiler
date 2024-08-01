@@ -387,13 +387,21 @@ namespace jimpilier
 		{
 			// std::vector<llvm::Value*> oldcomparisons;
 			llvm::Value *RHS = NULL, *comparison = NULL;
-			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, other->getType()->isLabelTy() ? (llvm::BasicBlock*)other : NULL);
+			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, other->getType()->isLabelTy() ? (llvm::BasicBlock*)other : NULL),
+			*entryBlock = builder->GetInsertBlock();
+			llvm::PHINode *phi = NULL; 
+			if(!other->getType()->isLabelTy()){
+				builder->SetInsertPoint(shortCircuitEvalEnd); 
+				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal"); 
+				builder->SetInsertPoint(entryBlock); 
+			}
+
 			for (int i = 0; i < operations.size(); i++)
 			{
 				llvm::Value *LHS = RHS == NULL ? items[i]->codegen() : RHS;
 				RHS = items[i + 1]->codegen();
 				llvm::BasicBlock *nextconditional = NULL;
-				if (i < operations.size() - 1)
+				if (i < operations.size() - 1 || !other->getType()->isLabelTy())
 					nextconditional = llvm::BasicBlock::Create(*ctxt, "ShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
 				// if(comparison != NULL) oldcomparisons.push_back(comparison);
 				switch (operations[i])
@@ -439,6 +447,7 @@ namespace jimpilier
 				}
 				if (nextconditional != NULL)
 				{
+					if(phi != NULL) phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock()); 
 					builder->CreateCondBr(comparison, nextconditional, shortCircuitEvalEnd);
 					builder->SetInsertPoint(nextconditional);
 				}
@@ -447,10 +456,13 @@ namespace jimpilier
 			{
 				builder->CreateCondBr(comparison, (llvm::BasicBlock *)other, shortCircuitEvalEnd);
 			}
-			// else
-			// {
-			// 	builder->CreateStore(comparison, other, "storetmp");
-			// }
+			else
+			{
+				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock()); 
+				builder->CreateBr(shortCircuitEvalEnd);
+				builder->SetInsertPoint(shortCircuitEvalEnd);
+				builder->CreateStore(phi, other);
+			}
 			builder->SetInsertPoint(shortCircuitEvalEnd);
 			// comparison = oldcomparisons[0];
 			// for( int i = 1; i < oldcomparisons.size(); i++){
