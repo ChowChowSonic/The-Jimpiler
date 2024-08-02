@@ -385,12 +385,13 @@ namespace jimpilier
 			: items(std::move(items)), operations(std::move(operations)) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
+			bool isLabel = other != NULL && other->getType()->isLabelTy(); 
 			// std::vector<llvm::Value*> oldcomparisons;
 			llvm::Value *RHS = NULL, *comparison = NULL;
-			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, other->getType()->isLabelTy() ? (llvm::BasicBlock*)other : NULL),
+			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, isLabel ? (llvm::BasicBlock*)other : NULL),
 			*entryBlock = builder->GetInsertBlock();
 			llvm::PHINode *phi = NULL; 
-			if(!other->getType()->isLabelTy()){
+			if(!isLabel){
 				builder->SetInsertPoint(shortCircuitEvalEnd); 
 				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal"); 
 				builder->SetInsertPoint(entryBlock); 
@@ -401,7 +402,7 @@ namespace jimpilier
 				llvm::Value *LHS = RHS == NULL ? items[i]->codegen() : RHS;
 				RHS = items[i + 1]->codegen();
 				llvm::BasicBlock *nextconditional = NULL;
-				if (i < operations.size() - 1 || !other->getType()->isLabelTy())
+				if (i < operations.size() - 1 || !isLabel)
 					nextconditional = llvm::BasicBlock::Create(*ctxt, "ShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
 				// if(comparison != NULL) oldcomparisons.push_back(comparison);
 				switch (operations[i])
@@ -452,7 +453,7 @@ namespace jimpilier
 					builder->SetInsertPoint(nextconditional);
 				}
 			}
-			if (other->getType()->isLabelTy())
+			if (isLabel)
 			{
 				builder->CreateCondBr(comparison, (llvm::BasicBlock *)other, shortCircuitEvalEnd);
 			}
@@ -461,6 +462,7 @@ namespace jimpilier
 				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock()); 
 				builder->CreateBr(shortCircuitEvalEnd);
 				builder->SetInsertPoint(shortCircuitEvalEnd);
+				if(other != NULL)
 				builder->CreateStore(phi, other);
 			}
 			builder->SetInsertPoint(shortCircuitEvalEnd);
@@ -468,7 +470,7 @@ namespace jimpilier
 			// for( int i = 1; i < oldcomparisons.size(); i++){
 			// 	comparison = builder->CreateLogicalAnd(comparison, oldcomparisons[i], "andtmp");
 			// }
-			return shortCircuitEvalEnd;
+			return other == NULL ? phi : (llvm::Value*)shortCircuitEvalEnd;
 		}
 	};
 
@@ -698,6 +700,7 @@ namespace jimpilier
 			}
 			if (!dowhile)
 			{
+
 				builder->CreateCondBr(condition->codegen(), start, end);
 			}
 			else

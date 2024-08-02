@@ -1000,7 +1000,7 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> assignStmt(Stack<Token> &tokens, std::unique_ptr<ExprAST> LHS)
 	{
 		if (LHS == NULL)
-			LHS = std::move(listExpr(tokens));
+			LHS = std::move(debugPrintStmt(tokens));
 		std::unique_ptr<ExprAST> RHS = NULL;
 		if (tokens.peek() == EQUALS)
 		{
