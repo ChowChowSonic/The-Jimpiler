@@ -487,7 +487,14 @@ namespace jimpilier
 			{
 				start = llvm::BasicBlock::Create(*ctxt, "ifstart", currentFunction, glblend);
 				// end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
-				llvm::Value* end = condition[i]->codegen(false, start);
+				llvm::Value* end = condition[i]->codegen(true, start);
+				if(!end->getType()->isLabelTy()){
+					llvm::Value* boolval = end; 
+					end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend); 
+					llvm::Value* zeroval = llvm::ConstantAggregateZero::get(boolval->getType()); 
+					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp"); 
+					builder->CreateCondBr(boolval, start, (llvm::BasicBlock*)end); 
+				}
 				builder->SetInsertPoint(start);
 				body[i]->codegen();
 				builder->CreateBr(glblend);
