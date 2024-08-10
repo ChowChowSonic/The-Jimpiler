@@ -3,10 +3,10 @@ int alpha //Same thing as C/C++, can only be set to constants
 int x = 5 //equivalent of Java's Static modifier
 int pointer xptr = ->x
 
-object vector{ 
+object Integer{ 
     int length
-    int pointer val
     constructor(){
+		this.length = 5
         println "inside the vector constructor"
     }
 }
@@ -16,49 +16,49 @@ object vector{
 int test(int a, int b) 
     return a*b
 
-int main(int args, string pointer argv)
+int main(int args, char** argv)
 {
-    vector array = vector()
-    int temp //By default initialized to zero
-    println "output of:", @argv
-    ??
-    Major feature #1: Inline debug statements
-    Prints the value & line of whatever is passed to it...
-    then returns the value of what it just printed
-    ??
-    for( int t=0; t < args; t++ ){
-        temp = t!
-        println "temp variable =", temp
-    }
-    x = 10
-    println "x =", x, "location:",xptr
-    //Major feature #2: auto break switches
-    //Remove the "auto break" after the switch and see what happens!
-    switch auto break temp{
-        case 0{
-            println 0
-            continue
-        }
-        case 1, 2{
-            println 1
-            continue
-        }
-        case 5 ... 10, 20 ... 30{
-            println 2
-        }
-        default{
-            println "default reached:", temp
-        }
-    }
+    Integer array = Integer
+    for(int i = 0; i < array.length; i++){
+		i! //Language feature #1: Inline debug printing
+		?? array.length! 
+		 ? This is a multi-line comment. 
+		?? 
+	}
 
-    if args == 0
-        return 1;
-    else if args > 100{
-        return 0
-    }else {
-        //do nothing
-    }
+	switch auto break array.length{ //Language Feature #2: Switch-AutoBreak stmts
+	case 0{
+		continue
+	}
+	case 1, 2{
+		continue
+	}
+	default{
+		println "default reached:", array.length
+		continue
+	}
+	case 3{
+	}
+	case 4{
+		throw 5
+	}
+	case 5 ... 10, 20 ... 30{ //Language Feature #3: Case-Range Stmts
+			println "This will print when (something >=5 && something < 10) || (something >= 20 && something < 30)"
+	}
+	case 30 ... 40 : 2{
+			println "This will print when something is 30, 32, 34, 36 or 38"
+	}
+	}
 
-    
-    return 0
+	//(5 ... 1) //Language Feature #4: the Range operator
+
+	//Language feature #5: N-Way comparison statements
+
+	// 5 > 4 && 4 > 3
+	if 5 > 4 > 3
+	    println "This will always print"
+	//10 > array.length && array.length == 5 
+	if 10 > array.length == 5
+		println "This will also always print"
+	return 1
 }

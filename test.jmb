@@ -28,25 +28,3 @@ object _IO_FILE
     _IO_lock_t *_lock;
 
 };
-int fclose(_IO_FILE* internal); 
-int fgetc(_IO_FILE* internal);
-_IO_FILE* fopen(string name, string rwxstr); 
-
-
-object file{
-	_IO_FILE* internal
-	constructor(string filename, bool readOnly){
-		if readOnly {
-			this.internal = fopen(filename, "r")
-		}else{
-			this.internal = fopen(filename, "rw")
-		}
-	}
-    char read(){
-        return fgetc(this.internal) as char
-    }
-    int close(){
-        fclose(this.internal)
-        return 0;
-    }
-}

@@ -374,6 +374,47 @@ namespace jimpilier
 		}
 	};
 
+	class AndOrStmtAST : public ExprAST
+	{
+		std::vector<std::unique_ptr<ExprAST>> items;
+		std::vector<KeyToken> operations;
+		bool sub;
+
+	public:
+		AndOrStmtAST(std::vector<std::unique_ptr<ExprAST>> &items, std::vector<KeyToken> &operations)
+			: items(std::move(items)), operations(std::move(operations)) {}
+		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		{
+			bool isLabel = other != NULL && other->getType()->isLabelTy(); 
+			llvm::BasicBlock *falseBlock, *glblfalse = llvm::BasicBlock::Create(*ctxt, "andFalseBlock", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL);
+			llvm::BasicBlock *trueBlock = other != NULL && !other->getType()->isLabelTy() ? (llvm::BasicBlock*)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblfalse);
+			
+			for (int i = 0; i < items.size();  i++)
+			{
+				auto & x = items[i]; 
+				llvm::Value *v = x->codegen(true, trueBlock);
+				if (!v->getType()->isLabelTy())
+				{
+					llvm::Value *boolval = v;
+					v = llvm::BasicBlock::Create(*ctxt, "andend", currentFunction, falseBlock);
+					llvm::Value *zeroval = llvm::ConstantAggregateZero::get(boolval->getType());
+					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
+					builder->CreateCondBr(boolval, operations[i] == AND ? trueBlock : falseBlock, operations[i] == AND ? falseBlock : trueBlock);
+				}
+				falseBlock = (llvm::BasicBlock*) v; 
+				builder->SetInsertPoint(falseBlock); 
+				builder->CreateBr(glblfalse); 
+				builder->SetInsertPoint(trueBlock);
+				if(i < items.size()-1)
+				trueBlock = llvm::BasicBlock::Create(*ctxt, "andTrueBlock", currentFunction, glblfalse);  
+			}
+			if(isLabel)
+				builder->CreateBr((llvm::BasicBlock*)other); 
+			builder->SetInsertPoint(glblfalse); 
+			return glblfalse; 
+		}
+	};
+
 	class ComparisonStmtAST : public ExprAST
 	{
 		std::vector<std::unique_ptr<ExprAST>> items;
@@ -385,16 +426,17 @@ namespace jimpilier
 			: items(std::move(items)), operations(std::move(operations)) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			bool isLabel = other != NULL && other->getType()->isLabelTy(); 
+			bool isLabel = other != NULL && other->getType()->isLabelTy();
 			// std::vector<llvm::Value*> oldcomparisons;
 			llvm::Value *RHS = NULL, *comparison = NULL;
-			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, isLabel ? (llvm::BasicBlock*)other : NULL),
-			*entryBlock = builder->GetInsertBlock();
-			llvm::PHINode *phi = NULL; 
-			if(!isLabel){
-				builder->SetInsertPoint(shortCircuitEvalEnd); 
-				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal"); 
-				builder->SetInsertPoint(entryBlock); 
+			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL),
+							 *entryBlock = builder->GetInsertBlock();
+			llvm::PHINode *phi = NULL;
+			if (!isLabel)
+			{
+				builder->SetInsertPoint(shortCircuitEvalEnd);
+				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
+				builder->SetInsertPoint(entryBlock);
 			}
 
 			for (int i = 0; i < operations.size(); i++)
@@ -448,7 +490,8 @@ namespace jimpilier
 				}
 				if (nextconditional != NULL)
 				{
-					if(phi != NULL) phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock()); 
+					if (phi != NULL)
+						phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
 					builder->CreateCondBr(comparison, nextconditional, shortCircuitEvalEnd);
 					builder->SetInsertPoint(nextconditional);
 				}
@@ -459,21 +502,20 @@ namespace jimpilier
 			}
 			else
 			{
-				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock()); 
+				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
 				builder->CreateBr(shortCircuitEvalEnd);
 				builder->SetInsertPoint(shortCircuitEvalEnd);
-				if(other != NULL)
-				builder->CreateStore(phi, other);
+				if (other != NULL)
+					builder->CreateStore(phi, other);
 			}
 			builder->SetInsertPoint(shortCircuitEvalEnd);
 			// comparison = oldcomparisons[0];
 			// for( int i = 1; i < oldcomparisons.size(); i++){
 			// 	comparison = builder->CreateLogicalAnd(comparison, oldcomparisons[i], "andtmp");
 			// }
-			return other == NULL ? phi : (llvm::Value*)shortCircuitEvalEnd;
+			return other == NULL ? phi : (llvm::Value *)shortCircuitEvalEnd;
 		}
 	};
-
 
 	class IfExprAST : public ExprAST
 	{
@@ -489,18 +531,19 @@ namespace jimpilier
 			{
 				start = llvm::BasicBlock::Create(*ctxt, "ifstart", currentFunction, glblend);
 				// end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
-				llvm::Value* end = condition[i]->codegen(true, start);
-				if(!end->getType()->isLabelTy()){
-					llvm::Value* boolval = end; 
-					end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend); 
-					llvm::Value* zeroval = llvm::ConstantAggregateZero::get(boolval->getType()); 
-					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp"); 
-					builder->CreateCondBr(boolval, start, (llvm::BasicBlock*)end); 
+				llvm::Value *end = condition[i]->codegen(true, start);
+				if (!end->getType()->isLabelTy())
+				{
+					llvm::Value *boolval = end;
+					end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
+					llvm::Value *zeroval = llvm::ConstantAggregateZero::get(boolval->getType());
+					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
+					builder->CreateCondBr(boolval, start, (llvm::BasicBlock *)end);
 				}
 				builder->SetInsertPoint(start);
 				body[i]->codegen();
 				builder->CreateBr(glblend);
-				builder->SetInsertPoint((llvm::BasicBlock*)end);
+				builder->SetInsertPoint((llvm::BasicBlock *)end);
 			}
 
 			while (i < body.size())

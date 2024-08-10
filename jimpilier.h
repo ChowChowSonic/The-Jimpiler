@@ -488,20 +488,6 @@ namespace jimpilier
 		return std::make_unique<ComparisonStmtAST>(terms, operations);
 	}
 
-	std::unique_ptr<ExprAST> andStmt(Stack<Token> &tokens)
-	{
-		std::unique_ptr<ExprAST> LHS = std::move(compareStmt(tokens));
-		if (tokens.peek() != AND)
-			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(compareStmt(tokens));
-		while (tokens.peek() == AND)
-		{
-			tokens.next();
-			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(compareStmt(tokens)));
-		}
-		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
-	}
 	// TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
 	/**
 	 * @brief Parses a logic statement (I.E. "x == 5") consisting of only idents and string/number constants.
@@ -524,17 +510,20 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens)
 	{
-		std::unique_ptr<ExprAST> LHS = std::move(andStmt(tokens));
-		if (tokens.peek() != OR)
+		std::vector<std::unique_ptr<ExprAST>> terms; 
+		std::vector<KeyToken> operations; 
+		std::unique_ptr<ExprAST> LHS = std::move(compareStmt(tokens));
+		if (tokens.peek() != AND && tokens.peek() != OR)
 			return LHS;
-		Token t = tokens.next();
-		std::unique_ptr<ExprAST> RHS = std::move(andStmt(tokens));
-		while (tokens.peek() == OR)
+		terms.push_back(std::move(LHS)); 
+		while (tokens.peek() == AND || tokens.peek() == OR)
 		{
-			tokens.next();
-			RHS = std::make_unique<BinaryStmtAST>(t.lex, std::move(RHS), std::move(andStmt(tokens)));
+			Token t = tokens.next();
+			operations.push_back(t.token); 
+			LHS = std::move(compareStmt(tokens)); 
+			terms.push_back(std::move(LHS)); 
 		}
-		return std::make_unique<BinaryStmtAST>(t.lex, std::move(LHS), std::move(RHS));
+		return std::make_unique<AndOrStmtAST>(terms, operations);
 	}
 
 	std::unique_ptr<ExprAST> rangeExpr(Stack<Token> &tokens)
@@ -1239,11 +1228,8 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> ifStmt(Stack<Token> &tokens)
 	{
-		if (tokens.next() != IF)
-		{
-			logError("Somehow we ended up looking for an if statement when there was no 'if'. Wtf.", tokens.currentToken());
-			return NULL;
-		}
+		assert (tokens.peek() == IF && "Somehow we ended up looking for an if statement when there was no 'if'. Wtf."); 
+		tokens.next();
 		std::unique_ptr<ExprAST> b = std::move(logicStmt(tokens));
 		std::vector<std::unique_ptr<ExprAST>> conds, bodies;
 		do
