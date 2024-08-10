@@ -29,7 +29,7 @@ namespace jimpilier
 			args.push_back(CompileTimeType(x.ty->codegen(), x.ty->isReference()));
 	}
 
-	FunctionHeader::FunctionHeader(std::vector<Variable> &arglist, std::vector<llvm::Type*> &throwables, llvm::Function *func, bool returnsRefrence)
+	FunctionHeader::FunctionHeader(std::vector<Variable> &arglist, std::vector<llvm::Type *> &throwables, llvm::Function *func, bool returnsRefrence)
 		: func(func), returnsRefrence(returnsRefrence), throwableTypes(throwables)
 	{
 		for (auto &x : arglist)
@@ -59,9 +59,14 @@ namespace jimpilier
 	FunctionHeader &FunctionAliasManager::getFunction(llvm::Function *f)
 	{
 		for (auto &f2 : functionAliases)
+		{
 			for (auto &fheader : f2.second)
+			{
 				if (fheader.func == f)
 					return fheader;
+				if(DEBUGGING) std::cout << fheader.toString() <<endl; 
+			}
+		}
 		assert(false && "Function not found");
 	};
 
@@ -102,9 +107,9 @@ namespace jimpilier
 	{
 		functionAliases[name].push_back(FunctionHeader(args, func, returnsRef));
 	}
-	void FunctionAliasManager::addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, std::vector<llvm::Type*> &throwables, bool returnsRef)
+	void FunctionAliasManager::addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, std::vector<llvm::Type *> &throwables, bool returnsRef)
 	{
-		functionAliases[name].push_back(FunctionHeader(args, throwables,func,returnsRef));
+		functionAliases[name].push_back(FunctionHeader(args, throwables, func, returnsRef));
 	}
 	bool FunctionAliasManager::hasAlias(std::string &alias)
 	{
@@ -273,10 +278,11 @@ namespace jimpilier
 			llvm::Type *type2 = ty;
 			do
 			{
-				bool isptr = type2->isPointerTy(); 
+				bool isptr = type2->isPointerTy();
 				ret += isptr ? (prettyname ? "pointer to a " : "->") : (prettyname ? "array of " : "[");
 				type2 = isptr ? type2->getNonOpaquePointerElementType() : type2->getContainedType(0);
-				if(!prettyname && !isptr) ret+= ']'; 
+				if (!prettyname && !isptr)
+					ret += ']';
 			} while (type2->isPointerTy() || type2->isArrayTy());
 			return ret + getTypeName(type2, prettyname);
 		}
@@ -292,7 +298,8 @@ namespace jimpilier
 			ret += prettyname ? "function that returns a(n) " : "";
 			ret += this->getTypeName(ft->getReturnType());
 			ret += prettyname ? " with exactly " : " ";
-			if(prettyname) return ret; 
+			if (prettyname)
+				return ret;
 			ret += std::to_string((int)ft->getNumParams());
 			ret += " fixed arguments";
 			ret += ft->isVarArg() ? ", and has at least 1 set of varadic arguments" : ".";

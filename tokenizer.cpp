@@ -217,7 +217,19 @@ Token getNextToken(istream &s, int &line)
                     return Token(NOTEQUAL, "!=", line);
                 }
                 return Token(NOT, "!", line);
-            }
+            }else if (ch == '|'){
+				if(nextchar == '|'){
+					s.get(); 
+					return Token(OR, "or", line); 
+				}
+				return Token(OR, "or", line); //see if I can make use of single bars later
+			}else if (ch == '&'){
+				if(nextchar == '&'){
+					s.get(); 
+					return Token(AND, "and", line); 
+				}
+				return Token(AND, "and", line); //see if I can make use of single &'s later
+			}
             else if (ch == '.' && nextchar == '.')
             {
                 s.get();

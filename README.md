@@ -106,7 +106,7 @@ When all the values you use are constants, the range operator creates a global c
 > Debug value (Line 6): [1,3]
 > Debug value (Line 7): [1.0,2.5,4.0]
 ```
-When you use non-constant values, it allocates space on the stack for the array, populates it via loop, then returns a pointer
+When you use non-constant values, it allocates space on the stack for the array, populates it via loop, then returns a pointer (Implementation to be changed soon, I just want to get a few more dependendant features working first)
 ```
 int x = 5;
 (1 ... x+1)!

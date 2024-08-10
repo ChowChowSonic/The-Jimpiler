@@ -31,6 +31,21 @@ namespace jimpilier
 		bool canThrow(){
 			return !throwableTypes.empty(); 
 		}
+		std::string toString(){
+			std::string s = ""; 
+			llvm::raw_string_ostream rso(s);
+			s+= this->func->getName().str()+"(";
+			for(auto& x : this->args){
+				x.ty->print(rso); 
+				s+=','; 
+			}
+			s+= ") throws "; 
+			for(auto& x :this->throwableTypes){
+				x->print(rso); 
+				s+=','; 
+			}
+			return s; 
+		}
 	};
 	bool operator==(FunctionHeader &og, FunctionHeader &other);
 	bool operator==(FunctionHeader &og, std::vector<llvm::Type *> &other);
