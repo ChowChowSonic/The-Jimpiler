@@ -157,10 +157,7 @@ namespace jimpilier
 	{
 		for (auto &f : constructors[ty])
 		{
-			std::vector<llvm::Type *> tys;
-			for (auto &x : f.args)
-				tys.push_back(x.ty);
-			if (tys == args)
+			if (f == args)
 				return f.func;
 			// std::cout << f.args.size() << " " << args.size() << " " << (f.args[0] == args[0]) <<endl;
 		}
