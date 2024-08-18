@@ -386,9 +386,16 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			bool isLabel = other != NULL && other->getType()->isLabelTy(); 
-			llvm::BasicBlock *falseBlock, *glblfalse = llvm::BasicBlock::Create(*ctxt, "andFalseBlock", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL);
-			llvm::BasicBlock *trueBlock = other != NULL && !other->getType()->isLabelTy() ? (llvm::BasicBlock*)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblfalse);
-			
+			llvm::BasicBlock *falseBlock = NULL, *glblend = llvm::BasicBlock::Create(*ctxt, "andEvalBlock", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL);
+			llvm::BasicBlock *trueBlock = isLabel ? (llvm::BasicBlock*)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblend);
+			llvm::BasicBlock *entryBlock = builder->GetInsertBlock(); 
+			llvm::PHINode *phi = NULL;
+			if (!isLabel)
+			{
+				builder->SetInsertPoint(glblend);
+				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
+				builder->SetInsertPoint(entryBlock);
+			}
 			for (int i = 0; i < items.size();  i++)
 			{
 				auto & x = items[i]; 
@@ -396,22 +403,30 @@ namespace jimpilier
 				if (!v->getType()->isLabelTy())
 				{
 					llvm::Value *boolval = v;
-					v = llvm::BasicBlock::Create(*ctxt, "andend", currentFunction, falseBlock);
+					v = llvm::BasicBlock::Create(*ctxt, "andend", currentFunction, falseBlock != NULL && falseBlock->getType()->isLabelTy() ? falseBlock : NULL);
 					llvm::Value *zeroval = llvm::ConstantAggregateZero::get(boolval->getType());
 					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
 					builder->CreateCondBr(boolval, operations[i] == AND ? trueBlock : falseBlock, operations[i] == AND ? falseBlock : trueBlock);
 				}
 				falseBlock = (llvm::BasicBlock*) v; 
 				builder->SetInsertPoint(falseBlock); 
-				builder->CreateBr(glblfalse); 
+				builder->CreateBr(glblend); 
 				builder->SetInsertPoint(trueBlock);
-				if(i < items.size()-1)
-				trueBlock = llvm::BasicBlock::Create(*ctxt, "andTrueBlock", currentFunction, glblfalse);  
+				if (phi != NULL)
+						phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), falseBlock);
+				if(i < items.size()-1){
+					trueBlock = llvm::BasicBlock::Create(*ctxt, "andTrueBlock", currentFunction, glblend);  
+				}
 			}
-			if(isLabel)
+			if(isLabel){
 				builder->CreateBr((llvm::BasicBlock*)other); 
-			builder->SetInsertPoint(glblfalse); 
-			return glblfalse; 
+			}else{
+				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
+				builder->CreateBr(glblend);
+				builder->SetInsertPoint(glblend);
+			}
+			builder->SetInsertPoint(glblend); 
+			return !isLabel ? phi : (llvm::Value *)glblend; 
 		}
 	};
 
@@ -438,14 +453,14 @@ namespace jimpilier
 				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
 				builder->SetInsertPoint(entryBlock);
 			}
-
+			assert(operations.size() == items.size()-1 && "Operations and operators do not line up!"); 
 			for (int i = 0; i < operations.size(); i++)
 			{
+				// std::cout  << &items[i] << " " << &items[i+1] << " " << i <<endl;
+				// std::cout  << builder->GetInsertBlock() << " " << i <<endl;
+				// GlobalVarsAndFunctions->dump(); 
 				llvm::Value *LHS = RHS == NULL ? items[i]->codegen() : RHS;
 				RHS = items[i + 1]->codegen();
-				llvm::BasicBlock *nextconditional = NULL;
-				if (i < operations.size() - 1 || !isLabel)
-					nextconditional = llvm::BasicBlock::Create(*ctxt, "ShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
 				// if(comparison != NULL) oldcomparisons.push_back(comparison);
 				switch (operations[i])
 				{
@@ -488,10 +503,11 @@ namespace jimpilier
 				default:
 					logError("Unknown comparision operator: " + keytokens[operations[i]]);
 				}
-				if (nextconditional != NULL)
+				if (i < operations.size() - 1 || !isLabel)
 				{
 					if (phi != NULL)
 						phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
+					llvm::BasicBlock *nextconditional = llvm::BasicBlock::Create(*ctxt, "ShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
 					builder->CreateCondBr(comparison, nextconditional, shortCircuitEvalEnd);
 					builder->SetInsertPoint(nextconditional);
 				}
@@ -513,7 +529,8 @@ namespace jimpilier
 			// for( int i = 1; i < oldcomparisons.size(); i++){
 			// 	comparison = builder->CreateLogicalAnd(comparison, oldcomparisons[i], "andtmp");
 			// }
-			return other == NULL ? phi : (llvm::Value *)shortCircuitEvalEnd;
+			// std:: cout << "Returning " << (isLabel ? "Label" : "phi") <<endl; 
+			return !isLabel ? phi : (llvm::Value *)shortCircuitEvalEnd;
 		}
 	};
 

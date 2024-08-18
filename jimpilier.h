@@ -491,7 +491,7 @@ namespace jimpilier
 	// TODO: Plan out operator precidence so that you can write code without/minimally hitting shift
 	/**
 	 * @brief Parses a logic statement (I.E. "x == 5") consisting of only idents and string/number constants.
-	 * LogicStmt itself only parses OR Statements (x || y), but makes calls to functions like andStmt, compareStmt, etc. to do the rest.
+	 * LogicStmt itself only parses AND/OR Statements (x || y, x && y), but makes calls to functions like andStmt, compareStmt, etc. to do the rest.
 	 * EBNF isn't technically 100% accurate, but that's because a few assumptions should be made going into this, like,
 	 * for example, all open parenthesis should have a matching closing parenthesis.
 	 * logicStmt	-> <Stmt> <join> <logicStmt> | <Stmt>

@@ -5,7 +5,7 @@ int pointer xptr = ->x
 
 object Integer{ 
     int length
-	constructor(int@ i){ //Reference to an int 
+	constructor(int i){ //Reference to an int 
 		this.length = i
 	}
     constructor(){
@@ -42,6 +42,7 @@ int main(int args, char** argv)
 		continue
 	}
 	case 3{
+		println "currently in block:",3
 	}
 	case 4{
 		throw 5
@@ -61,8 +62,8 @@ int main(int args, char** argv)
 	// 5 > 4 && 4 > 3
 	if 5 > 4 > 3
 	    println "This will always print"
-	//10 > array.length && array.length == 5 
-	if 10 > array.length == 5
+	//10 >= array.length && array.length != 11
+	if 10 >= array.length != 11
 		println "This will also always print"
 	return 1
 }
