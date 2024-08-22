@@ -385,10 +385,10 @@ namespace jimpilier
 			: items(std::move(items)), operations(std::move(operations)) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
-			bool isLabel = other != NULL && other->getType()->isLabelTy(); 
+			bool isLabel = other != NULL && other->getType()->isLabelTy();
 			llvm::BasicBlock *falseBlock = NULL, *glblend = llvm::BasicBlock::Create(*ctxt, "andEvalBlock", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL);
-			llvm::BasicBlock *trueBlock = isLabel ? (llvm::BasicBlock*)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblend);
-			llvm::BasicBlock *entryBlock = builder->GetInsertBlock(); 
+			llvm::BasicBlock *trueBlock = isLabel ? (llvm::BasicBlock *)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblend);
+			llvm::BasicBlock *entryBlock = builder->GetInsertBlock();
 			llvm::PHINode *phi = NULL;
 			if (!isLabel)
 			{
@@ -396,9 +396,9 @@ namespace jimpilier
 				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
 				builder->SetInsertPoint(entryBlock);
 			}
-			for (int i = 0; i < items.size();  i++)
+			for (int i = 0; i < items.size(); i++)
 			{
-				auto & x = items[i]; 
+				auto &x = items[i];
 				llvm::Value *v = x->codegen(true, trueBlock);
 				if (!v->getType()->isLabelTy())
 				{
@@ -408,44 +408,63 @@ namespace jimpilier
 					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
 					builder->CreateCondBr(boolval, operations[i] == AND ? trueBlock : falseBlock, operations[i] == AND ? falseBlock : trueBlock);
 				}
-				falseBlock = (llvm::BasicBlock*) v; 
-				builder->SetInsertPoint(falseBlock); 
-				builder->CreateBr(glblend); 
+				falseBlock = (llvm::BasicBlock *)v;
+				builder->SetInsertPoint(falseBlock);
+				builder->CreateBr(glblend);
 				builder->SetInsertPoint(trueBlock);
 				if (phi != NULL)
-						phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), falseBlock);
-				if(i < items.size()-1){
-					trueBlock = llvm::BasicBlock::Create(*ctxt, "andTrueBlock", currentFunction, glblend);  
+					phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), falseBlock);
+				if (i < items.size() - 1)
+				{
+					trueBlock = llvm::BasicBlock::Create(*ctxt, "andTrueBlock", currentFunction, glblend);
 				}
 			}
-			if(isLabel){
-				builder->CreateBr((llvm::BasicBlock*)other); 
-			}else{
+			if (isLabel)
+			{
+				builder->CreateBr((llvm::BasicBlock *)other);
+			}
+			else
+			{
 				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
 				builder->CreateBr(glblend);
 				builder->SetInsertPoint(glblend);
 			}
-			builder->SetInsertPoint(glblend); 
-			return !isLabel ? phi : (llvm::Value *)glblend; 
+			builder->SetInsertPoint(glblend);
+			return !isLabel ? phi : (llvm::Value *)glblend;
 		}
 	};
 
 	class ComparisonStmtAST : public ExprAST
 	{
-		std::vector<std::unique_ptr<ExprAST>> items;
+		std::vector<std::vector<std::unique_ptr<ExprAST>>> items; // convert this to vector<vector<ExprAST>>
 		std::vector<KeyToken> operations;
 		bool sub;
 
 	public:
-		ComparisonStmtAST(std::vector<std::unique_ptr<ExprAST>> &items, std::vector<KeyToken> &operations)
+		ComparisonStmtAST(std::vector<std::vector<std::unique_ptr<ExprAST>>> &items, std::vector<KeyToken> &operations)
 			: items(std::move(items)), operations(std::move(operations)) {}
+		// Create internal private function to retrieve items from array; Codegen them only once, cache the result and return that later
+	private:
+		std::map<int, std::map<int, llvm::Value *>> cache;
+		llvm::Value *getCachedResult(const int argNo, const int subArgNo)
+		{
+			if (cache[argNo][subArgNo] == NULL)
+			{
+				cache[argNo][subArgNo] = items[argNo][subArgNo]->codegen();
+			}
+			return cache[argNo][subArgNo];
+		}
+
+	public:
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			bool isLabel = other != NULL && other->getType()->isLabelTy();
 			// std::vector<llvm::Value*> oldcomparisons;
-			llvm::Value *RHS = NULL, *comparison = NULL;
+			// convert RHS, LHS to vector<llvm::Value*>
+			llvm::Value *RHS = NULL, *LHS = NULL, *comparison = NULL;
 			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL),
-							 *entryBlock = builder->GetInsertBlock();
+							 *entryBlock = builder->GetInsertBlock(),
+							 *ANDConditional=NULL, *ORConditional=NULL;
 			llvm::PHINode *phi = NULL;
 			if (!isLabel)
 			{
@@ -453,63 +472,90 @@ namespace jimpilier
 				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
 				builder->SetInsertPoint(entryBlock);
 			}
-			assert(operations.size() == items.size()-1 && "Operations and operators do not line up!"); 
+			assert(operations.size() == items.size() - 1 && "Operations and operators do not line up!");
 			for (int i = 0; i < operations.size(); i++)
 			{
-				// std::cout  << &items[i] << " " << &items[i+1] << " " << i <<endl;
-				// std::cout  << builder->GetInsertBlock() << " " << i <<endl;
-				// GlobalVarsAndFunctions->dump(); 
-				llvm::Value *LHS = RHS == NULL ? items[i]->codegen() : RHS;
-				RHS = items[i + 1]->codegen();
-				// if(comparison != NULL) oldcomparisons.push_back(comparison);
-				switch (operations[i])
+				if(isLabel){
+				if (i < operations.size()-1){
+					ANDConditional = llvm::BasicBlock::Create(*ctxt, "ANDShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
+				}else ANDConditional = (llvm::BasicBlock*)other; 
+				}else{
+				// if(i == operations.size()-1) ANDConditional = shortCircuitEvalEnd; 
+				ANDConditional = llvm::BasicBlock::Create(*ctxt, "ANDShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
+				}
+				for (int LHSIndex = 0; LHSIndex < items[i].size(); LHSIndex++)
 				{
-				case EQUALCMP:
-					if (operators[LHS->getType()]["=="][RHS->getType()] != NULL)
-						comparison = builder->CreateCall(operators[LHS->getType()]["=="][RHS->getType()], {LHS, RHS}, "calltmp");
-					else
-						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpEQ(LHS, RHS, "cmptmp") : builder->CreateFCmpOEQ(LHS, RHS, "cmptmp");
-					break;
-				case NOTEQUAL:
-					if (operators[LHS->getType()]["!="][RHS->getType()] != NULL)
-						comparison = builder->CreateCall(operators[LHS->getType()]["!="][RHS->getType()], {LHS, RHS}, "calltmp");
-					else
-						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpNE(LHS, RHS, "cmptmp") : builder->CreateFCmpONE(LHS, RHS, "cmptmp");
-					break;
-				case GREATER:
-					if (operators[LHS->getType()][">"][RHS->getType()] != NULL)
-						comparison = builder->CreateCall(operators[LHS->getType()][">"][RHS->getType()], {LHS, RHS}, "calltmp");
-					else
-						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGT(LHS, RHS, "cmptmp") : builder->CreateFCmpOGT(LHS, RHS, "cmptmp");
-					break;
-				case GREATEREQUALS:
-					if (operators[LHS->getType()][">="][RHS->getType()] != NULL)
-						comparison = builder->CreateCall(operators[LHS->getType()][">="][RHS->getType()], {LHS, RHS}, "calltmp");
-					else
-						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGE(LHS, RHS, "cmptmp") : builder->CreateFCmpOGE(LHS, RHS, "cmptmp");
-					break;
-				case LESS:
-					if (operators[LHS->getType()]["<"][RHS->getType()] != NULL)
-						comparison = builder->CreateCall(operators[LHS->getType()]["<"][RHS->getType()], {LHS, RHS}, "calltmp");
-					else
-						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLT(LHS, RHS, "cmptmp") : builder->CreateFCmpOLT(LHS, RHS, "cmptmp");
-					break;
-				case LESSEQUALS:
-					if (operators[LHS->getType()]["<="][RHS->getType()] != NULL)
-						comparison = builder->CreateCall(operators[LHS->getType()]["<="][RHS->getType()], {LHS, RHS}, "calltmp");
-					else
-						comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLE(LHS, RHS, "cmptmp") : builder->CreateFCmpOLE(LHS, RHS, "cmptmp");
-					break;
-				default:
-					logError("Unknown comparision operator: " + keytokens[operations[i]]);
+					LHS = getCachedResult(i, LHSIndex);
+					for (int RHSIndex = 0; RHSIndex < items[i + 1].size(); RHSIndex++)
+					{
+						RHS = getCachedResult(i + 1, RHSIndex);
+
+						switch (operations[i])
+						{
+						case EQUALCMP:
+							if (operators[LHS->getType()]["=="][RHS->getType()] != NULL)
+								comparison = builder->CreateCall(operators[LHS->getType()]["=="][RHS->getType()], {LHS, RHS}, "calltmp");
+							else
+								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpEQ(LHS, RHS, "cmptmp") : builder->CreateFCmpOEQ(LHS, RHS, "cmptmp");
+							break;
+						case NOTEQUAL:
+							if (operators[LHS->getType()]["!="][RHS->getType()] != NULL)
+								comparison = builder->CreateCall(operators[LHS->getType()]["!="][RHS->getType()], {LHS, RHS}, "calltmp");
+							else
+								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpNE(LHS, RHS, "cmptmp") : builder->CreateFCmpONE(LHS, RHS, "cmptmp");
+							break;
+						case GREATER:
+							if (operators[LHS->getType()][">"][RHS->getType()] != NULL)
+								comparison = builder->CreateCall(operators[LHS->getType()][">"][RHS->getType()], {LHS, RHS}, "calltmp");
+							else
+								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGT(LHS, RHS, "cmptmp") : builder->CreateFCmpOGT(LHS, RHS, "cmptmp");
+							break;
+						case GREATEREQUALS:
+							if (operators[LHS->getType()][">="][RHS->getType()] != NULL)
+								comparison = builder->CreateCall(operators[LHS->getType()][">="][RHS->getType()], {LHS, RHS}, "calltmp");
+							else
+								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGE(LHS, RHS, "cmptmp") : builder->CreateFCmpOGE(LHS, RHS, "cmptmp");
+							break;
+						case LESS:
+							if (operators[LHS->getType()]["<"][RHS->getType()] != NULL)
+								comparison = builder->CreateCall(operators[LHS->getType()]["<"][RHS->getType()], {LHS, RHS}, "calltmp");
+							else
+								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLT(LHS, RHS, "cmptmp") : builder->CreateFCmpOLT(LHS, RHS, "cmptmp");
+							break;
+						case LESSEQUALS:
+							if (operators[LHS->getType()]["<="][RHS->getType()] != NULL)
+								comparison = builder->CreateCall(operators[LHS->getType()]["<="][RHS->getType()], {LHS, RHS}, "calltmp");
+							else
+								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLE(LHS, RHS, "cmptmp") : builder->CreateFCmpOLE(LHS, RHS, "cmptmp");
+							break;
+						default:
+							logError("Unknown comparision operator: " + keytokens[operations[i]]);
+						}
+						if ((RHSIndex < items[i + 1].size() - 1) || LHSIndex < items[i].size() -1)
+						{
+							if (phi != NULL && (ANDConditional == shortCircuitEvalEnd || ORConditional == shortCircuitEvalEnd))
+								phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
+							ORConditional = llvm::BasicBlock::Create(*ctxt, "ORShortCircuitEvalBlock", currentFunction, ANDConditional);
+							// if ((RHSIndex < items[i + 1].size() - 1) && LHSIndex < items[i].size() -1)
+							builder->CreateCondBr(comparison, ANDConditional, ORConditional);
+							builder->SetInsertPoint(ORConditional);
+						}
+					}
 				}
 				if (i < operations.size() - 1 || !isLabel)
 				{
 					if (phi != NULL)
 						phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
-					llvm::BasicBlock *nextconditional = llvm::BasicBlock::Create(*ctxt, "ShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
-					builder->CreateCondBr(comparison, nextconditional, shortCircuitEvalEnd);
-					builder->SetInsertPoint(nextconditional);
+					if(ANDConditional == shortCircuitEvalEnd){
+						ANDConditional = llvm::BasicBlock::Create(*ctxt, "ANDShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd); 
+						entryBlock = builder->GetInsertBlock(); 
+						builder->SetInsertPoint(ANDConditional); 
+						builder->CreateBr(shortCircuitEvalEnd); 
+						builder->SetInsertPoint(entryBlock); 
+					}
+					builder->CreateCondBr(comparison, ANDConditional, shortCircuitEvalEnd);
+					// else builder->CreateBr(ANDConditional);
+					builder->SetInsertPoint(ANDConditional);
 				}
 			}
 			if (isLabel)
@@ -529,7 +575,7 @@ namespace jimpilier
 			// for( int i = 1; i < oldcomparisons.size(); i++){
 			// 	comparison = builder->CreateLogicalAnd(comparison, oldcomparisons[i], "andtmp");
 			// }
-			// std:: cout << "Returning " << (isLabel ? "Label" : "phi") <<endl; 
+			// std:: cout << "Returning " << (isLabel ? "Label" : "phi") <<endl;
 			return !isLabel ? phi : (llvm::Value *)shortCircuitEvalEnd;
 		}
 	};

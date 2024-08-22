@@ -472,19 +472,33 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> compareStmt(Stack<Token> &tokens)
 	{
-		std::vector<std::unique_ptr<ExprAST>> terms; 
-		std::vector<KeyToken> operations; 
+		std::vector<std::vector<std::unique_ptr<ExprAST>>> terms;
+		std::vector<KeyToken> operations;
+		std::vector<std::unique_ptr<ExprAST>> args; 
 		std::unique_ptr<ExprAST> LHS = std::move(mathExpr(tokens));
-		if (tokens.peek() != EQUALCMP && tokens.peek() != NOTEQUAL && tokens.peek() != GREATER && tokens.peek() != GREATEREQUALS && tokens.peek() != LESS && tokens.peek() != LESSEQUALS)
+		if (tokens.peek() != COMMA && tokens.peek() != EQUALCMP && tokens.peek() != NOTEQUAL && tokens.peek() != GREATER && tokens.peek() != GREATEREQUALS && tokens.peek() != LESS && tokens.peek() != LESSEQUALS)
 			return LHS;
-		terms.push_back(std::move(LHS)); 
-		while (tokens.peek() == EQUALCMP || tokens.peek() == NOTEQUAL || tokens.peek() == GREATER || tokens.peek() == GREATEREQUALS || tokens.peek() == LESS || tokens.peek() == LESSEQUALS)
+		args.push_back(std::move(LHS));
+		do
 		{
-			Token t = tokens.next();
-			operations.push_back(t.token); 
-			LHS = std::move(mathExpr(tokens)); 
-			terms.push_back(std::move(LHS)); 
-		}
+			
+			//Now see, this otherwise complex problem could be easily solved by putting a comma seperated list function in here...
+			//but doing so would put a comma operator on the AST, which is what I DON'T want
+			while (tokens.peek() == COMMA && tokens.next() == COMMA) {
+				LHS = std::move(mathExpr(tokens));
+				args.push_back(std::move(LHS));
+			}
+			
+			terms.push_back(std::move(args));
+			Token t = tokens.peek();
+			if(t == EQUALCMP || t == NOTEQUAL || t == GREATER || t == GREATEREQUALS || t == LESS || t == LESSEQUALS){
+				tokens.next(); 
+				operations.push_back(t.token); 
+				LHS = std::move(mathExpr(tokens));
+				args.push_back(std::move(LHS)); 
+				continue; 
+			}else break; 
+		}while (terms.size() == operations.size()); 
 		return std::make_unique<ComparisonStmtAST>(terms, operations);
 	}
 
@@ -510,18 +524,18 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> logicStmt(Stack<Token> &tokens)
 	{
-		std::vector<std::unique_ptr<ExprAST>> terms; 
-		std::vector<KeyToken> operations; 
+		std::vector<std::unique_ptr<ExprAST>> terms;
+		std::vector<KeyToken> operations;
 		std::unique_ptr<ExprAST> LHS = std::move(compareStmt(tokens));
 		if (tokens.peek() != AND && tokens.peek() != OR)
 			return LHS;
-		terms.push_back(std::move(LHS)); 
+		terms.push_back(std::move(LHS));
 		while (tokens.peek() == AND || tokens.peek() == OR)
 		{
 			Token t = tokens.next();
-			operations.push_back(t.token); 
-			LHS = std::move(compareStmt(tokens)); 
-			terms.push_back(std::move(LHS)); 
+			operations.push_back(t.token);
+			LHS = std::move(compareStmt(tokens));
+			terms.push_back(std::move(LHS));
 		}
 		return std::make_unique<AndOrStmtAST>(terms, operations);
 	}
@@ -530,14 +544,16 @@ namespace jimpilier
 	{
 
 		std::unique_ptr<ExprAST> start = std::move(logicStmt(tokens));
-		if(tokens.peek() != RANGE) return start; 
-		tokens.next(); 
+		if (tokens.peek() != RANGE)
+			return start;
+		tokens.next();
 		std::unique_ptr<ExprAST> end = std::move(logicStmt(tokens));
-		if(tokens.peek() == COLON && tokens.next() == COLON){
+		if (tokens.peek() == COLON && tokens.next() == COLON)
+		{
 			std::unique_ptr<ExprAST> step = std::move(logicStmt(tokens));
-			return std::make_unique<RangeExprAST>(start, end, step); 
+			return std::make_unique<RangeExprAST>(start, end, step);
 		}
-		return std::make_unique<RangeExprAST>(start, end); 
+		return std::make_unique<RangeExprAST>(start, end);
 	}
 
 	/**
@@ -584,8 +600,8 @@ namespace jimpilier
 			tokens.next();
 		return std::make_unique<ListExprAST>(contents);
 	}
-	
-	//TODO: Add support for debug-printing arrays
+
+	// TODO: Add support for debug-printing arrays
 	std::unique_ptr<ExprAST> debugPrintStmt(Stack<Token> &tokens)
 	{
 		std::unique_ptr<ExprAST> x = std::move(listExpr(tokens));
@@ -1228,7 +1244,7 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> ifStmt(Stack<Token> &tokens)
 	{
-		assert (tokens.peek() == IF && "Somehow we ended up looking for an if statement when there was no 'if'. Wtf."); 
+		assert(tokens.peek() == IF && "Somehow we ended up looking for an if statement when there was no 'if'. Wtf.");
 		tokens.next();
 		std::unique_ptr<ExprAST> b = std::move(logicStmt(tokens));
 		std::vector<std::unique_ptr<ExprAST>> conds, bodies;

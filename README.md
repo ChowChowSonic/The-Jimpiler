@@ -112,13 +112,52 @@ int x = 5;
 (1 ... x+1)!
 > Debug value (Line 1): [1,2,3,4,5]
 ```
+## CATCH operator & implicit catch stmts
+In Jimbo, it is perfectly legal to put a try stmt with no catch clauses attached to it. This is because there is a CATCH operator that can be overloaded for each error type thrown; this, alongside Jimbo's front-end error tracking allows for the compiler to provide reasonable guesses as to what gets thrown by each statement:
+```
+void operator catch int i {
+	println "Caught integer:", i
+} 
 
-## N-way equivalency relations (EXPERIMENTAL)
+int throwSomething() throws int {
+	throw 5
+	return 0
+}
+
+try {
+	int i = throwSomething()
+} 
+println "See mom? No errors!"
+```
+Output: 
+```
+> Caught integer: 5
+> See mom? No errors!
+```
+However, this only works if there are ZERO catch clauses attached to a try. If a try statement has even one catch clause, it will only catch what you tell it to. The catch operator always gets called immediately after an error is caught (implicitly or explicitly).
+## N-way equivalency relations
 ```
 if (x == y == z == 5 > 4) doSomething() //y,z,5 get evaluated twice; functions/operators will only be called once
 //alternatively...
 if (x == y && y == z && z == 5 && 5 > 4) doSomething() // y,z,5 evaluated twice, but functions will be called twice if not saved to a variable
 ```
+# Multi-argument equivalency (inline-OR stmts) (EXPERIMENTAL)
+```
+int x, y
+
+if x,y == 5,10 { ... }		//line 1
+if x,y == 5 { ... }			//line 2
+if x == 5,10,20 { ... }		//line 3
+if x == 5,10 == y { ... }	//line 4
+```
+Is now equivalent to (in this exact order):
+```
+if x == 5 || x == 10 || y == 5 || y == 10 { ... }	 //line 1
+if x == 5 || y == 5 { ... }							 //line 2
+if x == 5 || x == 10 || x == 20 { ... }				 //line 3
+if (x == 5 || x == 10) && (5 == y || 10 == y) { ... }//line 4
+```
+
 ## Implicit Main (EXPERIMENTAL)
 I hope to have the language not require a main method, instead placing all code into a 'static_main' method that will never allocate variables on the stack. Once compilation is done, the compiler will check if a main method exists - if it doesn't, it renames the static method to 'main'. <br>
 Any variables allocated in the implicit main method will be promoted to a global variable; this will ultimately hit performance if you go for the implicit main route, but is still very good for rapid prototyping. 
