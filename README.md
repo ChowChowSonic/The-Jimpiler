@@ -145,10 +145,10 @@ if (x == y && y == z && z == 5 && 5 > 4) doSomething() // y,z,5 evaluated twice,
 ```
 int x, y
 
-if x,y == 5,10 { ... }		//line 1
-if x,y == 5 { ... }			//line 2
-if x == 5,10,20 { ... }		//line 3
-if x == 5,10 == y { ... }	//line 4
+if |x,y| == |5,10| { ... }		//line 1
+if |x,y| == 5 { ... }			//line 2
+if x == |5,10,20| { ... }		//line 3
+if x == |5,10| == y { ... }	//line 4
 ```
 Is now equivalent to (in this exact order):
 ```

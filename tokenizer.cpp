@@ -11,7 +11,7 @@ using namespace std;
 enum KeyToken{
     IDENT, ERR, IN, AND, OR, TRU, FALS, NOT, IMPORT, //Done
     EQUALCMP, EQUALS, NOTEQUAL, GREATER, GREATEREQUALS, LESS, LESSEQUALS, INSERTION, REMOVAL, INCREMENT, DECREMENT, //Done
-    OPENCURL, CLOSECURL, OPENSQUARE, CLOSESQUARE, LPAREN, RPAREN, COMMA, //Done
+    OPENCURL, CLOSECURL, OPENSQUARE, CLOSESQUARE, LPAREN, RPAREN, COMMA, BAR, //Done
     PLUS, MINUS, MULT, DIV, LEFTOVER, POWERTO, POINTERTO, REFRENCETO, AS, SIZEOF, HEAP, DEL, RANGE, //Done
     IF, ELSE, FOR, DO, WHILE, CASE, SWITCH, BREAK, CONTINUE, DEFAULT, RET, PRINT, PRINTLN, ASSERT, TRY, CATCH, ASSEMBLY,//Done
     OBJECT, CONSTRUCTOR, DESTRUCTOR, SEMICOL, COLON, PERIOD,//Done
@@ -31,7 +31,7 @@ map<string, KeyToken> keywords = {
 string keytokens[]{
     "IDENT", "ERR", "IN", "AND", "OR", "TRU", "FALS", "NOT", "IMPORT",
     "EQUALCMP", "EQUALS", "NOTEQUAL", "GREATER", "GREATEREQUALS", "LESS", "LESSEQUALS", "INSERTION", "REMOVAL", "INCREMENT", "DECREMENT",
-    "OPENCURL", "CLOSECURL", "OPENSQUARE", "CLOSESQUARE", "LPAREN", "RPAREN", "COMMA",
+    "OPENCURL", "CLOSECURL", "OPENSQUARE", "CLOSESQUARE", "LPAREN", "RPAREN", "COMMA", "BAR",
     "PLUS", "MINUS", "MULT", "DIV", "LEFTOVER", "POWERTO", "POINTERTO", "REFRENCETO", "AS", "SIZEOF", "HEAP", "DELETE", "RANGE",
     "IF", "ELSE", "FOR", "DO", "WHILE", "CASE", "SWITCH", "BREAK", "CONTINUE", "DEFAULT", "RET", "PRINT", "PRINTLN", "ASSERT", "TRY", "CATCH",
     "OBJECT", "CONSTRUCTOR", "DESTRUCTOR", "SEMICOL", "COLON", "PERIOD",
@@ -222,7 +222,7 @@ Token getNextToken(istream &s, int &line)
 					s.get(); 
 					return Token(OR, "or", line); 
 				}
-				return Token(OR, "or", line); //see if I can make use of single bars later
+				return Token(BAR, "|", line); //see if I can make use of single bars later
 			}else if (ch == '&'){
 				if(nextchar == '&'){
 					s.get(); 

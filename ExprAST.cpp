@@ -571,11 +571,7 @@ namespace jimpilier
 					builder->CreateStore(phi, other);
 			}
 			builder->SetInsertPoint(shortCircuitEvalEnd);
-			// comparison = oldcomparisons[0];
-			// for( int i = 1; i < oldcomparisons.size(); i++){
-			// 	comparison = builder->CreateLogicalAnd(comparison, oldcomparisons[i], "andtmp");
-			// }
-			// std:: cout << "Returning " << (isLabel ? "Label" : "phi") <<endl;
+			cache.clear(); //Clears cache in case this object gets codegenned again; in which case we want to re-codegen all args
 			return !isLabel ? phi : (llvm::Value *)shortCircuitEvalEnd;
 		}
 	};
@@ -630,7 +626,7 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 		{
 			std::vector<llvm::BasicBlock *> bodBlocks;
-			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend, *isDefault;
+			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend;
 			llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, cases.size());
 			escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
 

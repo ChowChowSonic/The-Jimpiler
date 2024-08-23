@@ -475,18 +475,29 @@ namespace jimpilier
 		std::vector<std::vector<std::unique_ptr<ExprAST>>> terms;
 		std::vector<KeyToken> operations;
 		std::vector<std::unique_ptr<ExprAST>> args; 
-		std::unique_ptr<ExprAST> LHS = std::move(mathExpr(tokens));
-		if (tokens.peek() != COMMA && tokens.peek() != EQUALCMP && tokens.peek() != NOTEQUAL && tokens.peek() != GREATER && tokens.peek() != GREATEREQUALS && tokens.peek() != LESS && tokens.peek() != LESSEQUALS)
+		std::unique_ptr<ExprAST> LHS;  
+		if(tokens.peek() != BAR){
+		LHS = std::move(mathExpr(tokens));
+		if (tokens.peek() != EQUALCMP && tokens.peek() != NOTEQUAL && tokens.peek() != GREATER && tokens.peek() != GREATEREQUALS && tokens.peek() != LESS && tokens.peek() != LESSEQUALS)
 			return LHS;
 		args.push_back(std::move(LHS));
+		terms.push_back(std::move(args)); 
+		operations.push_back(tokens.next().token);  
+		}
 		do
 		{
 			
 			//Now see, this otherwise complex problem could be easily solved by putting a comma seperated list function in here...
 			//but doing so would put a comma operator on the AST, which is what I DON'T want
-			while (tokens.peek() == COMMA && tokens.next() == COMMA) {
+			if(tokens.peek() == BAR && tokens.next() == BAR){
+			do{	
 				LHS = std::move(mathExpr(tokens));
 				args.push_back(std::move(LHS));
+			}while (tokens.peek() == COMMA && tokens.next() == COMMA);
+			assert(tokens.next() == BAR && "Missing a closing bar in the unpack operator!"); 
+			}else {
+				LHS = std::move(mathExpr(tokens));
+				args.push_back(std::move(LHS)); 
 			}
 			
 			terms.push_back(std::move(args));
@@ -494,8 +505,6 @@ namespace jimpilier
 			if(t == EQUALCMP || t == NOTEQUAL || t == GREATER || t == GREATEREQUALS || t == LESS || t == LESSEQUALS){
 				tokens.next(); 
 				operations.push_back(t.token); 
-				LHS = std::move(mathExpr(tokens));
-				args.push_back(std::move(LHS)); 
 				continue; 
 			}else break; 
 		}while (terms.size() == operations.size()); 
@@ -1319,16 +1328,16 @@ namespace jimpilier
 			{
 				do
 				{
-					value = std::move(logicStmt(tokens));
+					value = std::move(mathExpr(tokens));
 					if (tokens.peek() == RANGE)
 					{
 						// TODO: find a better way to implement this
 						long step = 1;
 						tokens.next();
-						std::unique_ptr<ExprAST> value2 = std::move(logicStmt(tokens));
+						std::unique_ptr<ExprAST> value2 = std::move(mathExpr(tokens));
 						if (tokens.peek() == COLON && tokens.next() == COLON)
 						{
-							std::unique_ptr<ExprAST> stepptr = std::move(logicStmt(tokens));
+							std::unique_ptr<ExprAST> stepptr = std::move(mathExpr(tokens));
 							llvm::Value *stepval = stepptr->codegen();
 							assert(llvm::isa<llvm::ConstantInt>(stepval) && "Variables do not work in switch statements; please only use constant values");
 							step = ((llvm::ConstantInt *)stepval)->getSExtValue();
