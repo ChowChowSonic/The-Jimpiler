@@ -14,130 +14,77 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/FileCheck/FileCheck.h"
 
-#ifndef ast
-#define ast
 #include "globals.cpp"
 #include "TypeExpr.h"
 #include "AliasManager.h"
+#include "ExprAST.h"
 using namespace std;
 namespace jimpilier
 {
 
-	/// ExprAST - Base class for all expression nodes.
-	class ExprAST
+	llvm::Value *NumberExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-	public:
-		/**
-		 * @brief A compile-time array of error types that can be thrown by this ExprAST; this list is only populated after a call to this->codegen()
-		 */
-		std::set<llvm::Type *> throwables;
-		virtual ~ExprAST() {};
-		virtual llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL) = 0;
-	};
+		if (DEBUGGING)
+			std::cout << Val;
+		if (isInt)
+			return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, static_cast<long>(Val), true));
+		if (isBool)
+			return llvm::ConstantInt::get(*ctxt, llvm::APInt(1, Val == 1, true));
+		return llvm::ConstantFP::get(*ctxt, llvm::APFloat((float)Val));
+	}
 
-	/// NumberExprAST - Expression class for numeric literals like "1.0".
-	class NumberExprAST : public ExprAST
+	llvm::Value *StringExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-		double Val;
-		bool isInt = false;
-		bool isBool = false;
+		if (DEBUGGING)
+			std::cout << Val;
+		// if(Val.length() > 1)
+		return builder->CreateGlobalStringPtr(Val, "Sconst");
+		// return llvm::ConstantInt::get(llvm::Type::getInt8Ty(*ctxt), llvm::APInt(8, Val[0]));
+	}
 
-	public:
-		NumberExprAST(double Val) : Val(Val) {}
-		NumberExprAST(int Val) : Val(Val) { isInt = true; }
-		NumberExprAST(long Val) : Val(Val) { isInt = true; }
-		NumberExprAST(bool Val) : Val(Val) { isBool = true; }
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+	llvm::Value *VariableExprAST::codegen(bool autoDeref , llvm::Value *other )
+	{
+		if (DEBUGGING)
+			std::cout << Name;
+		llvm::Value *V = AliasMgr[Name].val;
+		if (V && AliasMgr[Name].isRef && currentFunction != NULL)
 		{
-			if (DEBUGGING)
-				std::cout << Val;
-			if (isInt)
-				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, static_cast<long>(Val), true));
-			if (isBool)
-				return llvm::ConstantInt::get(*ctxt, llvm::APInt(1, Val == 1, true));
-			return llvm::ConstantFP::get(*ctxt, llvm::APFloat((float)Val));
+			V = builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
 		}
-	};
-
-	class StringExprAST : public ExprAST
-	{
-		std::string Val;
-
-	public:
-		StringExprAST(std::string val) : Val(val) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		if (!V)
 		{
-			if (DEBUGGING)
-				std::cout << Val;
-			// if(Val.length() > 1)
-			return builder->CreateGlobalStringPtr(Val, "Sconst");
-			// return llvm::ConstantInt::get(llvm::Type::getInt8Ty(*ctxt), llvm::APInt(8, Val[0]));
+			std::cout << "Unknown variable name: " << Name << std::endl;
+			return nullptr;
 		}
-	};
+		if (autoDeref && currentFunction != NULL)
+			return builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
+		return V;
+	}
 
-	/// VariableExprAST - Expression class for referencing a variable, like "a".
-	class VariableExprAST : public ExprAST
+	llvm::Value *DeclareExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-		std::string Name;
-
-	public:
-		VariableExprAST(const std::string &Name) : Name(Name) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Type *ty = this->type->codegen();
+		llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
+		if (AliasMgr[name].val != NULL)
 		{
-			if (DEBUGGING)
-				std::cout << Name;
-			llvm::Value *V = AliasMgr[Name].val;
-			if (V && AliasMgr[Name].isRef && currentFunction != NULL)
-			{
-				V = builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
-			}
-			if (!V)
-			{
-				std::cout << "Unknown variable name: " << Name << std::endl;
-				return nullptr;
-			}
-			if (autoDeref && currentFunction != NULL)
-				return builder->CreateLoad(V->getType()->getNonOpaquePointerElementType(), V, "loadtmp");
-			return V;
+			std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." << std::endl;
+			std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" << std::endl;
 		}
-	};
-
-	class DeclareExprAST : public ExprAST
-	{
-		const std::string name;
-		std::unique_ptr<jimpilier::TypeExpr> type;
-		int size;
-		bool lateinit;
-
-	public:
-		DeclareExprAST(const std::string Name, std::unique_ptr<jimpilier::TypeExpr> type, bool isLateInit = false, int ArrSize = 1) : name(Name), type(std::move(type)), size(ArrSize), lateinit(isLateInit) {}
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		if (currentFunction == NULL || currentFunction == STATIC)
 		{
-			llvm::Type *ty = this->type->codegen();
-			llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
-			if (AliasMgr[name].val != NULL)
-			{
-				std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." << std::endl;
-				std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" << std::endl;
-			}
-			if (currentFunction == NULL || currentFunction == STATIC)
-			{
-				GlobalVarsAndFunctions->getOrInsertGlobal(name, ty);
-				AliasMgr[name] = {(llvm::Value *)GlobalVarsAndFunctions->getNamedGlobal(name), this->type->isReference()};
-				GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty));
-			}
-			else
-			{
-				AliasMgr[name] = {(llvm::Value *)builder->CreateAlloca(ty, sizeval, name), this->type->isReference()};
-			}
-			if (!lateinit && currentFunction != NULL)
-				builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name].val);
-			return AliasMgr[name].val;
+			GlobalVarsAndFunctions->getOrInsertGlobal(name, ty);
+			AliasMgr[name] = {(llvm::Value *)GlobalVarsAndFunctions->getNamedGlobal(name), this->type->isReference()};
+			GlobalVarsAndFunctions->getNamedGlobal(name)->setInitializer(llvm::ConstantAggregateZero::get(ty));
 		}
-	};
+		else
+		{
+			AliasMgr[name] = {(llvm::Value *)builder->CreateAlloca(ty, sizeval, name), this->type->isReference()};
+		}
+		if (!lateinit && currentFunction != NULL)
+			builder->CreateStore(llvm::ConstantAggregateZero::get(ty), AliasMgr[name].val);
+		return AliasMgr[name].val;
+	}
 	// TODO: Decide whether or not deletion operators should be manditory for throwable objects
-
 	// TODO: Improve object function solution. Current Implementation feels wrong
 	// TODO: Double check ObjectConstructorCallExprAST.codegen(), make sure it works properly
 	// TODO: Get labels working if possible
@@ -145,7 +92,7 @@ namespace jimpilier
 	// TODO: Finish implementing list objects (Implement as a fat pointer struct)
 	// TODO: Break BinaryStmtAST up into several ExprAST objects for each operator
 	// TODO: Finalize boolean support
-	// TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr != null (@objptr).func()"
+	// TODO: Add non-null dot operator using a question mark; "objptr?func()" == "if objptr ! (@objptr).func()"
 	// TODO: Add implicit type casting (maybe)
 	// TODO: Completely revamp data type system to be almost exclusively front-end
 	// TODO: Find a better way to differentiate between char* and string (use structs maybe?)
@@ -156,550 +103,424 @@ namespace jimpilier
 	// TODO: Add pointer arithmatic
 	// TODO: Make strings safer
 
-	class IncDecExprAST : public ExprAST
+	llvm::Value *IncDecExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-		std::unique_ptr<ExprAST> val;
-		bool prefix, decrement;
-
-	public:
-		IncDecExprAST(bool isPrefix, bool isDecrement, std::unique_ptr<ExprAST> &uniary) : prefix(isPrefix), decrement(isDecrement), val(std::move(uniary)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *v = val->codegen(false);
+		if (operators[prefix ? NULL : v->getType()][decrement ? "--" : "++"][prefix ? v->getType() : NULL] != NULL)
 		{
-			llvm::Value *v = val->codegen(false);
-			if (operators[prefix ? NULL : v->getType()][decrement ? "--" : "++"][prefix ? v->getType() : NULL] != NULL)
-			{
-				return builder->CreateCall(operators[prefix ? NULL : v->getType()][decrement ? "--" : "++"][prefix ? v->getType() : NULL], {v}, "IncDecCallTmp");
-			}
-			if (prefix)
-			{
-				llvm::Value *tmpval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
-				tmpval = builder->CreateAdd(tmpval, llvm::ConstantInt::get(tmpval->getType(), llvm::APInt(tmpval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)), "incdectemp");
-				builder->CreateStore(tmpval, v);
-				return tmpval;
-			}
-			else
-			{
-				llvm::Value *oldval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
-				llvm::Value *tmpval = builder->CreateAdd(oldval, llvm::ConstantInt::get(oldval->getType(), llvm::APInt(oldval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)), "incdectemp");
-				builder->CreateStore(tmpval, v);
-				return oldval;
-			}
+			return builder->CreateCall(operators[prefix ? NULL : v->getType()][decrement ? "--" : "++"][prefix ? v->getType() : NULL], {v}, "IncDecCallTmp");
 		}
-	};
-
-	class NotExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> val;
-
-	public:
-		NotExprAST(std::unique_ptr<ExprAST> Val) : val(std::move(Val)) {};
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		if (prefix)
 		{
-			llvm::Value *v = val->codegen();
-			if (operators[NULL]["!"][v->getType()] != NULL)
-				return builder->CreateCall(operators[NULL]["!"][v->getType()], {v}, "notcalltmp");
+			llvm::Value *tmpval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
+			tmpval = builder->CreateAdd(tmpval, llvm::ConstantInt::get(tmpval->getType(), llvm::APInt(tmpval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)), "incdectemp");
+			builder->CreateStore(tmpval, v);
+			return tmpval;
+		}
+		else
+		{
+			llvm::Value *oldval = builder->CreateLoad(v->getType()->getContainedType(0), v, "incOrDecDerefTemp");
+			llvm::Value *tmpval = builder->CreateAdd(oldval, llvm::ConstantInt::get(oldval->getType(), llvm::APInt(oldval->getType()->getIntegerBitWidth(), decrement ? -1 : 1, true)), "incdectemp");
+			builder->CreateStore(tmpval, v);
+			return oldval;
+		}
+	}
 
-			if (v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
-				return builder->CreateNot(v, "negationtmp");
-			if (v->getType()->isStructTy())
-			{
-				// TODO: Implement operator overloading
-			}
-			std::cout << "Error: you're trying to take a negation of a non-boolean value!" << std::endl;
+	llvm::Value *NotExprAST::codegen(bool autoDeref , llvm::Value *other )
+	{
+		llvm::Value *v = val->codegen();
+		if (operators[NULL]["!"][v->getType()] != NULL)
+			return builder->CreateCall(operators[NULL]["!"][v->getType()], {v}, "notcalltmp");
+
+		if (v->getType()->getTypeID() == llvm::Type::IntegerTyID && v->getType()->getIntegerBitWidth() == 1)
+			return builder->CreateNot(v, "negationtmp");
+		if (v->getType()->isStructTy())
+		{
+			// TODO: Implement operator overloading
+		}
+		std::cout << "Error: you're trying to take a negation of a non-boolean value!" << std::endl;
+		return NULL;
+	}
+
+	llvm::Value *RefrenceExprAST::codegen(bool autoderef, llvm::Value *other )
+	{
+		return val->codegen(false);
+	}
+
+	llvm::Value *DeRefrenceExprAST::codegen(bool autoDeref , llvm::Value *other )
+	{
+		llvm::Value *v = val->codegen(autoDeref);
+		if (operators[NULL]["@"][v->getType()] != NULL)
+			return builder->CreateCall(operators[NULL]["@"][v->getType()], {v}, "derefcalltmp");
+		if (v != NULL && v->getType()->isPointerTy())
+			return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
+		else
+		{
+			logError("Attempt to derefrence non-pointer type found: Aborting...");
 			return NULL;
 		}
-	};
+	}
 
-	class RefrenceExprAST : public ExprAST
+	llvm::Value *IndexExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-		std::unique_ptr<ExprAST> val;
-
-	public:
-		RefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)) {};
-		llvm::Value *codegen(bool autoDeref = false, llvm::Value *other = NULL)
+		llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
+		if (operators[bsval->getType()]["["][offv->getType()] != NULL)
 		{
-			return val->codegen(false);
+			return builder->CreateCall(operators[bsval->getType()]["["][offv->getType()], {bsval, offv}, "operator[]call");
 		}
-	};
-
-	class DeRefrenceExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> val;
-
-	public:
-		DeRefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)) {};
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		else if (!bsval->getType()->isPointerTy())
 		{
-			llvm::Value *v = val->codegen(autoDeref);
-			if (operators[NULL]["@"][v->getType()] != NULL)
-				return builder->CreateCall(operators[NULL]["@"][v->getType()], {v}, "derefcalltmp");
-			if (v != NULL && v->getType()->isPointerTy())
-				return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
-			else
-			{
-				logError("Attempt to derefrence non-pointer type found: Aborting...");
-				return NULL;
-			}
+			logError("Error: You tried to take an offset of a non-pointer, non-array type!\nMake sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!");
+			return NULL;
 		}
-	};
-
-	class IndexExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> bas, offs;
-
-	public:
-		IndexExprAST(std::unique_ptr<ExprAST> &base, std::unique_ptr<ExprAST> &offset) : bas(std::move(base)), offs(std::move(offset)) {};
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		else if (!offv->getType()->isIntegerTy())
 		{
-			llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
-			if (operators[bsval->getType()]["["][offv->getType()] != NULL)
-			{
-				return builder->CreateCall(operators[bsval->getType()]["["][offv->getType()], {bsval, offv}, "operator[]call");
-			}
-			else if (!bsval->getType()->isPointerTy())
-			{
-				logError("Error: You tried to take an offset of a non-pointer, non-array type!\nMake sure that if you say 'variable[0]' (or similar), the type of 'variable' is a pointer or array!");
-				return NULL;
-			}
-			else if (!offv->getType()->isIntegerTy())
-			{
-				logError("Error when trying to take an offset: The value provided must be an integer. Cast it to an int if possible");
-				return NULL;
-			}
-			llvm::Value *indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
-			if (autoDeref)
-				return builder->CreateLoad(bsval->getType()->getNonOpaquePointerElementType(), indextmp, "loadtmp");
-			return indextmp;
+			logError("Error when trying to take an offset: The value provided must be an integer. Cast it to an int if possible");
+			return NULL;
 		}
-	};
-	class TypeCastExprAST : public ExprAST
+		llvm::Value *indextmp = builder->CreateGEP(bsval->getType()->getContainedType(0), bsval, offv, "offsetval");
+		if (autoDeref)
+			return builder->CreateLoad(bsval->getType()->getNonOpaquePointerElementType(), indextmp, "loadtmp");
+		return indextmp;
+	}
+
+	llvm::Value *TypeCastExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-		std::unique_ptr<ExprAST> from;
-		std::unique_ptr<TypeExpr> totype;
+		llvm::Type *to = this->totype->codegen();
+		llvm::Value *init = from->codegen();
+		llvm::Instruction::CastOps op;
 
-	public:
-		TypeCastExprAST(std::unique_ptr<ExprAST> &fromval, std::unique_ptr<TypeExpr> &toVal) : from(std::move(fromval)), totype(std::move(toVal)) {};
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		if (operators[init->getType()]["AS"][to] != NULL)
 		{
-			llvm::Type *to = this->totype->codegen();
-			llvm::Value *init = from->codegen();
-			llvm::Instruction::CastOps op;
+			return builder->CreateCall(operators[init->getType()]["AS"][to], {init}, "typecasttmp");
+		}
 
-			if (operators[init->getType()]["AS"][to] != NULL)
+		switch (init->getType()->getTypeID())
+		{
+		case (llvm::Type::IntegerTyID):
+			if (to->getTypeID() == llvm::Type::FloatTyID)
 			{
-				return builder->CreateCall(operators[init->getType()]["AS"][to], {init}, "typecasttmp");
+				op = llvm::Instruction::CastOps::SIToFP;
 			}
-
-			switch (init->getType()->getTypeID())
+			else if (to->getTypeID() == llvm::Type::HalfTyID)
 			{
-			case (llvm::Type::IntegerTyID):
-				if (to->getTypeID() == llvm::Type::FloatTyID)
-				{
-					op = llvm::Instruction::CastOps::SIToFP;
-				}
-				else if (to->getTypeID() == llvm::Type::HalfTyID)
-				{
-					op = llvm::Instruction::CastOps::Trunc;
-				}
-				else if (to->getTypeID() == llvm::Type::IntegerTyID)
-				{
-					if (to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth())
-						return init;
-					op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc;
-				}
-				else if (to->getTypeID() == llvm::Type::PointerTyID)
-				{
-					op = llvm::Instruction::CastOps::IntToPtr;
-				}
-				else
-				{
-					logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
-				}
-				break;
-			case (llvm::Type::HalfTyID):
-				if (to->getTypeID() == llvm::Type::FloatTyID)
-				{
-					op = llvm::Instruction::CastOps::SIToFP;
-				}
-				else if (to->getTypeID() == llvm::Type::IntegerTyID)
-				{
-					if (to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth())
-						return init;
-					op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc;
-				}
-				else if (to->getTypeID() == llvm::Type::PointerTyID)
-				{
-					op = llvm::Instruction::CastOps::IntToPtr;
-				}
-				else
-				{
-					logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
-				}
-				break;
-			case (llvm::Type::DoubleTyID):
-				if (to->getTypeID() == llvm::Type::FloatTyID)
-				{
-					op = llvm::Instruction::CastOps::FPTrunc;
-					break;
-				}
-				else if (to->getTypeID() == llvm::Type::DoubleTyID)
+				op = llvm::Instruction::CastOps::Trunc;
+			}
+			else if (to->getTypeID() == llvm::Type::IntegerTyID)
+			{
+				if (to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth())
 					return init;
-			case (llvm::Type::FloatTyID):
-				if (to->getTypeID() == llvm::Type::DoubleTyID)
-					op = llvm::Instruction::CastOps::FPExt;
-				else if (to->getTypeID() == llvm::Type::IntegerTyID)
-					op = llvm::Instruction::CastOps::FPToSI;
-				else
-				{
-					logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
-				}
-				break;
-			case (llvm::Type::PointerTyID):
-				if (to->getTypeID() == llvm::Type::IntegerTyID)
-					op = llvm::Instruction::CastOps::PtrToInt;
-				else if (to->getTypeID() == llvm::Type::PointerTyID)
-					op = llvm::Instruction::CastOps::BitCast;
-				else
-				{
-					logError("Attempted conversion failed:\
-                    Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
-				}
-				break;
-			default:
-				logError("No known conversion (or defined operator overload) when converting " + AliasMgr.getTypeName(init->getType()) + " to a(n) " + AliasMgr.getTypeName(to));
-				return NULL;
+				op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc;
 			}
-			return builder->CreateCast(op, init, to, "typecasttmp");
-		}
-	};
-
-	class AndOrStmtAST : public ExprAST
-	{
-		std::vector<std::unique_ptr<ExprAST>> items;
-		std::vector<KeyToken> operations;
-		bool sub;
-
-	public:
-		AndOrStmtAST(std::vector<std::unique_ptr<ExprAST>> &items, std::vector<KeyToken> &operations)
-			: items(std::move(items)), operations(std::move(operations)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
-		{
-			bool isLabel = other != NULL && other->getType()->isLabelTy();
-			llvm::BasicBlock *falseBlock = NULL, *glblend = llvm::BasicBlock::Create(*ctxt, "andEvalBlock", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL);
-			llvm::BasicBlock *trueBlock = isLabel ? (llvm::BasicBlock *)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblend);
-			llvm::BasicBlock *entryBlock = builder->GetInsertBlock();
-			llvm::PHINode *phi = NULL;
-			if (!isLabel)
+			else if (to->getTypeID() == llvm::Type::PointerTyID)
 			{
-				builder->SetInsertPoint(glblend);
-				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
-				builder->SetInsertPoint(entryBlock);
-			}
-			for (int i = 0; i < items.size(); i++)
-			{
-				auto &x = items[i];
-				llvm::Value *v = x->codegen(true, trueBlock);
-				if (!v->getType()->isLabelTy())
-				{
-					llvm::Value *boolval = v;
-					v = llvm::BasicBlock::Create(*ctxt, "andend", currentFunction, falseBlock != NULL && falseBlock->getType()->isLabelTy() ? falseBlock : NULL);
-					llvm::Value *zeroval = llvm::ConstantAggregateZero::get(boolval->getType());
-					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
-					builder->CreateCondBr(boolval, operations[i] == AND ? trueBlock : falseBlock, operations[i] == AND ? falseBlock : trueBlock);
-				}
-				falseBlock = (llvm::BasicBlock *)v;
-				builder->SetInsertPoint(falseBlock);
-				builder->CreateBr(glblend);
-				builder->SetInsertPoint(trueBlock);
-				if (phi != NULL)
-					phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), falseBlock);
-				if (i < items.size() - 1)
-				{
-					trueBlock = llvm::BasicBlock::Create(*ctxt, "andTrueBlock", currentFunction, glblend);
-				}
-			}
-			if (isLabel)
-			{
-				builder->CreateBr((llvm::BasicBlock *)other);
+				op = llvm::Instruction::CastOps::IntToPtr;
 			}
 			else
 			{
-				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
-				builder->CreateBr(glblend);
-				builder->SetInsertPoint(glblend);
+				logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
 			}
-			builder->SetInsertPoint(glblend);
-			return !isLabel ? phi : (llvm::Value *)glblend;
-		}
-	};
-
-	class ComparisonStmtAST : public ExprAST
-	{
-		std::vector<std::vector<std::unique_ptr<ExprAST>>> items; // convert this to vector<vector<ExprAST>>
-		std::vector<KeyToken> operations;
-		bool sub;
-
-	public:
-		ComparisonStmtAST(std::vector<std::vector<std::unique_ptr<ExprAST>>> &items, std::vector<KeyToken> &operations)
-			: items(std::move(items)), operations(std::move(operations)) {}
-		// Create internal private function to retrieve items from array; Codegen them only once, cache the result and return that later
-	private:
-		std::map<int, std::map<int, llvm::Value *>> cache;
-		llvm::Value *getCachedResult(const int argNo, const int subArgNo)
-		{
-			if (cache[argNo][subArgNo] == NULL)
+			break;
+		case (llvm::Type::HalfTyID):
+			if (to->getTypeID() == llvm::Type::FloatTyID)
 			{
-				cache[argNo][subArgNo] = items[argNo][subArgNo]->codegen();
+				op = llvm::Instruction::CastOps::SIToFP;
 			}
-			return cache[argNo][subArgNo];
+			else if (to->getTypeID() == llvm::Type::IntegerTyID)
+			{
+				if (to->getIntegerBitWidth() == init->getType()->getIntegerBitWidth())
+					return init;
+				op = to->getIntegerBitWidth() > init->getType()->getIntegerBitWidth() ? llvm::Instruction::CastOps::SExt : llvm::Instruction::CastOps::Trunc;
+			}
+			else if (to->getTypeID() == llvm::Type::PointerTyID)
+			{
+				op = llvm::Instruction::CastOps::IntToPtr;
+			}
+			else
+			{
+				logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
+			}
+			break;
+		case (llvm::Type::DoubleTyID):
+			if (to->getTypeID() == llvm::Type::FloatTyID)
+			{
+				op = llvm::Instruction::CastOps::FPTrunc;
+				break;
+			}
+			else if (to->getTypeID() == llvm::Type::DoubleTyID)
+				return init;
+		case (llvm::Type::FloatTyID):
+			if (to->getTypeID() == llvm::Type::DoubleTyID)
+				op = llvm::Instruction::CastOps::FPExt;
+			else if (to->getTypeID() == llvm::Type::IntegerTyID)
+				op = llvm::Instruction::CastOps::FPToSI;
+			else
+			{
+				logError("Attempted conversion failed: \nProvided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
+			}
+			break;
+		case (llvm::Type::PointerTyID):
+			if (to->getTypeID() == llvm::Type::IntegerTyID)
+				op = llvm::Instruction::CastOps::PtrToInt;
+			else if (to->getTypeID() == llvm::Type::PointerTyID)
+				op = llvm::Instruction::CastOps::BitCast;
+			else
+			{
+				logError("Attempted conversion failed:\
+                    Provided data type cannot be cast to other primitive/struct, and no overloaded operator exists that would do that for us");
+			}
+			break;
+		default:
+			logError("No known conversion (or defined operator overload) when converting " + AliasMgr.getTypeName(init->getType()) + " to a(n) " + AliasMgr.getTypeName(to));
+			return NULL;
 		}
-
-	public:
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		return builder->CreateCast(op, init, to, "typecasttmp");
+	}
+	llvm::Value *AndOrStmtAST::codegen(bool autoDeref , llvm::Value *other )
+	{
+		bool isLabel = other != NULL && other->getType()->isLabelTy();
+			llvm::BasicBlock *falseBlock = NULL, *glblend = llvm::BasicBlock::Create(*ctxt, "andEvalBlock", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL);
+		llvm::BasicBlock *trueBlock = isLabel ? (llvm::BasicBlock *)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblend);
+		llvm::BasicBlock *entryBlock = builder->GetInsertBlock();
+			llvm::PHINode *phi = NULL;
+		if (!isLabel)
 		{
-			bool isLabel = other != NULL && other->getType()->isLabelTy();
-			// std::vector<llvm::Value*> oldcomparisons;
-			// convert RHS, LHS to vector<llvm::Value*>
+			builder->SetInsertPoint(glblend);
+			phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
+			builder->SetInsertPoint(entryBlock);
+		}
+		for (int i = 0; i < items.size(); i++)
+		{
+			auto &x = items[i];
+			llvm::Value *v = x->codegen(true, trueBlock);
+			if (!v->getType()->isLabelTy())
+			{
+				llvm::Value *boolval = v;
+				v = llvm::BasicBlock::Create(*ctxt, "andend", currentFunction, falseBlock != NULL && falseBlock->getType()->isLabelTy() ? falseBlock : NULL);
+				llvm::Value *zeroval = llvm::ConstantAggregateZero::get(boolval->getType());
+				boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
+				builder->CreateCondBr(boolval, operations[i] == AND ? trueBlock : falseBlock, operations[i] == AND ? falseBlock : trueBlock);
+			}
+			falseBlock = (llvm::BasicBlock *)v;
+			builder->SetInsertPoint(falseBlock);
+			builder->CreateBr(glblend);
+			builder->SetInsertPoint(trueBlock);
+			if (phi != NULL)
+				phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), falseBlock);
+			if (i < items.size() - 1)
+			{
+				trueBlock = llvm::BasicBlock::Create(*ctxt, "andTrueBlock", currentFunction, glblend);
+			}
+		}
+		if (isLabel)
+		{
+			builder->CreateBr((llvm::BasicBlock *)other);
+		}
+		else
+		{
+			phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
+			builder->CreateBr(glblend);
+			builder->SetInsertPoint(glblend);
+		}
+		builder->SetInsertPoint(glblend);
+		return !isLabel ? phi : (llvm::Value *)glblend;
+	}
+
+	llvm::Value *ComparisonStmtAST::codegen(bool autoDeref , llvm::Value *other )
+	{
+		bool isLabel = other != NULL && other->getType()->isLabelTy();
+		// std::vector<llvm::Value*> oldcomparisons;
+		// convert RHS, LHS to vector<llvm::Value*>
 			llvm::Value *RHS = NULL, *LHS = NULL, *comparison = NULL;
-			llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL),
-							 *entryBlock = builder->GetInsertBlock(),
+		llvm::BasicBlock *shortCircuitEvalEnd = llvm::BasicBlock::Create(*ctxt, "ShortcircuitEvaluationEnd", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL),
+						 *entryBlock = builder->GetInsertBlock(),
 							 *ANDConditional=NULL, *ORConditional=NULL;
 			llvm::PHINode *phi = NULL;
-			if (!isLabel)
-			{
-				builder->SetInsertPoint(shortCircuitEvalEnd);
-				phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
-				builder->SetInsertPoint(entryBlock);
-			}
-			assert(operations.size() == items.size() - 1 && "Operations and operators do not line up!");
-			for (int i = 0; i < operations.size(); i++)
-			{
+		if (!isLabel)
+		{
+			builder->SetInsertPoint(shortCircuitEvalEnd);
+			phi = builder->CreatePHI(llvm::Type::getInt1Ty(*ctxt), 0, "conditionalAssignVal");
+			builder->SetInsertPoint(entryBlock);
+		}
+		assert(operations.size() == items.size() - 1 && "Operations and operators do not line up!");
+		for (int i = 0; i < operations.size(); i++)
+		{
 				if(isLabel){
 				if (i < operations.size()-1){
 					ANDConditional = llvm::BasicBlock::Create(*ctxt, "ANDShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
 				}else ANDConditional = (llvm::BasicBlock*)other; 
 				}else{
-				// if(i == operations.size()-1) ANDConditional = shortCircuitEvalEnd; 
+				// if(i == operations.size()-1) ANDConditional = shortCircuitEvalEnd;
 				ANDConditional = llvm::BasicBlock::Create(*ctxt, "ANDShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
-				}
-				for (int LHSIndex = 0; LHSIndex < items[i].size(); LHSIndex++)
+			}
+			for (int LHSIndex = 0; LHSIndex < items[i].size(); LHSIndex++)
+			{
+				LHS = getCachedResult(i, LHSIndex);
+				for (int RHSIndex = 0; RHSIndex < items[i + 1].size(); RHSIndex++)
 				{
-					LHS = getCachedResult(i, LHSIndex);
-					for (int RHSIndex = 0; RHSIndex < items[i + 1].size(); RHSIndex++)
+					RHS = getCachedResult(i + 1, RHSIndex);
+
+					switch (operations[i])
 					{
-						RHS = getCachedResult(i + 1, RHSIndex);
-
-						switch (operations[i])
-						{
-						case EQUALCMP:
-							if (operators[LHS->getType()]["=="][RHS->getType()] != NULL)
-								comparison = builder->CreateCall(operators[LHS->getType()]["=="][RHS->getType()], {LHS, RHS}, "calltmp");
-							else
-								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpEQ(LHS, RHS, "cmptmp") : builder->CreateFCmpOEQ(LHS, RHS, "cmptmp");
-							break;
-						case NOTEQUAL:
-							if (operators[LHS->getType()]["!="][RHS->getType()] != NULL)
-								comparison = builder->CreateCall(operators[LHS->getType()]["!="][RHS->getType()], {LHS, RHS}, "calltmp");
-							else
-								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpNE(LHS, RHS, "cmptmp") : builder->CreateFCmpONE(LHS, RHS, "cmptmp");
-							break;
-						case GREATER:
-							if (operators[LHS->getType()][">"][RHS->getType()] != NULL)
-								comparison = builder->CreateCall(operators[LHS->getType()][">"][RHS->getType()], {LHS, RHS}, "calltmp");
-							else
-								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGT(LHS, RHS, "cmptmp") : builder->CreateFCmpOGT(LHS, RHS, "cmptmp");
-							break;
-						case GREATEREQUALS:
-							if (operators[LHS->getType()][">="][RHS->getType()] != NULL)
-								comparison = builder->CreateCall(operators[LHS->getType()][">="][RHS->getType()], {LHS, RHS}, "calltmp");
-							else
-								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGE(LHS, RHS, "cmptmp") : builder->CreateFCmpOGE(LHS, RHS, "cmptmp");
-							break;
-						case LESS:
-							if (operators[LHS->getType()]["<"][RHS->getType()] != NULL)
-								comparison = builder->CreateCall(operators[LHS->getType()]["<"][RHS->getType()], {LHS, RHS}, "calltmp");
-							else
-								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLT(LHS, RHS, "cmptmp") : builder->CreateFCmpOLT(LHS, RHS, "cmptmp");
-							break;
-						case LESSEQUALS:
-							if (operators[LHS->getType()]["<="][RHS->getType()] != NULL)
-								comparison = builder->CreateCall(operators[LHS->getType()]["<="][RHS->getType()], {LHS, RHS}, "calltmp");
-							else
-								comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLE(LHS, RHS, "cmptmp") : builder->CreateFCmpOLE(LHS, RHS, "cmptmp");
-							break;
-						default:
-							logError("Unknown comparision operator: " + keytokens[operations[i]]);
-						}
+					case EQUALCMP:
+						if (operators[LHS->getType()]["=="][RHS->getType()] != NULL)
+							comparison = builder->CreateCall(operators[LHS->getType()]["=="][RHS->getType()], {LHS, RHS}, "calltmp");
+						else
+							comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpEQ(LHS, RHS, "cmptmp") : builder->CreateFCmpOEQ(LHS, RHS, "cmptmp");
+						break;
+					case NOTEQUAL:
+						if (operators[LHS->getType()]["!="][RHS->getType()] != NULL)
+							comparison = builder->CreateCall(operators[LHS->getType()]["!="][RHS->getType()], {LHS, RHS}, "calltmp");
+						else
+							comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpNE(LHS, RHS, "cmptmp") : builder->CreateFCmpONE(LHS, RHS, "cmptmp");
+						break;
+					case GREATER:
+						if (operators[LHS->getType()][">"][RHS->getType()] != NULL)
+							comparison = builder->CreateCall(operators[LHS->getType()][">"][RHS->getType()], {LHS, RHS}, "calltmp");
+						else
+							comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGT(LHS, RHS, "cmptmp") : builder->CreateFCmpOGT(LHS, RHS, "cmptmp");
+						break;
+					case GREATEREQUALS:
+						if (operators[LHS->getType()][">="][RHS->getType()] != NULL)
+							comparison = builder->CreateCall(operators[LHS->getType()][">="][RHS->getType()], {LHS, RHS}, "calltmp");
+						else
+							comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSGE(LHS, RHS, "cmptmp") : builder->CreateFCmpOGE(LHS, RHS, "cmptmp");
+						break;
+					case LESS:
+						if (operators[LHS->getType()]["<"][RHS->getType()] != NULL)
+							comparison = builder->CreateCall(operators[LHS->getType()]["<"][RHS->getType()], {LHS, RHS}, "calltmp");
+						else
+							comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLT(LHS, RHS, "cmptmp") : builder->CreateFCmpOLT(LHS, RHS, "cmptmp");
+						break;
+					case LESSEQUALS:
+						if (operators[LHS->getType()]["<="][RHS->getType()] != NULL)
+							comparison = builder->CreateCall(operators[LHS->getType()]["<="][RHS->getType()], {LHS, RHS}, "calltmp");
+						else
+							comparison = LHS->getType()->isIntegerTy() ? builder->CreateICmpSLE(LHS, RHS, "cmptmp") : builder->CreateFCmpOLE(LHS, RHS, "cmptmp");
+						break;
+					default:
+						logError("Unknown comparision operator: " + keytokens[operations[i]]);
+					}
 						if ((RHSIndex < items[i + 1].size() - 1) || LHSIndex < items[i].size() -1)
-						{
-							if (phi != NULL && (ANDConditional == shortCircuitEvalEnd || ORConditional == shortCircuitEvalEnd))
-								phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
-							ORConditional = llvm::BasicBlock::Create(*ctxt, "ORShortCircuitEvalBlock", currentFunction, ANDConditional);
-							// if ((RHSIndex < items[i + 1].size() - 1) && LHSIndex < items[i].size() -1)
-							builder->CreateCondBr(comparison, ANDConditional, ORConditional);
-							builder->SetInsertPoint(ORConditional);
-						}
+					{
+						if (phi != NULL && (ANDConditional == shortCircuitEvalEnd || ORConditional == shortCircuitEvalEnd))
+							phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
+						ORConditional = llvm::BasicBlock::Create(*ctxt, "ORShortCircuitEvalBlock", currentFunction, ANDConditional);
+						// if ((RHSIndex < items[i + 1].size() - 1) && LHSIndex < items[i].size() -1)
+						builder->CreateCondBr(comparison, ANDConditional, ORConditional);
+						builder->SetInsertPoint(ORConditional);
 					}
 				}
-				if (i < operations.size() - 1 || !isLabel)
-				{
-					if (phi != NULL)
-						phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
+			}
+			if (i < operations.size() - 1 || !isLabel)
+			{
+				if (phi != NULL)
+					phi->addIncoming(llvm::ConstantAggregateZero::get(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
 					if(ANDConditional == shortCircuitEvalEnd){
-						ANDConditional = llvm::BasicBlock::Create(*ctxt, "ANDShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd); 
-						entryBlock = builder->GetInsertBlock(); 
-						builder->SetInsertPoint(ANDConditional); 
-						builder->CreateBr(shortCircuitEvalEnd); 
-						builder->SetInsertPoint(entryBlock); 
-					}
-					builder->CreateCondBr(comparison, ANDConditional, shortCircuitEvalEnd);
-					// else builder->CreateBr(ANDConditional);
+					ANDConditional = llvm::BasicBlock::Create(*ctxt, "ANDShortCircuitEvalBlock", currentFunction, shortCircuitEvalEnd);
+					entryBlock = builder->GetInsertBlock();
 					builder->SetInsertPoint(ANDConditional);
+					builder->CreateBr(shortCircuitEvalEnd);
+					builder->SetInsertPoint(entryBlock);
 				}
+				builder->CreateCondBr(comparison, ANDConditional, shortCircuitEvalEnd);
+				// else builder->CreateBr(ANDConditional);
+				builder->SetInsertPoint(ANDConditional);
 			}
-			if (isLabel)
-			{
-				builder->CreateCondBr(comparison, (llvm::BasicBlock *)other, shortCircuitEvalEnd);
-			}
-			else
-			{
-				phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
-				builder->CreateBr(shortCircuitEvalEnd);
-				builder->SetInsertPoint(shortCircuitEvalEnd);
-				if (other != NULL)
-					builder->CreateStore(phi, other);
-			}
+		}
+		if (isLabel)
+		{
+			builder->CreateCondBr(comparison, (llvm::BasicBlock *)other, shortCircuitEvalEnd);
+		}
+		else
+		{
+			phi->addIncoming(llvm::ConstantInt::getAllOnesValue(llvm::Type::getInt1Ty(*ctxt)), builder->GetInsertBlock());
+			builder->CreateBr(shortCircuitEvalEnd);
 			builder->SetInsertPoint(shortCircuitEvalEnd);
+			if (other != NULL)
+				builder->CreateStore(phi, other);
+		}
+		builder->SetInsertPoint(shortCircuitEvalEnd);
 			cache.clear(); //Clears cache in case this object gets codegenned again; in which case we want to re-codegen all args
-			return !isLabel ? phi : (llvm::Value *)shortCircuitEvalEnd;
-		}
-	};
+		return !isLabel ? phi : (llvm::Value *)shortCircuitEvalEnd;
+	}
 
-	class IfExprAST : public ExprAST
+	llvm::Value *IfExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-	public:
-		std::vector<std::unique_ptr<ExprAST>> condition, body;
-		IfExprAST(std::vector<std::unique_ptr<ExprAST>> cond, std::vector<std::unique_ptr<ExprAST>> bod) : condition(std::move(cond)), body(std::move(bod)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::BasicBlock *start, *end;
+		llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction);
+		int i = 0;
+		for (i = 0; i < std::min(condition.size(), body.size()); i++)
 		{
-			llvm::BasicBlock *start, *end;
-			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction);
-			int i = 0;
-			for (i = 0; i < std::min(condition.size(), body.size()); i++)
+			start = llvm::BasicBlock::Create(*ctxt, "ifstart", currentFunction, glblend);
+			// end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
+			llvm::Value *end = condition[i]->codegen(true, start);
+			if (!end->getType()->isLabelTy())
 			{
-				start = llvm::BasicBlock::Create(*ctxt, "ifstart", currentFunction, glblend);
-				// end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
-				llvm::Value *end = condition[i]->codegen(true, start);
-				if (!end->getType()->isLabelTy())
-				{
-					llvm::Value *boolval = end;
-					end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
-					llvm::Value *zeroval = llvm::ConstantAggregateZero::get(boolval->getType());
-					boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
-					builder->CreateCondBr(boolval, start, (llvm::BasicBlock *)end);
-				}
-				builder->SetInsertPoint(start);
-				body[i]->codegen();
-				builder->CreateBr(glblend);
-				builder->SetInsertPoint((llvm::BasicBlock *)end);
+				llvm::Value *boolval = end;
+				end = llvm::BasicBlock::Create(*ctxt, "ifend", currentFunction, glblend);
+				llvm::Value *zeroval = llvm::ConstantAggregateZero::get(boolval->getType());
+				boolval = boolval->getType()->isIntegerTy() ? builder->CreateICmpNE(boolval, zeroval, "cmptmp") : builder->CreateFCmpOEQ(boolval, zeroval, "cmptmp");
+				builder->CreateCondBr(boolval, start, (llvm::BasicBlock *)end);
 			}
-
-			while (i < body.size())
-			{
-				body[i]->codegen();
-				i++;
-			}
+			builder->SetInsertPoint(start);
+			body[i]->codegen();
 			builder->CreateBr(glblend);
-			builder->SetInsertPoint(glblend);
-			return glblend;
+			builder->SetInsertPoint((llvm::BasicBlock *)end);
 		}
-	};
 
-	class SwitchExprAST : public ExprAST
-	{
-	public:
-		std::vector<std::pair<std::set<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> cases;
-		std::unique_ptr<ExprAST> comp;
-		bool autoBr;
-		SwitchExprAST(std::unique_ptr<ExprAST> &comparator, std::vector<std::pair<std::set<std::unique_ptr<ExprAST>>, std::unique_ptr<ExprAST>>> &cases, bool autoBreak) : cases(std::move(cases)), comp(std::move(comparator)), autoBr(autoBreak) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		while (i < body.size())
 		{
-			std::vector<llvm::BasicBlock *> bodBlocks;
-			llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend;
-			llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, cases.size());
-			escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
+			body[i]->codegen();
+			i++;
+		}
+		builder->CreateBr(glblend);
+		builder->SetInsertPoint(glblend);
+		return glblend;
+	}
 
-			for (auto caseExpr = cases.rbegin(); caseExpr != cases.rend(); caseExpr++)
-			{
-				llvm::BasicBlock *currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody);
-				bodBlocks.push_back(currentbody);
-				builder->SetInsertPoint(currentbody);
-				caseExpr->second->codegen();
-				builder->CreateBr(autoBr ? glblend : lastbody);
-				for (auto &x : caseExpr->first)
-					val->addCase((llvm::ConstantInt *)x->codegen(), currentbody);
-				if (caseExpr->first.empty())
-					val->setDefaultDest(currentbody);
-				lastbody = currentbody;
-				escapeBlock.pop();
-				escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
-			}
-			builder->SetInsertPoint(glblend);
+	llvm::Value *SwitchExprAST::codegen(bool autoDeref , llvm::Value *other )
+	{
+		std::vector<llvm::BasicBlock *> bodBlocks;
+		llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend;
+		llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, cases.size());
+		escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
+
+		for (auto caseExpr = cases.rbegin(); caseExpr != cases.rend(); caseExpr++)
+		{
+			llvm::BasicBlock *currentbody = llvm::BasicBlock::Create(*ctxt, "body", currentFunction, lastbody);
+			bodBlocks.push_back(currentbody);
+			builder->SetInsertPoint(currentbody);
+			caseExpr->second->codegen();
+			builder->CreateBr(autoBr ? glblend : lastbody);
+			for (auto &x : caseExpr->first)
+				val->addCase((llvm::ConstantInt *)x->codegen(), currentbody);
+			if (caseExpr->first.empty())
+				val->setDefaultDest(currentbody);
+			lastbody = currentbody;
 			escapeBlock.pop();
-			return val;
+			escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(glblend, lastbody));
 		}
-	};
+		builder->SetInsertPoint(glblend);
+		escapeBlock.pop();
+		return val;
+	}
 
-	/**
-	 * @brief represents a break statement with optional label.
-	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none
-	 *
-	 */
-	class BreakExprAST : public ExprAST
+	llvm::Value *BreakExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-
-		std::string labelVal;
-
-	public:
-		BreakExprAST(std::string label = "") : labelVal(label) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
-		{
-			if (escapeBlock.empty())
-				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
-			// if (labelVal != "")
-			return builder->CreateBr(escapeBlock.top().first);
-		}
-	};
-	/**
-	 * @brief represents a break statement with optional label.
-	 * Simply creates a break to the most recent escapeblock, or returns a constantInt(0) if there is none
-	 *
-	 */
-	class ContinueExprAST : public ExprAST
+		if (escapeBlock.empty())
+			return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
+		// if (labelVal != "")
+		return builder->CreateBr(escapeBlock.top().first);
+	}
+	llvm::Value *ContinueExprAST::codegen(bool autoDeref , llvm::Value *other )
 	{
-
-		std::string labelVal;
-
-	public:
-		ContinueExprAST(std::string label = "") : labelVal(label) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
-		{
-			if (escapeBlock.empty())
-				return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
-			// if (labelVal != "")
-			return builder->CreateBr(escapeBlock.top().second);
-		}
-	};
-	class SizeOfExprAST : public ExprAST
-	{
-		std::unique_ptr<TypeExpr> type = NULL;
-		std::unique_ptr<ExprAST> target = NULL;
-
-	public:
-		SizeOfExprAST(std::unique_ptr<TypeExpr> &SizeOfTarget) : type(std::move(SizeOfTarget)) {}
-		SizeOfExprAST(std::unique_ptr<ExprAST> &SizeOfTarget) : target(std::move(SizeOfTarget)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		if (escapeBlock.empty())
+			return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
+		// if (labelVal != "")
+		return builder->CreateBr(escapeBlock.top().second);
+	}
+		llvm::Value *SizeOfExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			if (!type && !target)
 			{
@@ -723,13 +544,7 @@ namespace jimpilier
 			}
 			return NULL;
 		}
-	};
-	class HeapExprAST : public ExprAST
-	{
-
-	public:
-		HeapExprAST() {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *HeapExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			// initalize calloc(i64, i64) as the primary ways to allocate heap memory
 			GlobalVarsAndFunctions->getOrInsertFunction("calloc", llvm::FunctionType::get(
@@ -740,15 +555,7 @@ namespace jimpilier
 			llvm::Value *alloc = builder->CreateCall(GlobalVarsAndFunctions->getFunction("calloc"), {other, llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, 1))}, "clearalloctmp");
 			return alloc;
 		}
-	};
-
-	class DeleteExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> val;
-
-	public:
-		DeleteExprAST(std::unique_ptr<ExprAST> &deleteme) : val(std::move(deleteme)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *DeleteExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *freefunc = GlobalVarsAndFunctions->getOrInsertFunction("free", {llvm::Type::getInt8PtrTy(*ctxt)}, llvm::Type::getInt8PtrTy(*ctxt)).getCallee();
 			llvm::Value *deletedthing = val->codegen(true);
@@ -767,31 +574,8 @@ namespace jimpilier
 			builder->CreateCall((llvm::Function *)freefunc, deletedthing, "freedValue");
 			return NULL;
 		}
-	};
-	/**
-	 * @brief Represents a for loop in LLVM IR, currently does not support for each statements
-	 *
-	 */
-	class ForExprAST : public ExprAST
-	{
-	public:
-		std::vector<std::unique_ptr<ExprAST>> prefix, postfix;
-		std::unique_ptr<ExprAST> condition, body;
-		bool dowhile;
-
-		ForExprAST(std::vector<std::unique_ptr<ExprAST>> &init,
-				   std::unique_ptr<ExprAST> cond,
-				   std::unique_ptr<ExprAST> bod,
-				   std::vector<std::unique_ptr<ExprAST>> &edit, bool isdoWhile = false) : prefix(std::move(init)), condition(std::move(cond)), body(std::move(bod)), postfix(std::move(edit)), dowhile(isdoWhile) {}
-		/**
-		 * @brief Construct a ForExprAST, but with no bound variable or modifier; I.E. A while loop rather than a for loop
-		 *
-		 * @param cond
-		 * @param bod
-		 */
-		ForExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> bod, bool isDoWhile = false) : condition(std::move(cond)), body(std::move(bod)), dowhile(isDoWhile) {}
 		// I have a feeling this function needs to be revamped.
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *ForExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *retval;
 			llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
@@ -820,16 +604,7 @@ namespace jimpilier
 			escapeBlock.pop();
 			return retval;
 		}
-	};
-
-	class RangeExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> start, end, step = NULL;
-
-	public:
-		RangeExprAST(std::unique_ptr<ExprAST> &st, std::unique_ptr<ExprAST> &fin) : start(std::move(st)), end(std::move(fin)) {}
-		RangeExprAST(std::unique_ptr<ExprAST> &st, std::unique_ptr<ExprAST> &fin, std::unique_ptr<ExprAST> &step) : start(std::move(st)), end(std::move(fin)), step(std::move(step)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *RangeExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *begin = start->codegen(), *fin = end->codegen(), *delta = step == NULL ? llvm::ConstantInt::getIntegerValue(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, 1u)) : step->codegen();
 			llvm::Value *ret;
@@ -925,19 +700,7 @@ namespace jimpilier
 			}
 			return ret;
 		}
-	};
-
-	/**
-	 * Represents a list of items in code, usually represented by a string such as "[1, 2, 3, 4, 5]" alongside an optional semicolon on the end
-	 */
-	class ListExprAST : public ExprAST
-	{
-	public:
-		std::vector<std::unique_ptr<ExprAST>> Contents;
-		ListExprAST(std::vector<std::unique_ptr<ExprAST>> &Args) : Contents(std::move(Args)) {}
-		ListExprAST() {}
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *ListExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *ret = NULL;
 			if (DEBUGGING)
@@ -952,17 +715,8 @@ namespace jimpilier
 				std::cout << " ]";
 			return ret;
 		}
-	};
 
-	class DebugPrintExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> val;
-		int ln;
-
-	public:
-		DebugPrintExprAST(std::unique_ptr<ExprAST> printval, int line) : val(std::move(printval)), ln(line) {}
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *DebugPrintExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *data = val->codegen();
 			std::string placeholder = "Debug value (Line " + std::to_string(ln) + "): ";
@@ -1008,18 +762,7 @@ namespace jimpilier
 			builder->CreateCall(printfunc, {globalString, data}, "printftemp");
 			return data;
 		}
-	};
-
-	/**
-	 * @brief Represents a return statement for a function
-	 */
-	class RetStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> ret;
-
-	public:
-		RetStmtAST(std::unique_ptr<ExprAST> &val) : ret(std::move(val)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *RetStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			if (DEBUGGING)
 				std::cout << "return ";
@@ -1033,19 +776,8 @@ namespace jimpilier
 
 			return builder->CreateRet(retval);
 		}
-	};
 
-	class AssignStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> lhs, rhs;
-
-	public:
-		AssignStmtAST(std::unique_ptr<ExprAST> &LHS, std::unique_ptr<ExprAST> &RHS)
-			: lhs(std::move(LHS)), rhs(std::move(RHS))
-		{
-		}
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *AssignStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *lval, *rval;
 			// std::cout << std::hex << LHS << RHS <<endl;
@@ -1083,19 +815,7 @@ namespace jimpilier
 			}
 			return rval;
 		}
-	};
-	/**
-	 * Handles multiplication and division (* and /) statments
-	 */
-	class MultDivStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> LHS, RHS;
-		bool div;
-
-	public:
-		MultDivStmtAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool isDiv)
-			: LHS(std::move(LHS)), RHS(std::move(RHS)), div(isDiv) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *MultDivStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
@@ -1142,19 +862,7 @@ namespace jimpilier
 				return NULL;
 			}
 		}
-	};
-	/**
-	 * Handles addition and subtraction (+ and -) statments
-	 */
-	class AddSubStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> LHS, RHS;
-		bool sub;
-
-	public:
-		AddSubStmtAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool isSub)
-			: LHS(std::move(LHS)), RHS(std::move(RHS)), sub(isSub) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *AddSubStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *lhs = LHS->codegen();
 			llvm::Value *rhs = RHS->codegen();
@@ -1192,20 +900,7 @@ namespace jimpilier
 				return NULL;
 			}
 		}
-	};
-
-	/**
-	 * Handles raised-to and modulo statements
-	 */
-	class PowModStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> LHS, RHS;
-		bool mod;
-
-	public:
-		PowModStmtAST(std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS, bool ismod)
-			: LHS(std::move(LHS)), RHS(std::move(RHS)), mod(ismod) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *PowModStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Type *longty = llvm::IntegerType::getInt32Ty(*ctxt);
 			llvm::Type *doublety = llvm::Type::getDoubleTy(*ctxt);
@@ -1263,20 +958,7 @@ namespace jimpilier
 				return NULL;
 			}
 		}
-	};
-	/** BinaryStmtAST - Expression class for a binary operator.
-	 *
-	 *
-	 */
-	class BinaryStmtAST : public ExprAST
-	{
-		std::string Op;
-		std::unique_ptr<ExprAST> LHS, RHS;
-
-	public:
-		BinaryStmtAST(std::string op, /* llvm::Type* type,*/ std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)
-			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *BinaryStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			if (DEBUGGING)
 				std::cout << Op << "( ";
@@ -1349,17 +1031,7 @@ namespace jimpilier
 				return NULL;
 			}
 		}
-	};
-
-	class TryStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> body;
-		std::map<std::unique_ptr<TypeExpr>, std::pair<std::unique_ptr<ExprAST>, std::string>> catchStmts;
-
-	public:
-		TryStmtAST(std::unique_ptr<ExprAST> &body, std::map<std::unique_ptr<TypeExpr>, std::pair<std::unique_ptr<ExprAST>, std::string>> &catchStmts) : body(std::move(body)), catchStmts(std::move(catchStmts)) {};
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *TryStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::FunctionCallee typeidfor = GlobalVarsAndFunctions->getOrInsertFunction("llvm.eh.typeid.for", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false));
 			llvm::FunctionCallee personalityfunc = GlobalVarsAndFunctions->getOrInsertFunction("__gxx_personality_v0", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false));
@@ -1466,15 +1138,8 @@ namespace jimpilier
 			currentUnwindBlock = oldLP;
 			return tryBlock;
 		}
-	};
 
-	class ThrowStmtAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> ball;
-
-	public:
-		ThrowStmtAST(std::unique_ptr<ExprAST> &ball) : ball(std::move(ball)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *ThrowStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			GlobalVarsAndFunctions->getOrInsertFunction("__cxa_allocate_exception", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt64Ty(*ctxt)}, false));
 			GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt)}, false));
@@ -1510,28 +1175,14 @@ namespace jimpilier
 				// builder->CreateStore(ballval, error, "storetmp");
 			}
 			llvm::Value *deleter = ballval->getType()->isStructTy() ? operators[NULL]["DELETE"][ballval->getType()->getPointerTo()] : (llvm::Value *)llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt));
-			// assert(deleter != NULL && "Fatal error: You tried to throw an object that has no deletion operator");
+			// assert(deleter ! && "Fatal error: You tried to throw an object that has no deletion operator");
 
 			return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"),
 									   {error,
 										builder->CreateBitCast(classInfoVals[ballval->getType()], llvm::Type::getInt8PtrTy(*ctxt)),
 										builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
 		}
-	};
-	/**
-	   * Class representing a print statement in the Abstract Syntax Tree (AST)
-	   * Inherits from ExprAST base class
-
-	   */
-	class PrintStmtAST : public ExprAST
-	{
-	public:
-		std::vector<std::unique_ptr<ExprAST>> Contents;
-		bool isLine = false;
-		PrintStmtAST(std::vector<std::unique_ptr<ExprAST>> &Args, bool isLn)
-			: Contents(std::move(Args)), isLine(isLn) {}
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *PrintStmtAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			// Initialize values for the arguments and the types for the arguments
 			std::vector<llvm::Value *> vals;
@@ -1589,24 +1240,10 @@ namespace jimpilier
 																						 llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*ctxt), llvm::PointerType::get(llvm::Type::getInt8Ty(*ctxt), false), true));
 			return builder->CreateCall(printfunc, vals, "printftemp");
 		}
-	};
 
-	class CodeBlockAST : public ExprAST
-	{
-	public:
-		std::vector<std::unique_ptr<ExprAST>> Contents;
-		CodeBlockAST(std::vector<std::unique_ptr<ExprAST>> &Args)
+		llvm::Value *CodeBlockAST::codegen(bool autoDeref , llvm::Value *other )
 		{
-			for (auto &x : Args)
-			{
-				Contents.push_back(std::move(x));
-			}
-		}
-
-		CodeBlockAST() {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
-		{
-			llvm::Value *ret = NULL;
+			llvm::Value *ret ;
 			for (int i = 0; i < Contents.size(); i++)
 			{
 				ret = Contents[i]->codegen();
@@ -1617,17 +1254,7 @@ namespace jimpilier
 			};
 			return ret;
 		}
-	};
-	class MemberAccessExprAST : public ExprAST
-	{
-		std::string member;
-		std::unique_ptr<ExprAST> base;
-		bool dereferenceParent;
-
-	public:
-		MemberAccessExprAST(std::unique_ptr<ExprAST> &base, std::string offset, bool deref = false) : base(std::move(base)), member(offset), dereferenceParent(deref) {}
-		// TODO: FIX ME
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *MemberAccessExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			// return NULL;
 			llvm::Value *lhs = base->codegen(dereferenceParent);
@@ -1642,20 +1269,7 @@ namespace jimpilier
 			llvm::Value *gep = builder->CreateInBoundsGEP(lhs->getType()->getContainedType(0), lhs, llvm::ArrayRef<llvm::Value *>({objIndex, offset}), "memberaccess");
 			return autoDeref ? builder->CreateLoad(returnTy.type, gep, "LoadTmp") : gep;
 		}
-	};
-
-	/// CallExprAST - Expression class for function calls.
-	class CallExprAST : public ExprAST
-	{
-		std::string Callee;
-		std::vector<std::unique_ptr<ExprAST>> Args;
-
-	public:
-		CallExprAST(const std::string callee, std::vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg))
-		{
-		}
-		// : Callee(callee), Args(Arg) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *CallExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			if (!AliasMgr.functions.hasAlias(Callee))
 			{
@@ -1698,26 +1312,8 @@ namespace jimpilier
 			builder->SetInsertPoint(normalUnwindBlock);
 			return retval;
 		}
-	};
 
-	/**
-	 * @brief ObjectFunctionCallExprAST - Expression class for function calls from objects. This acts just like regular function calls,
-	 * but this adds an implicit pointer to the object refrencing the call, so it needs its own ExprAST to function properly
-	 * @example vector<T> obj;
-	 * obj.push_back(x); //"obj" is the object refrencing the call, so push_back() becomes: push_back(&obj, x)
-	 */
-	class ObjectFunctionCallExprAST : public ExprAST
-	{
-		std::string Callee;
-		std::vector<std::unique_ptr<ExprAST>> Args;
-		std::unique_ptr<ExprAST> parent;
-		bool dereferenceParent;
-
-	public:
-		ObjectFunctionCallExprAST(const std::string callee, std::vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &parent, bool deref) : dereferenceParent(deref), Callee(callee), Args(std::move(Arg)), parent(std::move(parent))
-		{
-		}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *ObjectFunctionCallExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::Value *parval = parent->codegen(dereferenceParent);
 			std::vector<llvm::Value *> ArgsV;
@@ -1755,27 +1351,8 @@ namespace jimpilier
 
 			return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ArgsV) : builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
 		}
-	};
 
-	/**
-	 * @brief ObjectConstructorCallExprAST - Expression class for constructor calls from objects. This acts just like regular function calls,
-	 * but this adds an implicit pointer to the object refrencing the call, so it needs its own ExprAST to function properly
-	 * @example vector<T> obj;
-	 * obj.push_back(x); //"obj" is the object refrencing the call, so push_back() becomes: push_back(&obj, x)
-	 */
-	class ObjectConstructorCallExprAST : public ExprAST
-	{
-		std::string Callee;
-		std::vector<std::unique_ptr<ExprAST>> Args;
-		std::unique_ptr<ExprAST> target = NULL;
-		std::unique_ptr<TypeExpr> CalledTyConstructor;
-
-	public:
-		ObjectConstructorCallExprAST(const std::string &callee, std::vector<std::unique_ptr<ExprAST>> &Arg) : Callee(callee), Args(std::move(Arg)) {}
-		ObjectConstructorCallExprAST(const std::string &callee, std::vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &target) : target(std::move(target)), Callee(callee), Args(std::move(Arg)) {}
-		ObjectConstructorCallExprAST(std::unique_ptr<TypeExpr> &callee, std::vector<std::unique_ptr<ExprAST>> &Arg) : CalledTyConstructor(std::move(callee)), Args(std::move(Arg)) {}
-		ObjectConstructorCallExprAST(std::unique_ptr<TypeExpr> &callee, std::vector<std::unique_ptr<ExprAST>> &Arg, std::unique_ptr<ExprAST> &target) : target(std::move(target)), CalledTyConstructor(std::move(callee)), Args(std::move(Arg)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *ObjectConstructorCallExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			// Get data type by name or by generating it directly
 			llvm::Type *TargetType = CalledTyConstructor == NULL ? AliasMgr(Callee) : this->CalledTyConstructor->codegen();
@@ -1831,21 +1408,8 @@ namespace jimpilier
 			builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
 			return NULL;
 		}
-	};
 
-	// ConstructorExprAST - A class representing the definition of an object constructor
-	class ConstructorExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> bod;
-		std::vector<Variable> argslist;
-		std::string objName;
-
-	public:
-		ConstructorExprAST(
-			std::vector<Variable> &argList,
-			std::unique_ptr<ExprAST> &body,
-			std::string objName) : argslist(std::move(argList)), bod(std::move(body)), objName(objName) {};
-		llvm::Value *codegen(bool autoderef = false, llvm::Value *other = NULL)
+		llvm::Value *ConstructorExprAST::codegen(bool autoderef, llvm::Value *other )
 		{
 			std::vector<std::string> argnames;
 			std::vector<llvm::Type *> argtypes;
@@ -1899,15 +1463,8 @@ namespace jimpilier
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
 			return thisfunc;
 		}
-	};
 
-	class ObjectHeaderExpr
-	{
-	public:
-		std::string name;
-		ObjectHeaderExpr(const std::string &nameval) : name(nameval) {}
-
-		llvm::StructType *codegen(bool autoderef = false, llvm::Value *other = NULL)
+		llvm::StructType *ObjectHeaderExpr::codegen(bool autoderef, llvm::Value *other )
 		{
 			// TODO: This could cause bugs later. Find a better (non-bandaid) solution
 			llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
@@ -1915,22 +1472,7 @@ namespace jimpilier
 			AliasMgr.objects.addObject(name, ty);
 			return ty;
 		}
-	};
-	/**
-	 * The class definition for an object (struct) in memory
-	 */
-	class ObjectExprAST : public ExprAST
-	{
-		ObjectHeaderExpr base;
-		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> vars;
-		std::vector<std::unique_ptr<ExprAST>> functions, ops;
-
-	public:
-		ObjectExprAST(ObjectHeaderExpr name,
-					  std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> &varArg,
-					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)) {};
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *ObjectExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::StructType *ty = base.codegen();
 			std::vector<llvm::Type *> types;
@@ -1956,60 +1498,8 @@ namespace jimpilier
 				}
 			return NULL;
 		}
-	};
 
-	/// PrototypeAST - This class represents the "prototype" for a function,
-	/// which captures its name, and its argument names (thus implicitly the number
-	/// of arguments the function takes).
-	class PrototypeAST
-	{
-	public:
-		std::string Name, parent;
-		std::unique_ptr<TypeExpr> retType;
-		std::vector<Variable> Args;
-		std::vector<std::unique_ptr<TypeExpr>> throwableTypes;
-
-		PrototypeAST() {};
-
-		PrototypeAST(const std::string &name,
-					 std::vector<Variable> &args,
-					 std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
-			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent)
-		{
-			if (parent != "")
-			{
-				std::string name = "this";
-				std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
-				ty = std::make_unique<ReferenceToTypeExpr>(ty);
-				Args.emplace(Args.begin(), Variable(name, ty));
-			}
-		}
-		PrototypeAST(const std::string &name,
-					 std::vector<Variable> &args,
-					 std::vector<std::unique_ptr<TypeExpr>> &throwables,
-					 std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
-			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent), throwableTypes(std::move(throwables))
-		{
-			if (parent != "")
-			{
-				std::string name = "this";
-				std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
-				ty = std::make_unique<ReferenceToTypeExpr>(ty);
-				Args.emplace(Args.begin(), Variable(name, ty));
-			}
-		}
-
-		const std::string &getName() const { return Name; }
-		std::vector<llvm::Type *> getArgTypes() const
-		{
-			std::vector<llvm::Type *> ret;
-			for (auto &x : Args)
-				ret.push_back(x.ty->codegen());
-			// if(retType != NULL)ret.emplace(ret.begin(), retType->codegen());
-			return ret;
-		}
-
-		llvm::Function *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Function *PrototypeAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			std::vector<std::string> Argnames;
 			std::vector<llvm::Type *> Argt;
@@ -2042,19 +1532,8 @@ namespace jimpilier
 			AliasMgr.functions.addFunction(Name, F, Args, Errt, retType->isReference());
 			return F;
 		}
-	};
-	/// FunctionAST - This class represents a function definition, rather than a function call.
-	class FunctionAST : public ExprAST
-	{
-		std::unique_ptr<PrototypeAST> Proto;
-		std::unique_ptr<ExprAST> Body;
 
-	public:
-		FunctionAST(std::unique_ptr<PrototypeAST> Proto,
-					std::unique_ptr<ExprAST> Body, std::string parentType = "")
-			: Proto(std::move(Proto)), Body(std::move(Body)) {}
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *FunctionAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			if (DEBUGGING)
 				std::cout << Proto->getName();
@@ -2110,29 +1589,15 @@ namespace jimpilier
 			for (auto &Arg : currentFunction->args())
 			{
 				AliasMgr[std::string(Arg.getName())] = {NULL, false};
-				// dtypes[std::string(Arg.getName())] = NULL;
+				// dtypes[std::string(Arg.getName())] ;
 			}
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
 			return AliasMgr.functions.getFunction(Proto->Name, argtypes);
 		}
-	};
 
-	class OperatorOverloadAST : public ExprAST
-	{
-		PrototypeAST Proto;
-		std::unique_ptr<ExprAST> Body;
-		std::vector<Variable> args;
-		std::unique_ptr<TypeExpr> retType;
-		std::string name = "operator_", oper;
-
-	public:
-		OperatorOverloadAST(std::string &oper, std::unique_ptr<TypeExpr> &ret, std::vector<Variable> &args,
-							std::unique_ptr<ExprAST> &Body)
-			: oper(oper), Body(std::move(Body)), args(std::move(args)), retType(std::move(ret)) {}
-
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *OperatorOverloadAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 
 			name += oper + "_";
@@ -2224,25 +1689,15 @@ namespace jimpilier
 			for (auto &Arg : currentFunction->args())
 			{
 				AliasMgr[std::string(Arg.getName())] = {NULL, false};
-				// dtypes[std::string(Arg.getName())] = NULL;
+				// dtypes[std::string(Arg.getName())] ;
 			}
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
 			return operators[nullableArgtypes[0]][oper][nullableArgtypes[1]];
 		}
-	};
 
-	class AsOperatorOverloadAST : public ExprAST
-	{
-		std::vector<Variable> arg1;
-		std::unique_ptr<ExprAST> body;
-		std::unique_ptr<TypeExpr> ty, ret;
-		std::string name;
-
-	public:
-		AsOperatorOverloadAST(std::vector<Variable> &arg1, std::unique_ptr<TypeExpr> &castType, std::unique_ptr<TypeExpr> &retType, std::unique_ptr<ExprAST> &body) : arg1(std::move(arg1)), body(std::move(body)), ty(std::move(castType)), ret(std::move(retType)) {};
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *AsOperatorOverloadAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			name += "operator_as_";
 			llvm::raw_string_ostream stringstream(name);
@@ -2323,16 +1778,7 @@ namespace jimpilier
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
 			return operators[argtypes[0]]["AS"][argtypes[1]];
 		}
-	};
-	class AssertionExprAST : public ExprAST
-	{
-		std::unique_ptr<ExprAST> msg = NULL, condition = NULL;
-		int line;
-
-	public:
-		AssertionExprAST(std::unique_ptr<ExprAST> &message, std::unique_ptr<ExprAST> &condition, int line) : line(line), msg(std::move(message)), condition(std::move(condition)) {}
-		AssertionExprAST(std::unique_ptr<ExprAST> &condition, int line) : line(line), condition(std::move(condition)) {}
-		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
+		llvm::Value *AssertionExprAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			llvm::FunctionCallee abortfunc = GlobalVarsAndFunctions->getOrInsertFunction("abort",
 																						 llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false));
@@ -2360,20 +1806,11 @@ namespace jimpilier
 			builder->SetInsertPoint(passblock);
 			return boolval;
 		}
-	};
 
-	class ASMExprAST : public ExprAST
-	{
-		std::string assembly;
-
-	public:
-		ASMExprAST(const std::string &assembly) : assembly(assembly) {}
-		llvm::Value *codegen(bool autoderef = true, llvm::Value *other = NULL)
+		llvm::Value *ASMExprAST::codegen(bool autoderef , llvm::Value *other )
 		{
 			llvm::InlineAsm *v = llvm::InlineAsm::get(llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false), assembly, "~{dirflag},~{fpsr},~{flags}", true, false, llvm::InlineAsm::AD_ATT);
 			builder->CreateCall(v, {});
 			return v;
 		}
-	};
 }
-#endif
