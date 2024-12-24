@@ -579,6 +579,16 @@ namespace jimpilier
 			return ret;
 		}
 
+		void replaceTemplate(std::string& name, std::unique_ptr<TypeExpr>& ty){
+			retType->replaceTemplate(name, ty); 
+			for(auto& x : Args){
+				x.ty->replaceTemplate(name, ty); 
+			}
+			for(auto& x : throwableTypes){
+				x->replaceTemplate(name, ty); 
+			}
+		}
+
 		llvm::Function *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 	/// FunctionAST - This class represents a function definition, rather than a function call.
@@ -591,7 +601,9 @@ namespace jimpilier
 		FunctionAST(std::unique_ptr<PrototypeAST> Proto,
 					std::unique_ptr<ExprAST> Body, std::string parentType = "")
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
-
+		void replaceTemplate(std::string & name, std::unique_ptr<TypeExpr> & ty){
+			this->Proto->replaceTemplate(name, ty); 
+		}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 

@@ -114,6 +114,9 @@ namespace jimpilier
 	public:
 		PointerToTypeExpr(std::unique_ptr<TypeExpr> &type) : ty(std::move(type)) {}
 		llvm::Type *codegen(bool testforval = false);
+		void replaceTemplate(std::string& name, std::unique_ptr<TypeExpr> &replacement){
+			ty->replaceTemplate(name, replacement); 
+		}
 		std::unique_ptr<TypeExpr> clone();
 	};
 
@@ -125,6 +128,10 @@ namespace jimpilier
 		ReferenceToTypeExpr(std::unique_ptr<TypeExpr> &type) : ty(std::move(type)) {}
 		llvm::Type *codegen(bool testforval = false);
 		std::unique_ptr<TypeExpr> clone();
+
+		void replaceTemplate(std::string& name, std::unique_ptr<TypeExpr> &replacement){
+			ty->replaceTemplate(name, replacement); 
+		}
 
 		bool isReference()
 		{
