@@ -18,7 +18,7 @@ namespace jimpilier
 		 */
 		std::set<llvm::Type *> throwables;
 		virtual ~ExprAST() {};
-		virtual void replaceTemplate(std::string &name, std::unique_ptr<TypeExpr> &ty){}; 
+		virtual void replaceTemplate(std::string &name, std::unique_ptr<TypeExpr> *ty = NULL){}; 
 		virtual llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL) = 0;
 	};
 
@@ -501,6 +501,9 @@ namespace jimpilier
 			std::vector<Variable> &argList,
 			std::unique_ptr<ExprAST> &body,
 			std::string objName) : argslist(std::move(argList)), bod(std::move(body)), objName(objName) {};
+		void replaceTemplate(std::string &name, std::unique_ptr<TypeExpr> *ty = NULL){
+			objName = name; 
+		}; 
 		llvm::Value *codegen(bool autoderef = false, llvm::Value *other = NULL); 
 	};
 
@@ -544,40 +547,16 @@ namespace jimpilier
 					 std::vector<Variable> &args,
 					 std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
 			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent)
-		{
-			if (parent != "")
-			{
-				std::string name = "this";
-				std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
-				ty = std::make_unique<ReferenceToTypeExpr>(ty);
-				Args.emplace(Args.begin(), Variable(name, ty));
-			}
-		}
+		{}
 		PrototypeAST(const std::string &name,
 					 std::vector<Variable> &args,
 					 std::vector<std::unique_ptr<TypeExpr>> &throwables,
 					 std::unique_ptr<TypeExpr> &ret, const std::string &parent = "")
 			: Name(name), Args(std::move(args)), retType(std::move(ret)), parent(parent), throwableTypes(std::move(throwables))
-		{
-			if (parent != "")
-			{
-				std::string name = "this";
-				std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
-				ty = std::make_unique<ReferenceToTypeExpr>(ty);
-				Args.emplace(Args.begin(), Variable(name, ty));
-			}
-		}
+		{}
 
 		const std::string &getName() const { return Name; }
-		std::vector<llvm::Type *> getArgTypes() const
-		{
-			std::vector<llvm::Type *> ret;
-			for (auto &x : Args)
-				ret.push_back(x.ty->codegen());
-			// if(retType != NULL)ret.emplace(ret.begin(), retType->codegen());
-			return ret;
-		}
-
+		std::vector<llvm::Type *> getArgTypes(); 
 		llvm::Function *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 	/// FunctionAST - This class represents a function definition, rather than a function call.
@@ -590,6 +569,9 @@ namespace jimpilier
 		FunctionAST(std::unique_ptr<PrototypeAST> Proto,
 					std::unique_ptr<ExprAST> Body, std::string parentType = "")
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
+		void replaceTemplate(std::string &name, std::unique_ptr<TypeExpr> *ty = NULL){
+			Proto->parent = name; 
+		}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 

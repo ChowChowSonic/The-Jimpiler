@@ -1415,7 +1415,7 @@ namespace jimpilier
 			std::vector<llvm::Type *> argtypes;
 			std::unique_ptr<TypeExpr> retType = std::make_unique<StructTypeExpr>(objName);
 			retType = std::make_unique<ReferenceToTypeExpr>(retType);
-			argslist.emplace(argslist.begin(), Variable("this", retType));
+			argslist.emplace(argslist.begin(), Variable("this", retType)); 
 			for (auto &x : argslist)
 			{
 				argnames.push_back(x.name);
@@ -1425,7 +1425,7 @@ namespace jimpilier
 				llvm::FunctionType::get(argtypes[0], argtypes, false);
 			llvm::Function *lastfunc = currentFunction;
 			currentFunction =
-				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName + "@constructor", GlobalVarsAndFunctions.get());
+				llvm::Function::Create(FT, llvm::Function::ExternalLinkage, objName + ".constructor", GlobalVarsAndFunctions.get());
 			llvm::BasicBlock *entry = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
 			builder->SetInsertPoint(entry);
 
@@ -1436,7 +1436,7 @@ namespace jimpilier
 				Arg.setName(name);
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
-				AliasMgr[name] = {storedvar, argslist[Idx - 1].ty->isReference()};
+				AliasMgr[name] = {storedvar, argslist[Idx-1].ty->isReference()};
 			}
 
 			llvm::Value *RetVal = bod->codegen();
@@ -1461,6 +1461,7 @@ namespace jimpilier
 			currentFunction = lastfunc;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
+			argslist.erase(argslist.begin()); 
 			return thisfunc;
 		}
 
@@ -1513,12 +1514,32 @@ namespace jimpilier
 			}
 			return NULL;
 		}
-		
+		std::vector<llvm::Type *> PrototypeAST::getArgTypes(){
+			std::vector<llvm::Type *> ret;
+			if(parent != ""){
+				ret.push_back(AliasMgr(parent)); 
+			}
+			for (auto &x : Args)
+				ret.push_back(x.ty->codegen());
+			// if(retType != NULL)ret.emplace(ret.begin(), retType->codegen());
+			return ret;
+		}
+
 		llvm::Function *PrototypeAST::codegen(bool autoDeref , llvm::Value *other )
 		{
+
 			std::vector<std::string> Argnames;
 			std::vector<llvm::Type *> Argt;
 			std::vector<llvm::Type *> Errt;
+			if (parent != "")
+			{
+				std::string name = "this";
+				std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
+				ty = std::make_unique<ReferenceToTypeExpr>(ty);
+				Argnames.push_back(name);
+				Argt.push_back(ty->codegen()); 
+			}
+			
 			for (auto &x : Args)
 			{
 				Argnames.push_back(x.name);
@@ -1572,14 +1593,18 @@ namespace jimpilier
 
 			llvm::BasicBlock *BB = llvm::BasicBlock::Create(*ctxt, "entry", currentFunction);
 			builder->SetInsertPoint(BB);
-			// Record the function arguments in the Named Values map.
+			// Record the function arguments in the Named Values map. Check if they're references and act accordingly. 
+			std::vector<bool> areReferences; 
+			if(Proto->parent != "") areReferences.push_back(true); 
+			for(auto& arg : Proto->Args) areReferences.push_back(arg.ty->isReference()); 
 			for (auto &Arg : currentFunction->args())
 			{
+				int argno = Arg.getArgNo(); 
 				llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 				builder->CreateStore(&Arg, storedvar);
 				std::string name = std::string(Arg.getName());
-				// std::cout + Proto->Name +" " + Proto->Args.size() + Arg.getArgNo() + currentFunction->arg_size() +endl;
-				AliasMgr[name] = {storedvar, Proto->Args[Arg.getArgNo()].ty->isReference()};
+				// std::cout << Proto->Name +" " << Proto->Args.size() << " " <<Arg.getArgNo() << " " << currentFunction->arg_size() <<endl;
+				AliasMgr[name] = {storedvar, areReferences[argno]};
 			}
 
 			llvm::Instruction *currentEntry = &BB->getIterator()->back();
@@ -1609,6 +1634,7 @@ namespace jimpilier
 			currentFunction = prevFunction;
 			if (currentFunction != NULL)
 				builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
+			
 			return AliasMgr.functions.getFunction(Proto->Name, argtypes);
 		}
 
