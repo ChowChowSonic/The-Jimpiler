@@ -18,6 +18,7 @@ namespace jimpilier
 		 */
 		std::set<llvm::Type *> throwables;
 		virtual ~ExprAST() {};
+		virtual void replaceTemplate(std::string &name, std::unique_ptr<TypeExpr> &ty){}; 
 		virtual llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL) = 0;
 	};
 
@@ -507,8 +508,8 @@ namespace jimpilier
 	{
 	public:
 		std::string name;
-		ObjectHeaderExpr(const std::string &nameval) : name(nameval) {}
-
+		std::vector<std::unique_ptr<TypeExpr>> templates; 
+		ObjectHeaderExpr(const std::string &nameval, std::vector<std::unique_ptr<TypeExpr>> &templatelist) : name(nameval), templates(std::move(templatelist)) {}
 		llvm::StructType *codegen(bool autoderef = false, llvm::Value *other = NULL);
 	};
 	/**
@@ -517,14 +518,12 @@ namespace jimpilier
 	class ObjectExprAST : public ExprAST
 	{
 		ObjectHeaderExpr base;
-		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> vars;
+		std::vector<Variable> vars;
 		std::vector<std::unique_ptr<ExprAST>> functions, ops;
-
 	public:
-		ObjectExprAST(ObjectHeaderExpr name,
-					  std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> &varArg,
-					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist) : base(name), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)) {};
-
+		ObjectExprAST(ObjectHeaderExpr &name, std::vector<Variable>&varArg,
+					  std::vector<std::unique_ptr<ExprAST>> &funcList, std::vector<std::unique_ptr<ExprAST>> &oplist) : base(std::move(name)), vars(std::move(varArg)), functions(std::move(funcList)), ops(std::move(oplist)) {
+					  };
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL); 
 	};
 
@@ -579,16 +578,6 @@ namespace jimpilier
 			return ret;
 		}
 
-		void replaceTemplate(std::string& name, std::unique_ptr<TypeExpr>& ty){
-			retType->replaceTemplate(name, ty); 
-			for(auto& x : Args){
-				x.ty->replaceTemplate(name, ty); 
-			}
-			for(auto& x : throwableTypes){
-				x->replaceTemplate(name, ty); 
-			}
-		}
-
 		llvm::Function *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 	/// FunctionAST - This class represents a function definition, rather than a function call.
@@ -601,9 +590,6 @@ namespace jimpilier
 		FunctionAST(std::unique_ptr<PrototypeAST> Proto,
 					std::unique_ptr<ExprAST> Body, std::string parentType = "")
 			: Proto(std::move(Proto)), Body(std::move(Body)) {}
-		void replaceTemplate(std::string & name, std::unique_ptr<TypeExpr> & ty){
-			this->Proto->replaceTemplate(name, ty); 
-		}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 

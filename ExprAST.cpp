@@ -1409,7 +1409,7 @@ namespace jimpilier
 			return NULL;
 		}
 
-		llvm::Value *ConstructorExprAST::codegen(bool autoderef, llvm::Value *other )
+		llvm::Value *ConstructorExprAST::codegen(bool autoderef, llvm::Value *other)
 		{
 			std::vector<std::string> argnames;
 			std::vector<llvm::Type *> argtypes;
@@ -1477,15 +1477,27 @@ namespace jimpilier
 			llvm::StructType *ty = base.codegen();
 			std::vector<llvm::Type *> types;
 			std::vector<std::string> names;
-			for (auto &x : vars)
-			{
-				types.push_back(x.second->codegen());
-				names.push_back(x.first);
+			
+			if(!base.templates.empty()){
+				TemplateMgr.insertTemplate(base.name, base.templates, vars, functions); 
+				for(auto& x : base.templates){
+					AliasMgr.objects.removeObject(x->getName()); 
+				}
+				return NULL;
+			} 
+
+			for(auto&var : vars){
+				names.push_back(var.name); 
+				types.push_back(var.ty->codegen()); 
 			}
+			
 			if (!types.empty())
 				ty->setBody(types);
 
+			if(base.templates.empty())
 			AliasMgr.objects.addObjectMembers(base.name, types, names);
+			else{ 
+			}
 			if (!ops.empty())
 				for (auto &func : ops)
 				{
@@ -1496,9 +1508,12 @@ namespace jimpilier
 				{
 					func->codegen();
 				}
+			for(auto& x : base.templates){
+				AliasMgr.objects.removeObject(x->getName()); 
+			}
 			return NULL;
 		}
-
+		
 		llvm::Function *PrototypeAST::codegen(bool autoDeref , llvm::Value *other )
 		{
 			std::vector<std::string> Argnames;

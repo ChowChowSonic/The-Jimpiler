@@ -841,9 +841,22 @@ namespace jimpilier
 				types.clear();
 				return types;
 			}
-			types.push_back(std::make_unique<TemplateTypeExpr>(name.lex));
+			types.push_back(std::make_unique<StructTypeExpr>(name.lex));
+			AliasMgr.objects.addObject(name.lex, llvm::Type::getVoidTy(*ctxt)); 
 		} while (tokens.peek() == COMMA && tokens.next() == COMMA);
+		if(tokens.next() != GREATER)
+			logError("Please put a '>' symbol right before the following token: ", tokens.currentToken()); 
 		return types;
+	}
+	std::unique_ptr<TypeExpr>& parseTypeModifiers(Stack<Token> &tokens, std::unique_ptr<TypeExpr> &type){
+		while (tokens.peek() == POINTER || tokens.peek() == MULT)
+		{
+			tokens.next();
+			type = std::make_unique<PointerToTypeExpr>(type);
+		}
+		if (tokens.peek() == REFRENCETO && tokens.next() == REFRENCETO)
+			type = std::make_unique<ReferenceToTypeExpr>(type);
+		return type;
 	}
 	/**
 	 * @brief Parses an object/class blueprint
@@ -852,7 +865,7 @@ namespace jimpilier
 	 */
 	std::unique_ptr<ExprAST> obj(Stack<Token> &tokens)
 	{
-		std::vector<std::pair<std::string, std::unique_ptr<TypeExpr>>> objVars;
+		std::vector<Variable> objVars;
 		std::vector<std::unique_ptr<ExprAST>> objFunctions;
 		std::vector<std::unique_ptr<ExprAST>> overloadedOperators;
 		if (tokens.peek() == OBJECT)
@@ -864,8 +877,8 @@ namespace jimpilier
 		}
 		std::string name = tokens.next().lex;
 		std::vector<std::unique_ptr<TypeExpr>> templates = std::move(templateObjNames(tokens));
-		ObjectHeaderExpr objName(name);
-		objName.codegen();
+
+		ObjectHeaderExpr objName(name, templates);
 		if (tokens.next() != OPENCURL)
 		{
 			logError("Curly braces are required for object declarations. Please put a brace before this token:", tokens.currentToken());
@@ -879,6 +892,7 @@ namespace jimpilier
 				objFunctions.push_back(std::move(constructorast));
 				continue;
 			}
+
 			std::unique_ptr<TypeExpr> ty = std::move(variableTypeStmt(tokens));
 			if (ty == NULL)
 			{
@@ -906,9 +920,10 @@ namespace jimpilier
 			}
 			if (tokens.peek() == SEMICOL)
 				tokens.next();
-			objVars.push_back(std::pair<std::string, std::unique_ptr<TypeExpr>>(name.lex, std::move(ty)));
+			objVars.push_back(Variable(name.lex, ty));
 		}
 		tokens.next();
+		for(auto &x : objName.templates) AliasMgr.objects.removeObject(x->getName()); 
 		return std::make_unique<ObjectExprAST>(objName, objVars, objFunctions, overloadedOperators);
 	}
 	std::unique_ptr<TypeExpr> variableTypeStmt(Stack<Token> &tokens)
@@ -958,14 +973,15 @@ namespace jimpilier
 			tokens.go_back();
 			return NULL;
 		}
-		while (tokens.peek() == POINTER || tokens.peek() == MULT)
-		{
-			tokens.next();
-			type = std::make_unique<PointerToTypeExpr>(type);
+		if(tokens.peek() == LESS && tokens.next() == LESS){
+			std::vector<std::unique_ptr<TypeExpr>> types; 
+			do{
+				types.push_back(variableTypeStmt(tokens)); 
+			}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
+			assert(tokens.next() == GREATER && "Expected a closing '>' in a template type"); 
+			type = std::make_unique<TemplateObjectExpr>(t.lex, types); 
 		}
-		if (tokens.peek() == REFRENCETO && tokens.next() == REFRENCETO)
-			type = std::make_unique<ReferenceToTypeExpr>(type);
-		return type;
+		return std::move(parseTypeModifiers(tokens, type)); 
 	}
 	/**
 	 * @brief Called whenever a modifier keyword are seen.

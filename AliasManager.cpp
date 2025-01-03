@@ -190,7 +190,7 @@ namespace jimpilier
 	{
 		return structTypes[alias];
 	}
-
+	
 	bool ObjectAliasManager::addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames)
 	{
 		if (structTypes[alias].ptr != NULL)
@@ -218,9 +218,20 @@ namespace jimpilier
 		return true;
 	}
 
+	void ObjectAliasManager::replaceObject(std::string alias, llvm::Type *objType)
+	{
+		structTypes[alias] = Object(objType);
+	}
+
 	void ObjectAliasManager::addObjectFunction(std::string &objName, std::string &funcAlias, std::vector<Variable> &types, llvm::Function *func, bool returnsRef)
 	{
 		structTypes[objName].functions.addFunction(funcAlias, func, types);
+	}
+
+	void ObjectAliasManager::removeObject(std::string name){
+		structTypes[name].ptr = NULL;
+		structTypes[name].members.clear(); 
+		structTypes[name].functions.clear(); 
 	}
 	// ends ObjectAliasManager functions
 

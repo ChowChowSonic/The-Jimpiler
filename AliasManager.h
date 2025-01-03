@@ -61,7 +61,9 @@ namespace jimpilier
 		FunctionHeader &getFunctionObject(std::string &name, std::vector<llvm::Type *> &args);
 		void addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, bool returnsRef = false);
 		void addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, std::vector<llvm::Type*> &throwables, bool returnsRef = false);
+		void clear(){ functionAliases.clear(); }
 		bool hasAlias(std::string &alias);
+
 	};
 
 	class ObjectMember
@@ -99,7 +101,9 @@ namespace jimpilier
 		bool addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames);
 		void addObjectMembers(std::string alias, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames);
 		bool addObject(std::string alias, llvm::Type *objType);
+		void replaceObject(std::string alias, llvm::Type *objType); 
 		void addObjectFunction(std::string &objName, std::string &funcAlias, std::vector<Variable> &types, llvm::Function *func, bool returnsRef = false);
+		void removeObject(std::string name); 
 	};
 	class CompileTimeVariable
 	{

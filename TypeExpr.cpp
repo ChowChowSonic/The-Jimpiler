@@ -66,16 +66,54 @@ namespace jimpilier
 			return std::unique_ptr<TypeExpr>(new VoidTypeExpr());
 		}
 
-		TemplateTypeExpr::TemplateTypeExpr(const std::string name) : name(name) {}
-		llvm::Type *TemplateTypeExpr::codegen(bool testforval) { 
-			if(this->replacement != NULL) return this->replacement; 
-			return llvm::StructType::create(name, {}); 
-		};
-		std::unique_ptr<TypeExpr> TemplateTypeExpr::clone()
-		{
-			return std::unique_ptr<TypeExpr>(new TemplateTypeExpr(name));
-		}
+		llvm::Type *TemplateObjectExpr::codegen(bool testforval){
+			auto& templ = TemplateMgr.generateFromTemplate(name, types);
+			for(int i = 0; i < templ.templates.size(); i++){
+				auto & x = templ.templates[i]; 
+				AliasMgr.objects.replaceObject(x->getName(), types[i]->codegen()); 
+			} 
+			
+			//Check that the object doesn't already exists; if it does, return it
+			std::string typenames; 
+			for(auto &x : templ.templates) typenames+=AliasMgr.getTypeName(x->codegen())+','; 
+			typenames = name+'<'+typenames.substr(0,typenames.size()-1)+'>'; 
+			if(AliasMgr(typenames)) return AliasMgr(typenames); 
+			
+			//Object doesn't already exist, create it.
+			std::vector<llvm::Type*> objectTypes; 
+			std::vector<std::string> objectNames; 
+			for(auto &x : templ.members){
+				llvm::Type* currentMember = x.ty->codegen(); 
+				objectTypes.push_back(currentMember); 
+				objectNames.push_back(x.name); 
+			}
+			llvm::Type* ret = llvm::StructType::create(*ctxt, objectTypes, typenames,false); 
+			AliasMgr.objects.addObject(typenames, ret); 
+			AliasMgr.objects.addObjectMembers(typenames, objectTypes, objectNames); 
 
+			for(auto &x : templ.functions){
+				x->replaceTemplate(typenames); 
+				x->codegen(); 
+			}
+
+			for(int i = 0; i < templ.templates.size(); i++){
+				auto & x = templ.templates[i]; 
+				AliasMgr.objects.removeObject(x->getName()); 
+			}
+			return ret; 
+		}
+		std::string TemplateObjectExpr::getName() { 
+			std::string names; 
+			for(auto& x : types) names+=x->getName()+','; 
+			return name+'<'+names+'>'; 
+			}
+		std::unique_ptr<TypeExpr> TemplateObjectExpr::clone(){
+			std::vector<std::unique_ptr<TypeExpr>> cpy; 
+			for(auto&x:types){
+				cpy.push_back(std::move(x->clone())); 
+			}
+			return std::make_unique<TemplateObjectExpr>(name, cpy); 
+		}
 		StructTypeExpr::StructTypeExpr(const std::string &structname) : name(structname) {}
 		llvm::Type *StructTypeExpr::codegen(bool testforval)
 		{
@@ -87,6 +125,7 @@ namespace jimpilier
 			}
 			return ty;
 		}
+		std::string StructTypeExpr::getName() { return name; }
 		std::unique_ptr<TypeExpr> StructTypeExpr::clone()
 		{
 			return std::unique_ptr<TypeExpr>(new StructTypeExpr(name));

@@ -1,28 +1,33 @@
 #include "ExprAST.h"
 #include "TypeExpr.h"
+#include "AliasManager.h"
 #include "globals.cpp"
 namespace jimpilier{
 	class TemplateGenerator{
 		class TemplateObject{
 			public: 
 			std::vector<Variable> members; 
-			std::vector<std::unique_ptr<FunctionAST>> functions;
-			std::vector<std::string> templateNames; 
-			// TemplateObject() : members(NULL), functions(NULL){}; 
+			std::vector<std::unique_ptr<ExprAST>> functions;
+			std::vector<std::unique_ptr<TypeExpr>> templates; 
+			
+			TemplateObject() : members(std::vector<Variable>()), functions(std::vector<std::unique_ptr<ExprAST>>()){}; 
 			TemplateObject( 
 			std::vector<Variable>& members, 
-			std::vector<std::unique_ptr<FunctionAST>>& functions, 
-			std::vector<std::string> &templateNames): members(std::move(members)), functions(std::move(functions)), templateNames(templateNames){}
-			void replaceTemplate(std::string& name, std::unique_ptr<TypeExpr> &ty){
-				for(auto &x : members){
-					x.ty->replaceTemplate(name, ty); 
-				}
-				for(auto& x : functions){
-					x->replaceTemplate(name, ty); 
-				}
-			}
+			std::vector<std::unique_ptr<ExprAST>>& functions, 
+			std::vector<std::unique_ptr<TypeExpr>> &templateNames): members(std::move(members)), functions(std::move(functions)), templates(std::move(templateNames)){}
+			
 			bool isValid(){
-				return functions.size() > 0 || members.size() > 0 || templateNames.size() > 0;  
+				return functions.size() > 0 || members.size() > 0 || templates.size() > 0;  
+			}
+			private:
+			bool contains(std::vector<llvm::Type*>& vec, llvm::Type* t){
+				return std::find(vec.begin(), vec.end(), t) != vec.end(); 
+			}
+			int indexOf(llvm::Type* t, std::vector<llvm::Type*> vec){
+				for(int i = 0; i < vec.size(); i++){
+					if(vec[i] == t) return i; 
+				}
+				return -1; 
 			}
 		};
 		std::map<std::string, std::map<std::vector<llvm::Type*>, llvm::Type*>> generatedObjects; 
@@ -41,18 +46,30 @@ namespace jimpilier{
 		public: 
 		TemplateGenerator(){}
 
-		void insertTemplate(std::string name, std::vector<std::string> &templateNames, std::vector<Variable> &objMembers, std::vector<std::unique_ptr<FunctionAST>> &functions){
+		void insertTemplate(std::string name, std::vector<std::unique_ptr<TypeExpr>> &templateNames, std::vector<Variable> &objMembers, std::vector<std::unique_ptr<ExprAST>> &functions){
 			int numTemplates = templateNames.size(); 
-			assert(templates[name][numTemplates].isValid() && "Template Redeclaration Error: A template Object with an identical name & number of templates already exists!"); 
+			assert(!templates[name][numTemplates].isValid() && "Template Redeclaration Error: A template Object with an identical name & number of templates already exists!"); 
 			templates[name][numTemplates] = TemplateObject(objMembers, functions, templateNames); 
 		}
+		/**
+		 * @brief Replace all typenames in a given template with the types provided in the `types` array. 
+		 * Returns a `TemplateObject&` containing the modified template; It is up to the end user to codegen all the functions & load the object members into a `llvm::StructType` 
+		 * @see TemplateObject::generateAST(std::string name)
+		 * @param name - the name of the base template to retrieve
+		 * @param types - the templates to replace
+		 * @return TemplateObject& 
+		 */
 		TemplateObject &generateFromTemplate(std::string & name, std::vector<std::unique_ptr<TypeExpr>> &types){
 			int numTemplates = types.size(); 
-			TemplateObject &obj = templates[name][numTemplates]; 
-			for(int i = 0; i < obj.templateNames.size(); i++){
-				obj.replaceTemplate(obj.templateNames[i], types[i]);
-			} 
+			TemplateObject &obj = templates[name][numTemplates];
+			// std::vector<llvm::Type*> tys; 
+			// for(auto & x : types) tys.push_back(x->codegen()); 
+			// if(generatedObjects[name][tys] != NULL) return generatedObjects[name][tys]; 
 			return obj; 
 		}
+		bool hasTemplate(std::string x){
+			return !templates[x].empty(); 
+		}
 	};
+
 }

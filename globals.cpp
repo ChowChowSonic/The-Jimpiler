@@ -1,4 +1,3 @@
-#pragma once
 #include <iomanip>
 #include <stack>
 #include "llvm/IR/BasicBlock.h"
@@ -11,6 +10,7 @@
 #define globals
 #include "tokenizer.cpp"
 #include "AliasManager.h"
+#include "TemplateGenerator.cpp"
 namespace jimpilier{
 	class AliasManager; 
     /*
@@ -23,17 +23,19 @@ namespace jimpilier{
 	std::unique_ptr<llvm::Module> GlobalVarsAndFunctions;
 	std::unique_ptr<llvm::DataLayout> DataLayout;
 	AliasManager AliasMgr;
+	TemplateGenerator TemplateMgr; 
 	std::vector<std::string> importedFiles;
 	llvm::Function *currentFunction;
 	llvm::BasicBlock *currentUnwindBlock = NULL; 
-  /**
+    /**
 	 * @brief function where any code put into a static block is placed. Eventually all code in this will be drained into the beginning of main() if it exists
 	 * 
 	 */
 	llvm::Function *STATIC = nullptr;
 	/**
 	 * @brief In the event that a Break statement is called (I.E. in a for loop or switch statements),
-	 * the compilier will automatically jump to the top llvm::BasicBlock in this stack
+	 * the compilier will automatically jump to the top llvm::BasicBlock in this stack. 
+	 * The first block in the pair is for `continue` keywords, the second is for `break` keywords.
 	 *
 	 */
 	std::stack<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> escapeBlock;
