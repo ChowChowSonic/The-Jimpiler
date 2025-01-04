@@ -68,18 +68,21 @@ namespace jimpilier
 
 		llvm::Type *TemplateObjectExpr::codegen(bool testforval){
 			auto& templ = TemplateMgr.getTemplate(name, types);
-			for(int i = 0; i < templ.templates.size(); i++){
-				auto & x = templ.templates[i]; 
-				AliasMgr.objects.replaceObject(x->getName(), types[i]->codegen()); 
-			} 
 			
 			//Check that the object doesn't already exist; if it does, return it
 			std::string typenames; 
-			for(auto &x : templ.templates) typenames+=AliasMgr.getTypeName(x->codegen())+','; 
+			for(auto &x : types) typenames+=x->getName()+','; 
 			typenames = name+'<'+typenames.substr(0,typenames.size()-1)+'>'; 
 			if(AliasMgr(typenames)) return AliasMgr(typenames); 
-			
 			//Object doesn't already exist, create it.
+			std::vector<llvm::Type*> generatedTypes; 
+			//Manditory to generate types this way to avoid bugs with recursive template types
+			for(auto & x : types) generatedTypes.push_back(x->codegen()); 
+			for(int i = 0; i < templ.templates.size(); i++){
+				auto & x = templ.templates[i]; 
+				AliasMgr.objects.replaceObject(x->getName(), generatedTypes[i]); 
+			} 
+			
 			std::vector<llvm::Type*> objectTypes; 
 			std::vector<std::string> objectNames; 
 			for(auto &x : templ.members){
@@ -105,7 +108,7 @@ namespace jimpilier
 		std::string TemplateObjectExpr::getName() { 
 			std::string names; 
 			for(auto& x : types) names+=x->getName()+','; 
-			return name+'<'+names+'>'; 
+			return name+'<'+names.substr(0, names.size()-1)+'>'; 
 			}
 		std::unique_ptr<TypeExpr> TemplateObjectExpr::clone(){
 			std::vector<std::unique_ptr<TypeExpr>> cpy; 
@@ -141,17 +144,22 @@ namespace jimpilier
 			std::vector<std::unique_ptr<TypeExpr>> tyarr;
 			tyarr.push_back(std::move(ty));  
 			std::string name(".array"); 
-			auto& templ = TemplateMgr.getTemplate(name, tyarr);
-			auto & x = templ.templates[0]; 
-			// AliasMgr.objects.replaceObject(x->getName(), tyarr[0]->codegen()); 
+						auto& templ = TemplateMgr.getTemplate(name, types);
 			
 			//Check that the object doesn't already exist; if it does, return it
 			std::string typenames; 
-			for(auto &x : templ.templates) typenames+=AliasMgr.getTypeName(x->codegen())+','; 
+			for(auto &x : types) typenames+=x->getName()+','; 
 			typenames = name+'<'+typenames.substr(0,typenames.size()-1)+'>'; 
 			if(AliasMgr(typenames)) return AliasMgr(typenames); 
-			
 			//Object doesn't already exist, create it.
+			std::vector<llvm::Type*> generatedTypes; 
+			//Manditory to generate types this way to avoid bugs with recursive template types
+			for(auto & x : types) generatedTypes.push_back(x->codegen()); 
+			for(int i = 0; i < templ.templates.size(); i++){
+				auto & x = templ.templates[i]; 
+				AliasMgr.objects.replaceObject(x->getName(), generatedTypes[i]); 
+			} 
+			
 			std::vector<llvm::Type*> objectTypes; 
 			std::vector<std::string> objectNames; 
 			for(auto &x : templ.members){
