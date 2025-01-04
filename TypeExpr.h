@@ -133,6 +133,16 @@ namespace jimpilier
 		std::unique_ptr<TypeExpr> clone();
 	};
 
+	class ArrayOfTypeExpr : public TypeExpr {
+		std::unique_ptr<TypeExpr> ty; 
+
+		public: 
+		ArrayOfTypeExpr(std::unique_ptr<TypeExpr> &ty) : ty(std::move(ty)) {}
+		llvm::Type *codegen(bool testforval = false);
+		std::string getName() { return ty->getName()+"[]"; }
+		std::unique_ptr<TypeExpr> clone();
+	}; 
+
 	class ReferenceToTypeExpr : public TypeExpr
 	{
 		std::unique_ptr<TypeExpr> ty;

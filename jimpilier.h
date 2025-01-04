@@ -163,44 +163,45 @@ namespace jimpilier
 	std::unique_ptr<ExprAST> functionCallExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> memberAccessParent = NULL, bool derefParent = false)
 	{
 		Token t = tokens.next();
-		if (tokens.peek() == LPAREN)
+		if (tokens.peek() != LPAREN)
 		{
-			tokens.next();
-			std::vector<std::unique_ptr<ExprAST>> params;
-			if (tokens.peek() != RPAREN)
-				do
-				{
-					std::unique_ptr<ExprAST> param = std::move(jimpilier::assignStmt(tokens));
-					if (param == NULL)
-					{
-						logError("Invalid parameter passed to function", t);
-						return NULL;
-					}
-					params.push_back(std::move(param));
-				} while ((tokens.peek() == COMMA && tokens.next() == COMMA));
-
-			if (tokens.next() != RPAREN)
-			{
-				logError("Expected a closing parethesis '(' here:", tokens.currentToken());
-				return NULL;
-			}
-			std::unique_ptr<ExprAST> retval;
-			if (AliasMgr(t.lex) != NULL)
-			{
-				retval = std::make_unique<ObjectConstructorCallExprAST>(t.lex, params);
-			}
-			else if (memberAccessParent != NULL)
-			{
-				retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params, memberAccessParent, derefParent);
-			}
-			else
-			{
-				retval = std::make_unique<CallExprAST>(t.lex, params);
-			}
-			return retval;
+			tokens.go_back();
+			return std::move(term(tokens, std::move(memberAccessParent), derefParent));
 		}
-		tokens.go_back();
-		return std::move(term(tokens, std::move(memberAccessParent), derefParent));
+		tokens.next();
+		std::vector<std::unique_ptr<ExprAST>> params;
+		if (tokens.peek() != RPAREN)
+			do
+			{
+				std::unique_ptr<ExprAST> param = std::move(jimpilier::assignStmt(tokens));
+				if (param == NULL)
+				{
+					logError("Invalid parameter passed to function", t);
+					return NULL;
+				}
+				params.push_back(std::move(param));
+			} while ((tokens.peek() == COMMA && tokens.next() == COMMA));
+
+		if (tokens.next() != RPAREN)
+		{
+			logError("Expected a closing parethesis '(' here:", tokens.currentToken());
+			return NULL;
+		}
+		std::unique_ptr<ExprAST> retval;
+		if (AliasMgr(t.lex) != NULL)
+		{
+			retval = std::make_unique<ObjectConstructorCallExprAST>(t.lex, params);
+		}
+		else if (memberAccessParent != NULL)
+		{
+			retval = std::make_unique<ObjectFunctionCallExprAST>(t.lex, params, memberAccessParent, derefParent);
+		}
+		else
+		{
+			retval = std::make_unique<CallExprAST>(t.lex, params);
+		}
+		return retval;
+	
 	}
 
 	std::unique_ptr<ExprAST> indexExpr(Stack<Token> &tokens, std::unique_ptr<ExprAST> base = NULL, std::unique_ptr<ExprAST> memberAccessParent = NULL, bool derefParent = false)
@@ -849,10 +850,18 @@ namespace jimpilier
 		return types;
 	}
 	std::unique_ptr<TypeExpr>& parseTypeModifiers(Stack<Token> &tokens, std::unique_ptr<TypeExpr> &type){
-		while (tokens.peek() == POINTER || tokens.peek() == MULT)
+		while (tokens.peek() == MULT || tokens.peek() == POINTER || tokens.peek() == OPENSQUARE)
 		{
-			tokens.next();
-			type = std::make_unique<PointerToTypeExpr>(type);
+			if(tokens.peek() == OPENSQUARE && tokens.next() == OPENSQUARE){
+				if(tokens.peek() != CLOSESQUARE){// assert(tokens.next() == CLOSESQUARE)
+					logError("Expected a closing square bracket here ", tokens.next());
+				}
+				std::cout << tokens.next().toString() << endl; 
+				type = std::make_unique<ArrayOfTypeExpr>(type);  
+				continue; 
+			}
+				tokens.next();
+				type = std::make_unique<PointerToTypeExpr>(type);
 		}
 		if (tokens.peek() == REFRENCETO && tokens.next() == REFRENCETO)
 			type = std::make_unique<ReferenceToTypeExpr>(type);
@@ -978,7 +987,7 @@ namespace jimpilier
 			do{
 				types.push_back(variableTypeStmt(tokens)); 
 			}while(tokens.peek() == COMMA && tokens.next() == COMMA); 
-			assert(tokens.next() == GREATER && "Expected a closing '>' in a template type"); 
+			assert(tokens.peek() == GREATER && tokens.next() == GREATER && "Expected a closing '>' in a template type"); 
 			type = std::make_unique<TemplateObjectExpr>(t.lex, types); 
 		}
 		return std::move(parseTypeModifiers(tokens, type)); 

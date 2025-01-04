@@ -44,7 +44,18 @@ namespace jimpilier{
 		 */
 		std::map<std::string, std::map<int, TemplateObject>> templates; 
 		public: 
-		TemplateGenerator(){}
+		TemplateGenerator(){
+			std::vector<std::unique_ptr<TypeExpr>> templates;
+			std::vector<Variable> members;
+			std::vector<std::unique_ptr<ExprAST>> functions;
+			templates.push_back(std::make_unique<StructTypeExpr>(".T")); 
+			std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(".T"); 
+			ty = std::make_unique<PointerToTypeExpr>(ty); 
+			members.push_back(Variable(std::string("begin"), ty)); 
+			ty = std::make_unique<LongTypeExpr>(); 
+			members.push_back(Variable(std::string("length"), ty)); 
+			this->insertTemplate(".array", templates, members, functions); 
+		}
 
 		void insertTemplate(std::string name, std::vector<std::unique_ptr<TypeExpr>> &templateNames, std::vector<Variable> &objMembers, std::vector<std::unique_ptr<ExprAST>> &functions){
 			int numTemplates = templateNames.size(); 
@@ -59,12 +70,9 @@ namespace jimpilier{
 		 * @param types - the templates to replace
 		 * @return TemplateObject& 
 		 */
-		TemplateObject &generateFromTemplate(std::string & name, std::vector<std::unique_ptr<TypeExpr>> &types){
+		TemplateObject &getTemplate(std::string & name, std::vector<std::unique_ptr<TypeExpr>> &types){
 			int numTemplates = types.size(); 
 			TemplateObject &obj = templates[name][numTemplates];
-			// std::vector<llvm::Type*> tys; 
-			// for(auto & x : types) tys.push_back(x->codegen()); 
-			// if(generatedObjects[name][tys] != NULL) return generatedObjects[name][tys]; 
 			return obj; 
 		}
 		bool hasTemplate(std::string x){

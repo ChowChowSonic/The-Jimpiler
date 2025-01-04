@@ -67,13 +67,13 @@ namespace jimpilier
 		}
 
 		llvm::Type *TemplateObjectExpr::codegen(bool testforval){
-			auto& templ = TemplateMgr.generateFromTemplate(name, types);
+			auto& templ = TemplateMgr.getTemplate(name, types);
 			for(int i = 0; i < templ.templates.size(); i++){
 				auto & x = templ.templates[i]; 
 				AliasMgr.objects.replaceObject(x->getName(), types[i]->codegen()); 
 			} 
 			
-			//Check that the object doesn't already exists; if it does, return it
+			//Check that the object doesn't already exist; if it does, return it
 			std::string typenames; 
 			for(auto &x : templ.templates) typenames+=AliasMgr.getTypeName(x->codegen())+','; 
 			typenames = name+'<'+typenames.substr(0,typenames.size()-1)+'>'; 
@@ -136,7 +136,51 @@ namespace jimpilier
 			llvm::Type *t = ty->codegen();
 			return t == NULL ? NULL : t->getPointerTo();
 		}
+
+		llvm::Type *ArrayOfTypeExpr::codegen(bool testforval){
+			std::vector<std::unique_ptr<TypeExpr>> tyarr;
+			tyarr.push_back(std::move(ty));  
+			std::string name(".array"); 
+			auto& templ = TemplateMgr.getTemplate(name, tyarr);
+			auto & x = templ.templates[0]; 
+			// AliasMgr.objects.replaceObject(x->getName(), tyarr[0]->codegen()); 
+			
+			//Check that the object doesn't already exist; if it does, return it
+			std::string typenames; 
+			for(auto &x : templ.templates) typenames+=AliasMgr.getTypeName(x->codegen())+','; 
+			typenames = name+'<'+typenames.substr(0,typenames.size()-1)+'>'; 
+			if(AliasMgr(typenames)) return AliasMgr(typenames); 
+			
+			//Object doesn't already exist, create it.
+			std::vector<llvm::Type*> objectTypes; 
+			std::vector<std::string> objectNames; 
+			for(auto &x : templ.members){
+				llvm::Type* currentMember = x.ty->codegen(); 
+				objectTypes.push_back(currentMember); 
+				objectNames.push_back(x.name); 
+			}
+			llvm::Type* ret = llvm::StructType::create(*ctxt, objectTypes, typenames,false); 
+			AliasMgr.objects.addObject(typenames, ret); 
+			AliasMgr.objects.addObjectMembers(typenames, objectTypes, objectNames); 
+
+			for(auto &x : templ.functions){
+				x->replaceTemplate(typenames); 
+				x->codegen(); 
+			}
+
+			for(int i = 0; i < templ.templates.size(); i++){
+				auto & x = templ.templates[i]; 
+				AliasMgr.objects.removeObject(x->getName()); 
+			}
+			return ret; 
+		}
 		std::unique_ptr<TypeExpr> PointerToTypeExpr::clone()
+		{
+			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone());
+			return std::make_unique<PointerToTypeExpr>(encasedType);
+		}
+
+		std::unique_ptr<TypeExpr> ArrayOfTypeExpr::clone()
 		{
 			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone());
 			return std::make_unique<PointerToTypeExpr>(encasedType);
