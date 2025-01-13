@@ -54,7 +54,7 @@ namespace jimpilier{
 			members.push_back(Variable(std::string("begin"), ty)); 
 			ty = std::make_unique<LongTypeExpr>(); 
 			members.push_back(Variable(std::string("length"), ty)); 
-			this->insertTemplate(".array", templates, members, functions); 
+			this->insertTemplate(".array", templates, members, functions);
 		}
 
 		void insertTemplate(std::string name, std::vector<std::unique_ptr<TypeExpr>> &templateNames, std::vector<Variable> &objMembers, std::vector<std::unique_ptr<ExprAST>> &functions){

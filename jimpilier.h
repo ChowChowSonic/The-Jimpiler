@@ -856,7 +856,8 @@ namespace jimpilier
 				if(tokens.peek() != CLOSESQUARE){// assert(tokens.next() == CLOSESQUARE)
 					logError("Expected a closing square bracket here ", tokens.next());
 				}
-				std::cout << tokens.next().toString() << endl; 
+				//std::cout << tokens.next().toString() << endl; 
+				tokens.next(); 
 				type = std::make_unique<ArrayOfTypeExpr>(type);  
 				continue; 
 			}

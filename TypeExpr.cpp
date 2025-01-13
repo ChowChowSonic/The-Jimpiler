@@ -76,8 +76,9 @@ namespace jimpilier
 			if(AliasMgr(typenames)) return AliasMgr(typenames); 
 			//Object doesn't already exist, create it.
 			std::vector<llvm::Type*> generatedTypes; 
-			//Manditory to generate types this way to avoid bugs with recursive template types
+			//Manditory to generate types early, in their own loop, to avoid bugs with recursive template types
 			for(auto & x : types) generatedTypes.push_back(x->codegen()); 
+			
 			for(int i = 0; i < templ.templates.size(); i++){
 				auto & x = templ.templates[i]; 
 				AliasMgr.objects.replaceObject(x->getName(), generatedTypes[i]); 
@@ -142,19 +143,19 @@ namespace jimpilier
 
 		llvm::Type *ArrayOfTypeExpr::codegen(bool testforval){
 			std::vector<std::unique_ptr<TypeExpr>> tyarr;
-			tyarr.push_back(std::move(ty));  
+			tyarr.push_back(std::move(ty));
 			std::string name(".array"); 
-						auto& templ = TemplateMgr.getTemplate(name, types);
+						auto& templ = TemplateMgr.getTemplate(name, tyarr);
 			
 			//Check that the object doesn't already exist; if it does, return it
 			std::string typenames; 
-			for(auto &x : types) typenames+=x->getName()+','; 
+			for(auto &x : tyarr) typenames+=x->getName()+','; 
 			typenames = name+'<'+typenames.substr(0,typenames.size()-1)+'>'; 
 			if(AliasMgr(typenames)) return AliasMgr(typenames); 
 			//Object doesn't already exist, create it.
 			std::vector<llvm::Type*> generatedTypes; 
 			//Manditory to generate types this way to avoid bugs with recursive template types
-			for(auto & x : types) generatedTypes.push_back(x->codegen()); 
+			for(auto & x : tyarr) generatedTypes.push_back(x->codegen()); 
 			for(int i = 0; i < templ.templates.size(); i++){
 				auto & x = templ.templates[i]; 
 				AliasMgr.objects.replaceObject(x->getName(), generatedTypes[i]); 
@@ -167,14 +168,33 @@ namespace jimpilier
 				objectTypes.push_back(currentMember); 
 				objectNames.push_back(x.name); 
 			}
-			llvm::Type* ret = llvm::StructType::create(*ctxt, objectTypes, typenames,false); 
-			AliasMgr.objects.addObject(typenames, ret); 
-			AliasMgr.objects.addObjectMembers(typenames, objectTypes, objectNames); 
+			llvm::Type* ret = llvm::StructType::create(*ctxt, objectTypes, typenames,false);
+			AliasMgr.objects.addObject(typenames, ret);
+			AliasMgr.objects.addObjectMembers(typenames, objectTypes, objectNames);
 
-			for(auto &x : templ.functions){
-				x->replaceTemplate(typenames); 
-				x->codegen(); 
-			}
+			//manually generate an index operator for end-user convienence
+			std::string oper = "[";
+			std::unique_ptr<TypeExpr> retExpr = tyarr[0]->clone();
+			// retExpr = std::make_unique<ReferenceToTypeExpr>(retExpr);
+
+			std::vector<Variable> args;
+			std::unique_ptr<TypeExpr> typeRef = tyarr[0]->clone();
+			std::vector<std::unique_ptr<TypeExpr>> tempVec;
+
+			tempVec.push_back(std::move(typeRef));
+			typeRef = std::make_unique<StructTypeExpr>(typenames);
+			// typeRef = std::make_unique<ReferenceToTypeExpr>(typeRef);
+			args.push_back(Variable("this", typeRef));
+			typeRef = std::make_unique<IntTypeExpr>();
+			args.push_back(Variable("that", typeRef));
+
+			std::unique_ptr<ExprAST> Body = std::make_unique<VariableExprAST>("this"), othervar = std::make_unique<VariableExprAST>("that"); 
+			Body = std::make_unique<MemberAccessExprAST>(Body, "begin"); 
+			Body = std::make_unique<IndexExprAST>(Body, othervar); 
+			Body = std::make_unique<RetStmtAST>(Body); 
+
+			std::unique_ptr<ExprAST> indexOperator = std::make_unique<OperatorOverloadAST>(oper, retExpr, args, Body);  
+			indexOperator->codegen(); 
 
 			for(int i = 0; i < templ.templates.size(); i++){
 				auto & x = templ.templates[i]; 
@@ -191,7 +211,7 @@ namespace jimpilier
 		std::unique_ptr<TypeExpr> ArrayOfTypeExpr::clone()
 		{
 			std::unique_ptr<TypeExpr> encasedType = std::move(ty->clone());
-			return std::make_unique<PointerToTypeExpr>(encasedType);
+			return std::make_unique<ArrayOfTypeExpr>(encasedType);
 		}
 
 		llvm::Type *ReferenceToTypeExpr::codegen(bool testforval)
