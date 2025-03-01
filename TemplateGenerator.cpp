@@ -51,9 +51,11 @@ namespace jimpilier{
 			templates.push_back(std::make_unique<StructTypeExpr>(".T")); 
 			std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(".T"); 
 			ty = std::make_unique<PointerToTypeExpr>(ty); 
-			members.push_back(Variable(std::string("begin"), ty)); 
+			members.push_back(Variable(std::string("data"), ty)); 
 			ty = std::make_unique<LongTypeExpr>(); 
-			members.push_back(Variable(std::string("length"), ty)); 
+			members.push_back(Variable(std::string("size"), ty)); 
+			ty = std::make_unique<LongTypeExpr>(); 
+			members.push_back(Variable(std::string("capacity"), ty)); 
 			this->insertTemplate(".array", templates, members, functions);
 		}
 
