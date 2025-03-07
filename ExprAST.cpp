@@ -1274,7 +1274,6 @@ namespace jimpilier
 			if (!AliasMgr.functions.hasAlias(Callee))
 			{
 				logError("A function with name was never declared: " + Callee);
-				assert(false);
 			}
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
@@ -1294,23 +1293,7 @@ namespace jimpilier
 			FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
 			for (auto &x : CalleeF.throwableTypes)
 				this->throwables.insert(x);
-
-			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
-			{
-				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy() && ArgsT[i] != CalleeF.args[i].ty)
-					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
-				if (!ArgsV[i])
-				{
-					assert(false && "Error saving function args");
-				}
-			}
-			if (!CalleeF.canThrow())
-				return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ArgsV) : builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
-			assert(currentUnwindBlock != NULL && "Attempted to call a function that throws errors with no way to catch the error!");
-			llvm::BasicBlock *normalUnwindBlock = llvm::BasicBlock::Create(*ctxt, "NormalExecBlock", currentFunction);
-			llvm::Value *retval = CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock, ArgsV) : builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock, ArgsV, "calltmp");
-			builder->SetInsertPoint(normalUnwindBlock);
-			return retval;
+			return makeCallWithReferences(ArgsV, CalleeF); 
 		}
 
 		llvm::Value *ObjectFunctionCallExprAST::codegen(bool autoDeref , llvm::Value *other )
@@ -1318,9 +1301,6 @@ namespace jimpilier
 			llvm::Value *parval = parent->codegen(dereferenceParent);
 			std::vector<llvm::Value *> ArgsV;
 			std::vector<llvm::Type *> ArgsT;
-			ArgsV.push_back(parval);
-			ArgsT.push_back(parval->getType());
-
 			for (unsigned i = 0, e = Args.size(); i != e; ++i)
 			{
 				ArgsV.push_back(Args[i]->codegen(false));
@@ -1334,22 +1314,13 @@ namespace jimpilier
 			}
 
 			FunctionHeader &CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
+			ArgsV.insert(ArgsV.begin(), parval);// This line has to be done after retrieving the callee header  
+			//because object functions dont consider their parent ("this") to be an arg
 			for (auto &x : CalleeF.throwableTypes)
 				this->throwables.insert(x);
 			for (auto &x : parent->throwables)
 				this->throwables.insert(x);
-
-			for (unsigned i = 0; i < CalleeF.args.size(); ++i)
-			{
-				if (!CalleeF.args[i].isRef && ArgsT[i]->isPointerTy() && ArgsT[i] != CalleeF.args[i].ty)
-					ArgsV[i] = builder->CreateLoad(ArgsT[i]->getNonOpaquePointerElementType(), ArgsV[i], "dereftmp");
-				if (!ArgsV[i])
-				{
-					assert(false && "Error saving function args");
-				}
-			}
-
-			return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ArgsV) : builder->CreateCall(CalleeF.func, ArgsV, "calltmp");
+			return makeCallWithReferences(ArgsV, CalleeF); 
 		}
 
 		llvm::Value *ObjectConstructorCallExprAST::codegen(bool autoDeref , llvm::Value *other )

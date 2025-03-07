@@ -36,7 +36,10 @@ namespace jimpilier
 		NumberExprAST(bool Val) : Val(Val) { isBool = true; }
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
-
+/**
+ * @brief StringExprAST - The class representing string literals, as a char* 
+ * 
+ */
 	class StringExprAST : public ExprAST
 	{
 		std::string Val;
@@ -56,6 +59,10 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 
+/**
+ * @brief DeclareExprAST - A class representing an initial typed allocation for a variable on the stack
+ * 
+ */
 	class DeclareExprAST : public ExprAST
 	{
 		const std::string name;
@@ -69,6 +76,10 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 
+/**
+ * @brief IncDecExprAST - A class representing int/long/short/byte/float/double increments or decrements ("x++; x--;")
+ * 
+ */
 	class IncDecExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> val;
@@ -78,7 +89,10 @@ namespace jimpilier
 		IncDecExprAST(bool isPrefix, bool isDecrement, std::unique_ptr<ExprAST> &uniary) : prefix(isPrefix), decrement(isDecrement), val(std::move(uniary)) {}
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
-
+/**
+ * @brief NotExprAST - A class representing logical/boolean NOT expressions 
+ * 
+ */
 	class NotExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> val;
@@ -88,6 +102,12 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 
+	/**
+	 * @brief ReferenceExprAST - A class representing the retrieval of a memory location of a variable. 
+	 * (AKA getting a reference/pointer to it)
+	 * In c++ this would be represented as "&Variable" 
+	 * 
+	 */
 	class RefrenceExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> val;
@@ -97,6 +117,12 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = false, llvm::Value *other = NULL);
 	};
 
+	/**
+	 * @brief DeReferenceExprAST - A class representing the dereferencing of a memory location of a variable. 
+	 * (AKA dereferencing a pointer to it)
+	 * In c++ this would be represented as "*Variable" 
+	 * 
+	 */
 	class DeRefrenceExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> val;
@@ -105,7 +131,10 @@ namespace jimpilier
 		DeRefrenceExprAST(std::unique_ptr<ExprAST> &val) : val(std::move(val)) {};
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL)
 	;};
-
+	/**
+	 * @brief IndexExprAST - A class that represents an index expression on an array or an object with an overloaded index operator
+	 * 
+	 */
 	class IndexExprAST : public ExprAST
 	{
 		std::unique_ptr<ExprAST> bas, offs;
@@ -124,7 +153,10 @@ namespace jimpilier
 
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
-
+/**
+ * @brief AndOrStmtAST - A class handling both logical AND stmts alongside logical OR stmts 
+ * 
+ */
 	class AndOrStmtAST : public ExprAST
 	{
 		std::vector<std::unique_ptr<ExprAST>> items;
@@ -137,6 +169,10 @@ namespace jimpilier
 		llvm::Value *codegen(bool autoDeref = true, llvm::Value *other = NULL);
 	};
 
+	/**
+	 * @brief ComparisonStmtAST - A class representing logical comparisons (x == y)
+	 * 
+	 */
 	class ComparisonStmtAST : public ExprAST
 	{
 		std::vector<std::vector<std::unique_ptr<ExprAST>>> items; // convert this to vector<vector<ExprAST>>
