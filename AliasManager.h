@@ -26,6 +26,7 @@ namespace jimpilier
 		llvm::Function *func;
 		bool returnsRefrence = false; 
 
+		FunctionHeader() : func(NULL) {}; 
 		FunctionHeader(std::vector<Variable> &arglist, llvm::Function *func, bool returnsRefrence = false);
 		FunctionHeader(std::vector<Variable> &arglist, std::vector<llvm::Type*> &throwables, llvm::Function *func, bool returnsRefrence = false);
 		bool canThrow(){

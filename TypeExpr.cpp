@@ -281,8 +281,16 @@ namespace jimpilier
 		// t2 = std::make_unique<IntTypeExpr>();
 		// args.push_back(Variable("count", t2));
 		// AliasMgr.objects.addConstructor(arrayTy, ctor, args);
-		operators[NULL]["DELETE"][arrayTy] = dtor;
-		operators[arrayTy]["["][builder->getInt32Ty()] = indexOperator;
+		t2 = std::make_unique<StructTypeExpr>(arrayTy->getName().str()); 
+		t2 = std::make_unique<ReferenceToTypeExpr>(t2); 
+		args.push_back(Variable("this", t2)); 
+		operators[NULL]["DELETE"][arrayTy] = FunctionHeader(args,dtor, false);
+		t2 = std::make_unique<StructTypeExpr>(arrayTy->getName().str()); 
+		t2 = std::make_unique<ReferenceToTypeExpr>(t2); 
+		args.push_back(Variable("this", t2)); 
+		t2 = std::make_unique<IntTypeExpr>(); 
+		args.push_back(Variable("offset", t2));
+		operators[arrayTy]["["][builder->getInt32Ty()] = FunctionHeader(args, indexOperator, true);
 		builder->SetInsertPoint(lastInsertPoint);
 	}
 
