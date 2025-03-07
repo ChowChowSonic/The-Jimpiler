@@ -40,7 +40,7 @@ namespace jimpilier
 	 *
 	 */
 	std::stack<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> escapeBlock;
-	std::map<llvm::Type *, std::map<std::string, std::map<llvm::Type *, llvm::Function *>>> operators;
+	std::map<llvm::Type *, std::map<std::string, std::map<llvm::Type *, FunctionHeader>>> operators;
 	std::map<llvm::Type *, llvm::Value *> classInfoVals;
 	std::string currentFile;
 	/* Strictly for testing purposes, not meant for releases*/
@@ -58,12 +58,20 @@ namespace jimpilier
 		std::cout << s << ' ' << std::endl;
 		assert(false);
 	}
-
-	llvm::Value *makeCallWithReferences(std::vector<llvm::Value *> &ptrsToArgs, FunctionHeader &CalleeF)
+	/**
+	 * @brief Makes a call to a function (defined in `CalleeF`) using a std::vector<> containing pointers to each of the args.
+	 * Dereferences each arg as necessary to ensure that non-references are passed correctly, while references may be passed as 
+	 * pointers to the object or as the object itself (in other words, if we have `int* x`, we don't have to say `@x` when passing x to a `int@ arg`)
+	 * 
+	 * @param ptrsToArgs - The arguments passed to this object, ideally via their `codegen(false)` method
+	 * @param CalleeF - The function header to call
+	 * @return llvm::Value* - The result of the call
+	 */
+	llvm::Value *makeCallWithReferences(std::vector<llvm::Value *> &ptrsToArgs, FunctionHeader &CalleeF, bool hasParent = false)
 	{
-		for (unsigned i = 0; i < ptrsToArgs.size(); ++i)
+		for (unsigned i = hasParent; i < ptrsToArgs.size(); ++i)
 		{
-			if (!CalleeF.args[i].isRef && ptrsToArgs[i]->getType()->getPointerTo() == CalleeF.args[i].ty)
+			if (!CalleeF.args[i-hasParent].isRef && ptrsToArgs[i]->getType() == CalleeF.args[i-hasParent].ty->getPointerTo())
 				ptrsToArgs[i] = builder->CreateLoad(ptrsToArgs[i]->getType()->getNonOpaquePointerElementType(), ptrsToArgs[i], "dereftmp");
 			if (!ptrsToArgs[i])
 			{
@@ -77,6 +85,34 @@ namespace jimpilier
 		llvm::Value *retval = CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock, ptrsToArgs) : builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock, ptrsToArgs, "calltmp");
 		builder->SetInsertPoint(normalUnwindBlock);
 		return retval;
+	}
+
+	/**
+	 * @brief Get the Operator called between two types. Attempts to retrieve operators with references if one with raw object types are not found
+	 * 
+	 * @param arg1 - the left-hand ("first") argument type passed to the operator 
+	 * @param opStr - The string representing the operator being called
+	 * @param arg2 - the right-hand ("second") argument type passed to the operator
+	 * @return FunctionHeader& - The operator to be called
+	 */
+	FunctionHeader getOperatorFromTypes(llvm::Type *arg1, const std::string& opStr, llvm::Type* arg2){
+		FunctionHeader ret = operators[arg1][opStr][arg2];
+		if(ret.func == NULL) ret = operators[arg1 == NULL ? NULL : arg1->getPointerTo()][opStr][arg2]; 
+		if(ret.func == NULL) ret = operators[arg1][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
+		if(ret.func == NULL) ret = operators[arg1 == NULL? NULL : arg1->getPointerTo()][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
+		return ret; 
+	}
+	/**
+	 * @brief Get the Operator called between two values. Attempts to retrieve operators with references if one with raw object types are not found
+	 * 
+	 * @param arg1 - the left-hand ("first") argument passed to the operator 
+	 * @param opStr - The string representing the operator being called
+	 * @param arg2 - the right-hand ("second") argument passed to the operator
+	 * @return FunctionHeader& - the operator to be called
+	 */
+	FunctionHeader getOperatorFromVals(llvm::Value *arg1, const std::string& opStr, llvm::Value* arg2){
+		llvm::Type *t1 = arg1 == NULL ? (llvm::Type*)NULL : (llvm::Type*)arg1->getType(), *t2 = arg2 == NULL ? (llvm::Type*) NULL : (llvm::Type*)arg2->getType(); 
+		return getOperatorFromTypes(t1, opStr, t2); 
 	}
 }
 
