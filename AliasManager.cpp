@@ -96,7 +96,7 @@ namespace jimpilier
 		int ctr = 0;
 		for (auto &x : args)
 		{
-			std::cout << AliasMgr.getTypeName(x->getNonOpaquePointerElementType());
+			std::cout << AliasMgr.getTypeName(x);
 			if (ctr < args.size() - 1)
 				std::cout << ", ";
 		}

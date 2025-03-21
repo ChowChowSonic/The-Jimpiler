@@ -1419,10 +1419,9 @@ namespace jimpilier
 			}
 			ArgsT.push_back(ArgsV.back()->getType());
 		}
-
+		ArgsT.insert(ArgsT.begin(), parval->getType()); 
+		ArgsV.insert(ArgsV.begin(), parval);
 		FunctionHeader CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
-		ArgsV.insert(ArgsV.begin(), parval); // This line has to be done after retrieving the callee header
-		// because object functions dont consider their parent ("this") to be an arg
 		for (auto &x : CalleeF.throwableTypes)
 			this->throwables.insert(x);
 		for (auto &x : parent->throwables)
@@ -1612,7 +1611,6 @@ namespace jimpilier
 
 	llvm::Function *PrototypeAST::codegen(bool autoDeref, llvm::Value *other)
 	{
-
 		std::vector<std::string> Argnames;
 		std::vector<llvm::Type *> Argt;
 		std::vector<llvm::Type *> Errt;
@@ -1621,8 +1619,7 @@ namespace jimpilier
 			std::string name = "this";
 			std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
 			ty = std::make_unique<ReferenceToTypeExpr>(ty);
-			Argnames.push_back(name);
-			Argt.push_back(ty->codegen());
+			Args.insert(Args.begin(), Variable(name, ty)); 
 		}
 
 		for (auto &x : Args)
