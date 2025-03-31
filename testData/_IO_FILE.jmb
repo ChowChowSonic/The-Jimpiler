@@ -3,6 +3,7 @@ object _IO_marker{}
 object _IO_codecvt{}
 object _IO_wide_data{}
 object _IO_lock_t{}
+
 object _IO_FILE
 {
     int _flags;

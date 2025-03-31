@@ -50,3 +50,18 @@ TEST(TestCompiledCode, TestComplexIfStmts){
     EXPECT_EQ(actual, expected);
 	system("rm -rf testData/out.txt"); 
 }
+
+TEST(TestCompiledCode, TestTemplateType){
+	int result = system("./jmb ./testData/templateType.jmb 2> jmb.ll 1> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+	result = system("lli jmb.ll 1> ./testData/out.txt 2> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+    // Read the output file and compare with expected content
+    std::ifstream outputFile("testData/out.txt");
+    std::string expected = "test 10 ";
+    std::string actual = "";
+    std::getline(outputFile, actual); 
+
+    EXPECT_EQ(actual, expected);
+	system("rm -rf testData/out.txt"); 
+}

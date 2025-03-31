@@ -19,3 +19,7 @@ TEST(TestSyntax, TestComplexIfStmts){
 	int result = system("./jmb ./testData/complexIfStmt.jmb"); // Replace with actual executable and args
     EXPECT_EQ(result, EXIT_SUCCESS);
 }
+TEST(TestSyntax, TestTemplateTypes){
+	int result = system("./jmb ./testData/templateType.jmb"); // Replace with actual executable and args
+    EXPECT_EQ(result, EXIT_SUCCESS);
+}

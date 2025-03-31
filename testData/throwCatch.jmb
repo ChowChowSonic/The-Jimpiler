@@ -1,0 +1,26 @@
+void throwSomething(){
+	throw 6
+}
+void operator catch int i {
+	println "Caught an integer with an operator:", i
+}
+int main(){
+	try{
+		throw 5 
+	}catch(int i ){
+		println "Caught:", i
+	}
+
+	try{
+		throwSomething()
+	}catch(int i){
+		println "Caught:", i
+	}
+	try{
+		throw 7
+	}
+	try{
+		throwSomething()
+	}
+	return 0;
+}

@@ -1,0 +1,11 @@
+int main(int argc, char ptr ptr argv){
+	int i = 0, j = 1, k = 1; 
+	print i,j,k
+	for int ctr = 0; ctr < 5; ctr++ {
+		i = j+k; 
+		j = i + k
+		k = i+j 
+		print i, j, k
+	}
+	return 0
+}

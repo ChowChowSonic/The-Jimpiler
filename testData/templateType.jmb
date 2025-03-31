@@ -1,0 +1,13 @@
+object pair<X,Y>{
+	X first 
+	Y second 
+	constructor(X uno, Y dos){
+		this.first = uno 
+		this.second = dos
+	}
+}
+
+int main(){
+	pair<char*, int> p = pair<char*, int>("test", 10)
+	println p.first, p.second 
+}
