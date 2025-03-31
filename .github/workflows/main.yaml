@@ -26,5 +26,6 @@ jobs:
           sudo ldconfig -v | grep gtest
       - name: Build and run GTest suites
         run: |
+          cd /home/runner/work/The-Jimpiler/The-Jimpiler/
           g++ -std=c++14 -o runTests -Wl,--copy-dt-needed-entries -lgtest_main -lgtest `ls tests/*`
           ./runTests
