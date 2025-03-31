@@ -5,9 +5,9 @@
 #include <string>
 
 TEST(TestCompiledCode, TestFibAsMain){
-	int result = system("./jmb ./testData/forLoop.jmb 2> jmb.ll 1> /dev/null");
+	int result = system("./jmb testData/forLoop.jmb 2> jmb.ll 1> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
-	result = system("lli jmb.ll 1> ./testData/out.txt 2> /dev/null");
+	result = system("lli jmb.ll 1> testData/out.txt 2> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
     // Read the output file and compare with expected content
     std::ifstream outputFile("testData/out.txt");
@@ -19,9 +19,9 @@ TEST(TestCompiledCode, TestFibAsMain){
 }
 
 TEST(TestCompiledCode, TestThrowCatch){
-	int result = system("./jmb ./testData/throwCatch.jmb 2> jmb.ll 1> /dev/null");
+	int result = system("./jmb testData/throwCatch.jmb 2> jmb.ll 1> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
-	result = system("lli jmb.ll 1> ./testData/out.txt 2> /dev/null");
+	result = system("lli jmb.ll 1> testData/out.txt 2> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
     // Read the output file and compare with expected content
     std::ifstream outputFile("testData/out.txt");
@@ -37,9 +37,9 @@ TEST(TestCompiledCode, TestThrowCatch){
 }
 
 TEST(TestCompiledCode, TestComplexIfStmts){
-	int result = system("./jmb ./testData/complexIfStmt.jmb 2> jmb.ll 1> /dev/null");
+	int result = system("./jmb testData/complexIfStmt.jmb 2> jmb.ll 1> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
-	result = system("lli jmb.ll 1> ./testData/out.txt 2> /dev/null");
+	result = system("lli jmb.ll 1> testData/out.txt 2> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
     // Read the output file and compare with expected content
     std::ifstream outputFile("testData/out.txt");
@@ -52,9 +52,9 @@ TEST(TestCompiledCode, TestComplexIfStmts){
 }
 
 TEST(TestCompiledCode, TestTemplateType){
-	int result = system("./jmb ./testData/templateType.jmb 2> jmb.ll 1> /dev/null");
+	int result = system("./jmb testData/templateType.jmb 2> jmb.ll 1> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
-	result = system("lli jmb.ll 1> ./testData/out.txt 2> /dev/null");
+	result = system("lli jmb.ll 1> testData/out.txt 2> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
     // Read the output file and compare with expected content
     std::ifstream outputFile("testData/out.txt");
