@@ -15,8 +15,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake llvm g++ 
+          sudo apt update
+          sudo apt install -y cmake llvm-14 g++
           wget https://github.com/google/googletest/releases/download/v1.16.0/googletest-1.16.0.tar.gz
           tar xf googletest-1.16.0.tar.gz
           cd googletest-1.16.0/
@@ -24,8 +24,11 @@ jobs:
           make
           sudo make install
           sudo ldconfig -v | grep gtest
+          cd ..
       - name: Build and run GTest suites
         run: |
-          cd /home/runner/work/The-Jimpiler/The-Jimpiler/
-          g++ -std=c++14 -o runTests -Wl,--copy-dt-needed-entries -lgtest_main -lgtest `ls tests/*`
+          g++ -g -O3 -c `llvm-config-14 --cxxflags --ldflags --system-libs --libs core` main.cpp -o unlinked_exe && 
+          g++ unlinked_exe $(llvm-config-14 --ldflags --libs) -lpthread -o ./jmb &&
+          rm -rf unlinked_exe &&
+          g++ -std=c++14 -o runTests -Wl,--copy-dt-needed-entries -lgtest_main -lgtest  `ls tests/*`
           ./runTests
