@@ -25,10 +25,14 @@ jobs:
           sudo make install
           sudo ldconfig -v | grep gtest
           cd ..
-      - name: Build and run GTest suites
-        run: |
           g++ -g -O3 -c `llvm-config-14 --cxxflags --ldflags --system-libs --libs core` main.cpp -o unlinked_exe && 
           g++ unlinked_exe $(llvm-config-14 --ldflags --libs) -lpthread -o ./jmb &&
           rm -rf unlinked_exe &&
           g++ -std=c++14 -o runTests -Wl,--copy-dt-needed-entries -lgtest_main -lgtest  `ls tests/*`
-          ./runTests
+      - name: Build and run compilation tests (Code validity is not verified)
+        run: |
+          ./runTests --gtest_filter=TestSyntax.*
+      - name: Build and run program tests (Code is verified to be correct)
+        run:
+          |
+          ./runTests --gtest_filter=TestCompiledCode.*
