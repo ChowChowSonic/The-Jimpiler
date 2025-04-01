@@ -1287,7 +1287,7 @@ namespace jimpilier
 		return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"),
 								   {error,
 									builder->CreateBitCast(classInfoVals[ballval->getType()], llvm::Type::getInt8PtrTy(*ctxt)),
-									builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
+									deleter == NULL? llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt)) : builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
 	}
 	llvm::Value *PrintStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
@@ -1809,13 +1809,18 @@ namespace jimpilier
 			currentFunction->deleteBody();
 		}
 		// std::cout << AliasMgr.getTypeName(nullableArgtypes[0]) << " " << oper << " " << AliasMgr.getTypeName(nullableArgtypes[1]) <<endl;
-		operators[nullableArgtypes[0]][oper][nullableArgtypes[1]] = FunctionHeader(args, currentFunction, this->retType->isReference());
+		
 		// remove the arguments now that they're out of scope
 		for (auto &Arg : currentFunction->args())
 		{
 			AliasMgr[std::string(Arg.getName())] = {NULL, false};
 			// dtypes[std::string(Arg.getName())] ;
 		}
+		operators[nullableArgtypes[0]][oper][nullableArgtypes[1]] = 
+		FunctionHeader(
+			Proto.Args, 
+			currentFunction, 
+			Proto.retType->isReference());
 		currentFunction = prevFunction;
 		if (currentFunction != NULL)
 			builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());

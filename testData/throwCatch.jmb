@@ -7,13 +7,13 @@ void operator catch int i {
 int main(){
 	try{
 		throw 5 
-	}catch(int i ){
+	}catch int i{
 		println "Caught:", i
 	}
 
 	try{
 		throwSomething()
-	}catch(int i){
+	}catch int i{
 		println "Caught:", i
 	}
 	try{
