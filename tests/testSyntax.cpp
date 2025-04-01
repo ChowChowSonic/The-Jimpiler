@@ -5,12 +5,10 @@ TEST(TestSyntax, TestMain){
 	int result = system("./jmb testData/forLoop.jmb 2> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
 }
-
 TEST(TestSyntax, TestObjects){
 	int result = system("./jmb testData/_IO_FILE.jmb 2> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
 }
-
 TEST(TestSyntax, TestThrowCatch){
 	int result = system("./jmb testData/throwCatch.jmb 2> /dev/null"); 
     EXPECT_EQ(result, EXIT_SUCCESS);

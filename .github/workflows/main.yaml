@@ -12,27 +12,49 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install dependencies
+      - name: Check Cache
+        uses: actions/cache@v4
+        id: cache-gtest
+        with:
+          path: googletest-1.16.0
+          key: ${{ runner.os }}-gtest
+      - name: restore cache 
+        uses: actions/cache/restore@v4
+        id: cache-gtest-restore
+        with:
+          path: |
+            googletest-1.16.0
+            llvm-cache
+          key: ${{ runner.os }}-gtest-llvm
+      - name: Install LLVM & Gtest
         run: |
-          sudo apt update
-          sudo apt install -y cmake llvm-14 g++
-          wget https://github.com/google/googletest/releases/download/v1.16.0/googletest-1.16.0.tar.gz
-          tar xf googletest-1.16.0.tar.gz
           cd googletest-1.16.0/
           cmake -DBUILD_SHARED_LIBS=ON .
           make
           sudo make install
           sudo ldconfig -v | grep gtest
+          cd llvm-cache
+          for x in `ls`; 
+          do 
+          sudo apt install ./$x 
+          done 
           cd ..
+      - name: Build and run compilation tests (Code validity is not verified)
+        run: |
           g++ -g -O3 -c `llvm-config-14 --cxxflags --ldflags --system-libs --libs core` main.cpp -o unlinked_exe && 
           g++ unlinked_exe $(llvm-config-14 --ldflags --libs) -lpthread -o ./jmb &&
           rm -rf unlinked_exe &&
           g++ -std=c++14 -o runTests -Wl,--copy-dt-needed-entries -lgtest_main -lgtest  `ls tests/*`
-      - name: Build and run compilation tests (Code validity is not verified)
-        run: |
           ./runTests --gtest_filter=TestSyntax.*
       - name: Build and run program tests (Code is verified to be correct)
         run:
           |
           ./runTests --gtest_filter=TestCompiledCode.*
+      - name: save cache
+        id: cache-gtest-save
+        uses: actions/cache/save@v4
+        with: 
+          path: |
+            googletest-1.16.0
+            llvm-cache
+          key: ${{ runner.os }}-gtest-llvm
