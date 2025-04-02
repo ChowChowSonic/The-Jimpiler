@@ -1,8 +1,9 @@
-void throwSomething(){
+void throwSomething() throws int{
 	throw 6
 }
 void operator catch int i {
 	println "Caught an integer with an operator:", i
+	return
 }
 int main(){
 	try{
@@ -16,9 +17,11 @@ int main(){
 	}catch int i{
 		println "Caught:", i
 	}
+	
 	try{
 		throw 7
 	}
+
 	try{
 		throwSomething()
 	}
