@@ -10,4 +10,5 @@ object pair<X,Y>{
 int main(){
 	pair<char*, int> p = pair<char*, int>("test", 10)
 	println p.first, p.second 
+	return 0 
 }
