@@ -956,7 +956,7 @@ namespace jimpilier
 		llvm::Value *lhs = LHS->codegen();
 		llvm::Value *rhs = RHS->codegen();
 
-		FunctionHeader op = getOperatorFromVals(lhs, sub? "-" : "+", rhs);
+		FunctionHeader op = getOperatorFromVals(lhs, sub ? "-" : "+", rhs);
 		if (op.func != NULL)
 		{
 			std::vector<llvm::Value *> args;
@@ -1001,7 +1001,7 @@ namespace jimpilier
 		llvm::Value *lhs = LHS->codegen();
 		llvm::Value *rhs = RHS->codegen();
 
-		FunctionHeader op = getOperatorFromVals(lhs, mod? "%" : "^", rhs);
+		FunctionHeader op = getOperatorFromVals(lhs, mod ? "%" : "^", rhs);
 		if (op.func != NULL)
 		{
 			std::vector<llvm::Value *> args;
@@ -1187,13 +1187,15 @@ namespace jimpilier
 
 				builder->SetInsertPoint(catchBlock);
 				AliasMgr[x->second.second] = {(llvm::Value *)builder->CreateBitCast(builder->CreateCall(begin_catch, {extractedval}), x->first->codegen()->getPointerTo(), "errorptr"), false};
-				llvm::Value* caughtError = x->second.first->codegen(); 
-				FunctionHeader fh = getOperatorFromVals(NULL, "CATCH", caughtError); 
-				if (fh.func != NULL){
-					std::vector<llvm::Value*> args; 
-					args.push_back(caughtError); 
-					makeCallWithReferences(args, fh); 
+				llvm::Value *caughtError = AliasMgr[x->second.second].val; 
+				FunctionHeader fh = getOperatorFromTypes(NULL, "CATCH", x->first->codegen());
+				if (fh.func != NULL)
+				{
+					std::vector<llvm::Value *> args;
+					args.push_back(caughtError);
+					makeCallWithReferences(args, fh);
 				}
+				x->second.first->codegen();
 				builder->CreateCall(end_catch, {});
 				builder->CreateBr(tryEnd);
 				AliasMgr[x->second.second] = {NULL, false};
@@ -1230,11 +1232,12 @@ namespace jimpilier
 
 				builder->SetInsertPoint(catchBlock);
 				llvm::Value *errorval = builder->CreateCall(begin_catch, {extractedval}, "error");
-				FunctionHeader  fh = getOperatorFromTypes(NULL, "CATCH", x); 
-				if (fh.func != NULL){
-					std::vector<llvm::Value*> args; 
-					args.push_back(builder->CreateBitCast(errorval, x->getPointerTo())); 
-					makeCallWithReferences(args, fh); 
+				FunctionHeader fh = getOperatorFromTypes(NULL, "CATCH", x);
+				if (fh.func != NULL)
+				{
+					std::vector<llvm::Value *> args;
+					args.push_back(builder->CreateBitCast(errorval, x->getPointerTo()));
+					makeCallWithReferences(args, fh);
 				}
 				builder->CreateCall(end_catch);
 				builder->CreateBr(tryEnd);
@@ -1281,13 +1284,20 @@ namespace jimpilier
 			thrownerror->setInitializer(llvm::ConstantStruct::get(errorMetadataType, (llvm::Constant *)classinfo, typeStringVal));
 			// builder->CreateStore(ballval, error, "storetmp");
 		}
-		llvm::Value *deleter = getOperatorFromVals( NULL, "DELETE", ballval).func; 
+		llvm::Value *deleter = getOperatorFromVals(NULL, "DELETE", ballval).func;
 		// assert(deleter ! && "Fatal error: You tried to throw an object that has no deletion operator");
-
+		if (currentUnwindBlock != NULL)
+		{
+			llvm::BasicBlock *continueblock = llvm::BasicBlock::Create(*ctxt, "normalExecblock", currentFunction);
+			llvm::Value *ret = builder->CreateInvoke(GlobalVarsAndFunctions->getFunction("__cxa_throw"), continueblock,
+													 currentUnwindBlock, {error, builder->CreateBitCast(classInfoVals[ballval->getType()], llvm::Type::getInt8PtrTy(*ctxt)), deleter == NULL ? llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt)) : builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
+			builder->SetInsertPoint(continueblock);
+			return ret;
+		}
 		return builder->CreateCall(GlobalVarsAndFunctions->getFunction("__cxa_throw"),
 								   {error,
 									builder->CreateBitCast(classInfoVals[ballval->getType()], llvm::Type::getInt8PtrTy(*ctxt)),
-									deleter == NULL? llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt)) : builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
+									deleter == NULL ? llvm::ConstantAggregateZero::get(llvm::Type::getInt8PtrTy(*ctxt)) : builder->CreateBitCast(deleter, llvm::Type::getInt8PtrTy(*ctxt))});
 	}
 	llvm::Value *PrintStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
@@ -1419,7 +1429,7 @@ namespace jimpilier
 			}
 			ArgsT.push_back(ArgsV.back()->getType());
 		}
-		ArgsT.insert(ArgsT.begin(), parval->getType()); 
+		ArgsT.insert(ArgsT.begin(), parval->getType());
 		ArgsV.insert(ArgsV.begin(), parval);
 		FunctionHeader CalleeF = AliasMgr.functions.getFunctionObject(Callee, ArgsT);
 		for (auto &x : CalleeF.throwableTypes)
@@ -1619,7 +1629,7 @@ namespace jimpilier
 			std::string name = "this";
 			std::unique_ptr<TypeExpr> ty = std::make_unique<StructTypeExpr>(parent);
 			ty = std::make_unique<ReferenceToTypeExpr>(ty);
-			Args.insert(Args.begin(), Variable(name, ty)); 
+			Args.insert(Args.begin(), Variable(name, ty));
 		}
 
 		for (auto &x : Args)
@@ -1809,18 +1819,18 @@ namespace jimpilier
 			currentFunction->deleteBody();
 		}
 		// std::cout << AliasMgr.getTypeName(nullableArgtypes[0]) << " " << oper << " " << AliasMgr.getTypeName(nullableArgtypes[1]) <<endl;
-		
+
 		// remove the arguments now that they're out of scope
 		for (auto &Arg : currentFunction->args())
 		{
 			AliasMgr[std::string(Arg.getName())] = {NULL, false};
 			// dtypes[std::string(Arg.getName())] ;
 		}
-		operators[nullableArgtypes[0]][oper][nullableArgtypes[1]] = 
-		FunctionHeader(
-			Proto.Args, 
-			currentFunction, 
-			Proto.retType->isReference());
+		operators[nullableArgtypes[0]][oper][nullableArgtypes[1]] =
+			FunctionHeader(
+				Proto.Args,
+				currentFunction,
+				Proto.retType->isReference());
 		currentFunction = prevFunction;
 		if (currentFunction != NULL)
 			builder->SetInsertPoint(&currentFunction->getBasicBlockList().back());
