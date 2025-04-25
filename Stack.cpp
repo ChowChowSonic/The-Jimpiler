@@ -1,5 +1,6 @@
 #ifndef jimstack
 #define jimstack
+#include <spdlog/spdlog.h>
 using namespace std; 
 template <typename T>
 /**
@@ -32,6 +33,7 @@ class Stack{
         T Q = items[index]; 
         index++; 
         //if(index >= size) index--; 
+        spdlog::debug("Token Retrieved. New Token {}", items[index]); 
         return Q; 
     }
     /**
@@ -63,6 +65,7 @@ class Stack{
     T currentToken(){
         if (index == 0)return items[0]; 
         if (size == 0) return Token(ERR, "-1", -1);
+        spdlog::debug("Current Token {}", items[index]); 
         return items[index-1]; 
     }
     T peek(){
