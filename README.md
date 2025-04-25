@@ -3,7 +3,7 @@
 ```
 sudo apt update
 sudo apt upgrade
-sudo apt install llvm g++ libspdlog-dev
+sudo apt install llvm-14 g++ libspdlog-dev
 ```
 1) Compile the Jimbo compiler. 
 

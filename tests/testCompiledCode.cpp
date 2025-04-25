@@ -17,8 +17,8 @@ std::string getOutputEnv()
 TEST(TestCompiledCode, TestFibAsMain)
 {
 	std::string out = getOutputEnv();
-	std::string cmd = "echo \"FibonacciSequence<<\0\" >" + out +
-					  " ; ./jmb testData/forLoop.jmb 2>&1 | lli-14 1 >> " + out + "echo \"\0\" >> " + out;
+	std::string cmd = " ./jmb testData/forLoop.jmb 2>&1 | lli-14 1>> " + out;
+	if(out != "./testData/out.txt") cmd= "echo \"FibonacciSequence<<\0\" >" + out + " ; " + cmd + "echo \"\0\" >> " + out; 
 	int result = system(cmd.c_str());
 	EXPECT_EQ(result, EXIT_SUCCESS);
 	// Read the output file and compare with expected content
@@ -39,8 +39,8 @@ TEST(TestCompiledCode, TestFibAsMain)
 TEST(TestCompiledCode, TestThrowCatch)
 {
 	std::string out = getOutputEnv();
-	std::string cmd = "echo \"ThrowCatch<<\0\" >" + out +
-					  " ; ./jmb testData/throwCatch.jmb 2>&1 | lli-14 1 >> " + out + " ; echo \"\0\" >>" + out;
+	std::string cmd = "./jmb testData/throwCatch.jmb 2>&1 | lli-14 1>> " + out;
+	if(out != "./testData/out.txt") cmd= "echo \"ThrowCatch<<\0\" >" + out + " ; " + cmd + "echo \"\0\" >> " + out; 
 	int result = system(cmd.c_str());
 	EXPECT_EQ(result, EXIT_SUCCESS);
 	// Read the output file and compare with expected content
@@ -61,8 +61,8 @@ TEST(TestCompiledCode, TestThrowCatch)
 TEST(TestCompiledCode, TestComplexIfStmts)
 {
 	std::string out = getOutputEnv();
-	std::string cmd = "echo \"ComplexIfStmts<<\0\" >" + out +
-					  "; ./jmb testData/complexIfStmt.jmb 2>&1 | lli-14 1 >> " + out + " ; echo \"\0\" >>" + out;
+	std::string cmd = "./jmb testData/complexIfStmt.jmb 2>&1 | lli-14 1>> " + out;
+	if(out != "./testData/out.txt") cmd= "echo \"complexIfStmt<<\0\" >" + out + " ; " + cmd + "echo \"\0\" >> " + out; 
 	int result = system(cmd.c_str());
 	EXPECT_EQ(result, EXIT_SUCCESS);
 	// Read the output file and compare with expected content
@@ -83,12 +83,12 @@ TEST(TestCompiledCode, TestComplexIfStmts)
 TEST(TestCompiledCode, TestTemplateType)
 {
 	std::string out = getOutputEnv();
-	std::string cmd = "echo \"TemplateTypes<<\0\" >" + out +
-					  "; ./jmb testData/templateType.jmb 2>&1 | lli-14 1 >>" + out + " ; echo \"\0\" >>" + out;
+	std::string cmd ="./jmb testData/templateType.jmb 2>&1 | lli-14 1>>" + out;
+	if(out != "./testData/out.txt") cmd= "echo \"TemplateType<<\0\" >" + out + " ; " + cmd + "echo \"\0\" >> " + out ;
 	int result = system(cmd.c_str());
 	EXPECT_EQ(result, EXIT_SUCCESS);
 	// Read the output file and compare with expected content
-	std::vector<std::string> expected = {"test 10 \n"};
+	std::vector<std::string> expected = {"test 10 "};
 	std::string actual;
 	std::ifstream input(out);
 	std::getline(input, actual);
