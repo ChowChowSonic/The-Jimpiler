@@ -3,7 +3,10 @@ Shell command to run the file: (I should probably just run this in a .sh)
 g++ -g -O3 -c `llvm-config --cxxflags --ldflags --system-libs --libs core` main.cpp -o unlinked_exe &&
 g++ unlinked_exe $(llvm-config --ldflags --libs) -lpthread -o jmb && ./jmb
 */
+#include <bits/stdc++.h>
 #include <iostream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <vector>
 #include <fstream>
 #include <iomanip>
@@ -12,11 +15,54 @@ g++ unlinked_exe $(llvm-config --ldflags --libs) -lpthread -o jmb && ./jmb
 #include <string>
 #include <algorithm>
 #include <filesystem>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/rotating_file_sink.h>
 #include "jimpilier.h"
 
-using namespace std;
+template<>
+struct fmt::formatter<Token> : fmt::formatter<std::string>
+{
+    auto format(Token my, format_context &ctx) const -> decltype(ctx.out())
+    {
+        return fmt::format_to(ctx.out(), "[Token i={}]", my.toString());
+    }
+};
+bool initialize_logger() {
+    try {
+        // Create logs directory if it doesn't exist
+        mkdir("logs", 0777); 
+
+        // Create a rotating file sink with 5MB max size and 3 rotated files
+        auto max_size = 5 * 1024 * 1024;  // 5MB
+        auto max_files = 3;               // Keep 3 rotated files
+        auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+            "logs/compile.log", max_size, max_files
+        );
+
+        // Create logger with multi-thread support
+        auto logger = std::make_shared<spdlog::logger>("multi_thread_logger", sink);
+        
+        // Set as default logger
+        spdlog::set_default_logger(logger);
+        
+        // Optional: Set log pattern
+        spdlog::set_pattern("[thread %t:%l] %v");
+        
+        // Set flush policy (immediately flush messages at or above warning level)
+        spdlog::flush_on(spdlog::level::warn);
+        spdlog::set_level(spdlog::level::debug); 
+        spdlog::info("--------- Logger initialized successfully. Begin New session. ----------");
+        return true;
+    }
+    catch (const spdlog::spdlog_ex& ex) {
+        std::cerr << "Log initialization failed: " << ex.what() << std::endl;
+        return false;
+    }
+}
+
 int main(int argc, char **args)
 {
+    initialize_logger(); 
     std::vector<std::string> all_args;
     if (argc > 1)
     {
@@ -67,4 +113,5 @@ int main(int argc, char **args)
 
     std::cout << "; Code was compiled in approx: " << (end - now) << " seconds" << endl;
     jimpilier::GlobalVarsAndFunctions->dump();
+    spdlog::info("--------- End Existing session. ----------");
 }
