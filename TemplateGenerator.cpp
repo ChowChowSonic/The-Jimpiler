@@ -1,3 +1,4 @@
+#include <spdlog/spdlog.h>
 #include "ExprAST.h"
 #include "TypeExpr.h"
 #include "AliasManager.h"
@@ -60,6 +61,7 @@ namespace jimpilier{
 		}
 
 		void insertTemplate(std::string name, std::vector<std::unique_ptr<TypeExpr>> &templateNames, std::vector<Variable> &objMembers, std::vector<std::unique_ptr<ExprAST>> &functions){
+			spdlog::debug("TemplateGenerator Inserting template named: {}", name);
 			int numTemplates = templateNames.size(); 
 			assert(!templates[name][numTemplates].isValid() && "Template Redeclaration Error: A template Object with an identical name & number of templates already exists!"); 
 			templates[name][numTemplates] = TemplateObject(objMembers, functions, templateNames); 
@@ -73,6 +75,7 @@ namespace jimpilier{
 		 * @return TemplateObject& 
 		 */
 		TemplateObject &getTemplate(std::string & name, std::vector<std::unique_ptr<TypeExpr>> &types){
+			spdlog::debug("TemplateGenerator retrieving template named: {}", name);
 			int numTemplates = types.size(); 
 			TemplateObject &obj = templates[name][numTemplates];
 			return obj; 
