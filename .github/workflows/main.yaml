@@ -32,11 +32,3 @@ jobs:
         run:
           |
           ./runTests --gtest_filter=TestCompiledCode.*
-      - name: save cache
-        id: cache-gtest-save
-        uses: actions/cache/save@v4
-        with: 
-          path: |
-            googletest-1.16.0
-            llvm-cache
-          key: ${{ runner.os }}-gtest-llvm
