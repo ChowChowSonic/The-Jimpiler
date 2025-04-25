@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <spdlog/spdlog.h>
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
@@ -22,61 +23,72 @@ namespace jimpilier
 	llvm::Type *DoubleTypeExpr::codegen(bool testforval) { return llvm::Type::getDoubleTy(*ctxt); };
 	std::unique_ptr<TypeExpr> DoubleTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving double type expression");
 		return std::unique_ptr<TypeExpr>(new DoubleTypeExpr());
 	}
 
 	llvm::Type *FloatTypeExpr::codegen(bool testforval) { return llvm::Type::getFloatTy(*ctxt); };
 	std::unique_ptr<TypeExpr> FloatTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving float type expression");
 		return std::unique_ptr<TypeExpr>(new FloatTypeExpr());
 	}
 
 	llvm::Type *LongTypeExpr::codegen(bool testforval) { return llvm::Type::getInt64Ty(*ctxt); };
 	std::unique_ptr<TypeExpr> LongTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving long type expression");
 		return std::unique_ptr<TypeExpr>(new LongTypeExpr());
 	}
 
 	llvm::Type *IntTypeExpr::codegen(bool testforval) { return llvm::Type::getInt32Ty(*ctxt); };
 	std::unique_ptr<TypeExpr> IntTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving int type expression");
 		return std::unique_ptr<TypeExpr>(new IntTypeExpr());
 	}
 
 	llvm::Type *ShortTypeExpr::codegen(bool testforval) { return llvm::Type::getInt16Ty(*ctxt); };
 	std::unique_ptr<TypeExpr> ShortTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving short type expression");
 		return std::unique_ptr<TypeExpr>(new ShortTypeExpr());
 	}
 	llvm::Type *ByteTypeExpr::codegen(bool testforval) { return llvm::Type::getInt8Ty(*ctxt); };
 	std::unique_ptr<TypeExpr> ByteTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving byte type expression");
 		return std::unique_ptr<TypeExpr>(new ByteTypeExpr());
 	}
 
 	llvm::Type *BoolTypeExpr::codegen(bool testforval) { return llvm::Type::getInt1Ty(*ctxt); };
 	std::unique_ptr<TypeExpr> BoolTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving boolean type expression");
 		return std::unique_ptr<TypeExpr>(new BoolTypeExpr());
 	}
 
 	llvm::Type *VoidTypeExpr::codegen(bool testforval) { return llvm::Type::getVoidTy(*ctxt); };
 	std::unique_ptr<TypeExpr> VoidTypeExpr::clone()
 	{
+		spdlog::debug("Retrieving void type expression");
 		return std::unique_ptr<TypeExpr>(new VoidTypeExpr());
 	}
 
 	llvm::Type *TemplateObjectExpr::codegen(bool testforval)
 	{
 		auto &templ = TemplateMgr.getTemplate(name, types);
-
 		// Check that the object doesn't already exist; if it does, return it
 		std::string typenames;
 		for (auto &x : types)
 			typenames += x->getName() + ',';
 		typenames = name + '<' + typenames.substr(0, typenames.size() - 1) + '>';
 		if (AliasMgr(typenames))
+		{
+			spdlog::debug("Retrieving template type expression: {}", typenames);
 			return AliasMgr(typenames);
+		}
+		spdlog::debug("Creating template type expression: {}", typenames);
 		// Object doesn't already exist, create it.
 		std::vector<llvm::Type *> generatedTypes;
 		// Manditory to generate types early, in their own loop, to avoid bugs with recursive template types
@@ -139,6 +151,7 @@ namespace jimpilier
 			logError("Unknown object of name: " + name);
 			return NULL;
 		}
+		spdlog::debug("Retrieving template type expression: {}", name);
 		return ty;
 	}
 	std::string StructTypeExpr::getName() { return name; }
@@ -150,10 +163,12 @@ namespace jimpilier
 	llvm::Type *PointerToTypeExpr::codegen(bool testforval)
 	{
 		llvm::Type *t = ty->codegen();
+		spdlog::debug("Retrieving pointer to type: {}", AliasMgr.getTypeName(t));
 		return t == NULL ? NULL : t->getPointerTo();
 	}
 	void generateArrayFunctions(llvm::StructType *arrayTy, std::unique_ptr<TypeExpr> &typeExp)
 	{
+		spdlog::debug("Creating array[{}] helper functions", typeExp->getName());
 		llvm::BasicBlock *lastInsertPoint = builder->GetInsertBlock();
 		llvm::Type *elementTy = typeExp->codegen();
 		llvm::FunctionType *operatorType = llvm::FunctionType::get(
@@ -169,6 +184,7 @@ namespace jimpilier
 			dtorType, llvm::Function::ExternalLinkage,
 			arrayTy->getName().str() + "::destructor", GlobalVarsAndFunctions.get());
 
+		spdlog::debug("Implementing array append function");
 		// Push_back with reallocation logic
 		std::vector<llvm::Type *> pushBackParams = {arrayTy->getPointerTo(), elementTy};
 		llvm::FunctionType *pushBackType = llvm::FunctionType::get(
@@ -246,7 +262,7 @@ namespace jimpilier
 
 			builder->CreateRetVoid();
 		}
-
+		spdlog::debug("Creating array indexing operator");
 		// Index Operator Implementation
 		llvm::BasicBlock *indexBlock = llvm::BasicBlock::Create(*ctxt, "entry", indexOperator);
 		builder->SetInsertPoint(indexBlock);
@@ -257,15 +273,18 @@ namespace jimpilier
 		builder->CreateGEP(elementTy, gep, indexOperator->getArg(1), "indextmp");
 		builder->CreateRet(gep);
 
-		//Destructor implementation 
-		entry = llvm::BasicBlock::Create(*ctxt, "entry", dtor); 
-		builder->SetInsertPoint(entry); 
-		gep = builder->CreateGEP(arrayTy, dtor->getArg(0), {builder->getInt32(0), builder->getInt32(0)}, "loadtmp"); 
-		gep = builder->CreateBitCast(gep, builder->getInt8Ty()->getPointerTo()); 
-		builder->CreateCall(GlobalVarsAndFunctions->getOrInsertFunction("free", llvm::FunctionType::get(builder->getVoidTy(), {builder->getInt8Ty()->getPointerTo()}, false)), {gep}); 
-		// gep = builder->CreateBitCast(dtor->getArg(0), builder->getInt8Ty()->getPointerTo()); 
-		// builder->CreateCall(GlobalVarsAndFunctions->getOrInsertFunction("free", llvm::FunctionType::get(builder->getVoidTy(), {builder->getInt8Ty()->getPointerTo()}, false)), {gep}); 
-		builder->CreateRetVoid(); 
+		spdlog::debug("Implementing array destructor");
+		// Destructor implementation
+		entry = llvm::BasicBlock::Create(*ctxt, "entry", dtor);
+		builder->SetInsertPoint(entry);
+		gep = builder->CreateGEP(arrayTy, dtor->getArg(0), {builder->getInt32(0), builder->getInt32(0)}, "loadtmp");
+		gep = builder->CreateBitCast(gep, builder->getInt8Ty()->getPointerTo());
+		builder->CreateCall(GlobalVarsAndFunctions->getOrInsertFunction("free", llvm::FunctionType::get(builder->getVoidTy(), {builder->getInt8Ty()->getPointerTo()}, false)), {gep});
+		// gep = builder->CreateBitCast(dtor->getArg(0), builder->getInt8Ty()->getPointerTo());
+		// builder->CreateCall(GlobalVarsAndFunctions->getOrInsertFunction("free", llvm::FunctionType::get(builder->getVoidTy(), {builder->getInt8Ty()->getPointerTo()}, false)), {gep});
+		builder->CreateRetVoid();
+
+		spdlog::debug("Verifying array functions");
 		// Verify functions
 		llvm::verifyFunction(*dtor);
 		llvm::verifyFunction(*pushBack);
@@ -281,17 +300,18 @@ namespace jimpilier
 		// t2 = std::make_unique<IntTypeExpr>();
 		// args.push_back(Variable("count", t2));
 		// AliasMgr.objects.addConstructor(arrayTy, ctor, args);
-		t2 = std::make_unique<StructTypeExpr>(arrayTy->getName().str()); 
-		t2 = std::make_unique<ReferenceToTypeExpr>(t2); 
-		args.push_back(Variable("this", t2)); 
-		operators[NULL]["DELETE"][arrayTy] = FunctionHeader(args,dtor, false);
-		t2 = std::make_unique<StructTypeExpr>(arrayTy->getName().str()); 
-		t2 = std::make_unique<ReferenceToTypeExpr>(t2); 
-		args.push_back(Variable("this", t2)); 
-		t2 = std::make_unique<IntTypeExpr>(); 
+		t2 = std::make_unique<StructTypeExpr>(arrayTy->getName().str());
+		t2 = std::make_unique<ReferenceToTypeExpr>(t2);
+		args.push_back(Variable("this", t2));
+		operators[NULL]["DELETE"][arrayTy] = FunctionHeader(args, dtor, false);
+		t2 = std::make_unique<StructTypeExpr>(arrayTy->getName().str());
+		t2 = std::make_unique<ReferenceToTypeExpr>(t2);
+		args.push_back(Variable("this", t2));
+		t2 = std::make_unique<IntTypeExpr>();
 		args.push_back(Variable("offset", t2));
 		operators[arrayTy]["["][builder->getInt32Ty()] = FunctionHeader(args, indexOperator, true);
 		builder->SetInsertPoint(lastInsertPoint);
+		spdlog::debug("Completed implementation of array functions");
 	}
 
 	llvm::Type *ArrayOfTypeExpr::codegen(bool testforval)
@@ -300,14 +320,16 @@ namespace jimpilier
 		tyarr.push_back(std::move(ty));
 		std::string name(".array");
 		auto &templ = TemplateMgr.getTemplate(name, tyarr);
-
 		// Check that the object doesn't already exist; if it does, return it
 		std::string typenames;
 		for (auto &x : tyarr)
 			typenames += x->getName() + ',';
 		typenames = name + '<' + typenames.substr(0, typenames.size() - 1) + '>';
-		if (AliasMgr(typenames))
+		if (AliasMgr(typenames)){
+			spdlog::debug("Retrieving Array[{}]", typenames);
 			return AliasMgr(typenames);
+		}
+		spdlog::debug("Creating Array[{}]", typenames);
 		// Object doesn't already exist, create it.
 		std::vector<llvm::Type *> generatedTypes;
 		// Manditory to generate types this way to avoid bugs with recursive template types
@@ -354,6 +376,7 @@ namespace jimpilier
 	llvm::Type *ReferenceToTypeExpr::codegen(bool testforval)
 	{
 		llvm::Type *t = ty->codegen();
+		spdlog::debug("Retrieving Reference to below type");
 		return t == NULL ? NULL : t->getPointerTo();
 	}
 	std::unique_ptr<TypeExpr> ReferenceToTypeExpr::clone()
