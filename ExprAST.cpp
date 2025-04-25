@@ -1,3 +1,4 @@
+#include <spdlog/spdlog.h>
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
@@ -24,8 +25,7 @@ namespace jimpilier
 
 	llvm::Value *NumberExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
-		if (DEBUGGING)
-			std::cout << Val;
+		spdlog::debug("Creating const: {0}; other val {1:x}", Val, (long)other); 
 		if (isInt)
 			return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, static_cast<long>(Val), true));
 		if (isBool)
@@ -35,17 +35,13 @@ namespace jimpilier
 
 	llvm::Value *StringExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
-		if (DEBUGGING)
-			std::cout << Val;
-		// if(Val.length() > 1)
+		spdlog::debug("Creating stringconst: {0}; other val: {1:x}", Val, (long)other); 
 		return builder->CreateGlobalStringPtr(Val, "Sconst");
-		// return llvm::ConstantInt::get(llvm::Type::getInt8Ty(*ctxt), llvm::APInt(8, Val[0]));
 	}
 
 	llvm::Value *VariableExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
-		if (DEBUGGING)
-			std::cout << Name;
+		spdlog::debug("getting variable: {0}; other val: {1:x}", Name, (long)other); 
 		llvm::Value *V = AliasMgr[Name].val;
 		if (V && AliasMgr[Name].isRef && currentFunction != NULL)
 		{
@@ -53,7 +49,7 @@ namespace jimpilier
 		}
 		if (!V)
 		{
-			std::cout << "Unknown variable name: " << Name << std::endl;
+			spdlog::error("Unknown Variable name: {}", Name);
 			return nullptr;
 		}
 		if (autoDeref && currentFunction != NULL)
@@ -63,12 +59,13 @@ namespace jimpilier
 
 	llvm::Value *DeclareExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("declaring variable: {0}; other val: {1:x}", name, (long)other); 
 		llvm::Type *ty = this->type->codegen();
 		llvm::Value *sizeval = llvm::ConstantInt::getIntegerValue(llvm::Type::getInt64Ty(*ctxt), llvm::APInt(64, (long)size, false));
 		if (AliasMgr[name].val != NULL)
 		{
-			std::cout << "Warning: The variable '" << name << "' was already defined. Overwriting the previous value..." << std::endl;
-			std::cout << "If this was not intentional, please make use of semicolons to better denote the end of each statement" << std::endl;
+			spdlog::warn("Warning: The variable '{}' was already defined. Overwriting the previous value...", name);
+			spdlog::warn("If this was not intentional, please make use of semicolons to better denote the end of each statement");
 		}
 		if (currentFunction == NULL || currentFunction == STATIC)
 		{
@@ -105,6 +102,7 @@ namespace jimpilier
 
 	llvm::Value *IncDecExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("incrementing variable; other val: {0:x}", (long)other); 
 		llvm::Value *v = val->codegen(false);
 		FunctionHeader op = getOperatorFromVals(prefix ? NULL : v, decrement ? "--" : "++", prefix ? v : NULL);
 		if (op.func != NULL)
@@ -131,6 +129,7 @@ namespace jimpilier
 
 	llvm::Value *NotExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("logical NOT-ing variable; other val: {0:x}", (long)other); 
 		llvm::Value *v = val->codegen();
 		FunctionHeader op = getOperatorFromVals(NULL, "!", v);
 		if (op.func != NULL)
@@ -152,11 +151,13 @@ namespace jimpilier
 
 	llvm::Value *RefrenceExprAST::codegen(bool autoderef, llvm::Value *other)
 	{
+		spdlog::debug("getting reference to variable"); 
 		return val->codegen(false);
 	}
 
 	llvm::Value *DeRefrenceExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("derefrencing variable; other val: {0:x}", (long)other); 
 		llvm::Value *v = val->codegen(autoDeref);
 		FunctionHeader op = getOperatorFromVals(NULL, "@", v);
 		if (op.func != NULL)
@@ -169,13 +170,14 @@ namespace jimpilier
 			return builder->CreateLoad(v->getType()->getContainedType(0), v, "derefrencetmp");
 		else
 		{
-			logError("Attempt to derefrence non-pointer type found: Aborting...");
+			logError("Attempt to derefrence non-pointer type: Aborting...");
 			return NULL;
 		}
 	}
 
 	llvm::Value *IndexExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("getting index; other val: {0:x}", (long)other); 
 		llvm::Value *bsval = bas->codegen(), *offv = offs->codegen();
 		FunctionHeader op = getOperatorFromVals(bsval, "[", offv);
 		if (op.func != NULL)
@@ -203,6 +205,7 @@ namespace jimpilier
 
 	llvm::Value *TypeCastExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("type casting; other val: {0:x}", (long)other); 
 		llvm::Type *to = this->totype->codegen();
 		llvm::Value *init = from->codegen();
 		llvm::Instruction::CastOps op;
@@ -300,6 +303,7 @@ namespace jimpilier
 	}
 	llvm::Value *AndOrStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("and/oring variable; other val: {0:x}", (long)other); 
 		bool isLabel = other != NULL && other->getType()->isLabelTy();
 		llvm::BasicBlock *falseBlock = NULL, *glblend = llvm::BasicBlock::Create(*ctxt, "andEvalBlock", currentFunction, isLabel ? (llvm::BasicBlock *)other : NULL);
 		llvm::BasicBlock *trueBlock = isLabel ? (llvm::BasicBlock *)other : llvm::BasicBlock::Create(*ctxt, "andTrueShortCircuitBlock", currentFunction, glblend);
@@ -350,6 +354,7 @@ namespace jimpilier
 
 	llvm::Value *ComparisonStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("comparisonStmt; other val: {0:x}", (long)other); 
 		bool isLabel = other != NULL && other->getType()->isLabelTy();
 		// std::vector<llvm::Value*> oldcomparisons;
 		// convert RHS, LHS to vector<llvm::Value*>
@@ -522,6 +527,7 @@ namespace jimpilier
 
 	llvm::Value *IfExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("ifExprAST; other val: {0:x}", (long)other); 
 		llvm::BasicBlock *start, *end;
 		llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblifend", currentFunction);
 		int i = 0;
@@ -556,6 +562,7 @@ namespace jimpilier
 
 	llvm::Value *SwitchExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("SwitchExprAST; other val: {0:x}", (long)other); 
 		std::vector<llvm::BasicBlock *> bodBlocks;
 		llvm::BasicBlock *glblend = llvm::BasicBlock::Create(*ctxt, "glblswitchend", currentFunction), *lastbody = glblend;
 		llvm::SwitchInst *val = builder->CreateSwitch(comp->codegen(), glblend, cases.size());
@@ -583,6 +590,7 @@ namespace jimpilier
 
 	llvm::Value *BreakExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("BreakExprAST; other val: {0:x}", (long)other); 
 		if (escapeBlock.empty())
 			return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
 		// if (labelVal != "")
@@ -590,6 +598,7 @@ namespace jimpilier
 	}
 	llvm::Value *ContinueExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("ContinueExprAST; other val: {0:x}", (long)other); 
 		if (escapeBlock.empty())
 			return llvm::ConstantInt::get(*ctxt, llvm::APInt(32, 0, true));
 		// if (labelVal != "")
@@ -597,6 +606,7 @@ namespace jimpilier
 	}
 	llvm::Value *SizeOfExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("SizeOfExprAST; other val: {0:x}", (long)other); 
 		if (!type && !target)
 		{
 			logError("Invalid target for sizeof: The expression you're taking the size of doesn't do what you think it does");
@@ -621,6 +631,7 @@ namespace jimpilier
 	}
 	llvm::Value *HeapExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("HeapExprAST; other val: {0:x}", (long)other); 
 		// initalize calloc(i64, i64) as the primary ways to allocate heap memory
 		GlobalVarsAndFunctions->getOrInsertFunction("calloc", llvm::FunctionType::get(
 																  llvm::Type::getInt8Ty(*ctxt)->getPointerTo(),
@@ -632,6 +643,7 @@ namespace jimpilier
 	}
 	llvm::Value *DeleteExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("DeleteExprAST; other val: {0:x}", (long)other); 
 		llvm::Value *freefunc = GlobalVarsAndFunctions->getOrInsertFunction("free", {llvm::Type::getInt8PtrTy(*ctxt)}, llvm::Type::getInt8PtrTy(*ctxt)).getCallee();
 		llvm::Value *deletedthing = val->codegen(true);
 		FunctionHeader op = getOperatorFromVals(NULL, "DELETE", deletedthing);
@@ -657,6 +669,7 @@ namespace jimpilier
 	// I have a feeling this function needs to be revamped.
 	llvm::Value *ForExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("ForExprAST; other val: {0:x}", (long)other); 
 		llvm::Value *retval;
 		llvm::BasicBlock *start = llvm::BasicBlock::Create(*ctxt, "loopstart", currentFunction), *end = llvm::BasicBlock::Create(*ctxt, "loopend", currentFunction);
 		escapeBlock.push(std::pair<llvm::BasicBlock *, llvm::BasicBlock *>(end, start));
@@ -686,6 +699,7 @@ namespace jimpilier
 	}
 	llvm::Value *RangeExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("RangeExprAST; other val: {0:x}", (long)other); 
 		llvm::Value *begin = start->codegen(), *fin = end->codegen(), *delta = step == NULL ? llvm::ConstantInt::getIntegerValue(llvm::Type::getInt32Ty(*ctxt), llvm::APInt(32, 1u)) : step->codegen();
 		llvm::Value *ret;
 		for (auto &x : start->throwables)
@@ -786,22 +800,20 @@ namespace jimpilier
 	}
 	llvm::Value *ListExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("Creating list; other val: {0:x}", (long)other); 
 		llvm::Value *ret = NULL;
-		if (DEBUGGING)
-			std::cout << "[ ";
 		for (auto i = Contents.end(); i < Contents.begin(); i--)
 		{
 			ret = i->get()->codegen();
-			if (i != Contents.end() - 1 && DEBUGGING)
+			if (i != Contents.end() - 1)
 				std::cout << ", ";
 		};
-		if (DEBUGGING)
-			std::cout << " ]";
 		return ret;
 	}
 
 	llvm::Value *DebugPrintExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("Creating debug print stmt; other val: {0:x}", (long)other); 
 		llvm::Value *data = val->codegen();
 		std::string placeholder = "Debug value (Line " + std::to_string(ln) + "): ";
 
@@ -848,8 +860,7 @@ namespace jimpilier
 	}
 	llvm::Value *RetStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
-		if (DEBUGGING)
-			std::cout << "return ";
+		spdlog::debug("RetStmtAST; other val: {0:x}", (long)other); 
 		if (ret == NULL)
 			return builder->CreateRetVoid();
 		llvm::Value *retval = ret->codegen();
@@ -863,6 +874,7 @@ namespace jimpilier
 
 	llvm::Value *AssignStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("AssignStmtAST; other val: {0:x}", (long)other); 
 		llvm::Value *lval, *rval;
 		// std::cout << std::hex << LHS << RHS <<endl;
 		lval = lhs->codegen(false);
@@ -901,6 +913,7 @@ namespace jimpilier
 	}
 	llvm::Value *MultDivStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("MultDivStmtAST; other val: {0:x}", (long)other); 
 		llvm::Value *lhs = LHS->codegen();
 		llvm::Value *rhs = RHS->codegen();
 
@@ -953,6 +966,7 @@ namespace jimpilier
 	}
 	llvm::Value *AddSubStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("AddSubStmtAST; other val: {0:x}", (long)other); 
 		llvm::Value *lhs = LHS->codegen();
 		llvm::Value *rhs = RHS->codegen();
 
@@ -996,6 +1010,7 @@ namespace jimpilier
 	}
 	llvm::Value *PowModStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("PowModStmtAST; other val: {0:x}", (long)other); 
 		llvm::Type *longty = llvm::IntegerType::getInt32Ty(*ctxt);
 		llvm::Type *doublety = llvm::Type::getDoubleTy(*ctxt);
 		llvm::Value *lhs = LHS->codegen();
@@ -1059,11 +1074,8 @@ namespace jimpilier
 	}
 	llvm::Value *BinaryStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
-		if (DEBUGGING)
-			std::cout << Op << "( ";
+		spdlog::debug("BinaryStmtAST; other val: {0:x}", (long)other); 
 		llvm::Value *L = LHS->codegen();
-		if (DEBUGGING)
-			std::cout << ", ";
 		llvm::Value *R = RHS->codegen();
 
 		if (DEBUGGING)
@@ -1132,6 +1144,7 @@ namespace jimpilier
 	}
 	llvm::Value *TryStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("TryStmtAST; other val: {0:x}", (long)other); 
 		llvm::FunctionCallee typeidfor = GlobalVarsAndFunctions->getOrInsertFunction("llvm.eh.typeid.for", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false));
 		llvm::FunctionCallee personalityfunc = GlobalVarsAndFunctions->getOrInsertFunction("__gxx_personality_v0", llvm::FunctionType::get(llvm::Type::getInt32Ty(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false));
 		llvm::FunctionCallee begin_catch = GlobalVarsAndFunctions->getOrInsertFunction("__cxa_begin_catch", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt)}, false));
@@ -1251,6 +1264,7 @@ namespace jimpilier
 
 	llvm::Value *ThrowStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("ThrowStmtAST; other val: {0:x}", (long)other); 
 		GlobalVarsAndFunctions->getOrInsertFunction("__cxa_allocate_exception", llvm::FunctionType::get(llvm::Type::getInt8PtrTy(*ctxt), {llvm::Type::getInt64Ty(*ctxt)}, false));
 		GlobalVarsAndFunctions->getOrInsertFunction("__cxa_throw", llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), {llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt)}, false));
 		llvm::StructType *errorMetadataType = llvm::StructType::get(llvm::Type::getInt8PtrTy(*ctxt), llvm::Type::getInt8PtrTy(*ctxt));
@@ -1301,6 +1315,7 @@ namespace jimpilier
 	}
 	llvm::Value *PrintStmtAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("PrintStmtAST; other val: {0:x}", (long)other); 
 		// Initialize values for the arguments and the types for the arguments
 		std::vector<llvm::Value *> vals;
 		std::string placeholder = "";
@@ -1360,6 +1375,7 @@ namespace jimpilier
 
 	llvm::Value *CodeBlockAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("CodeBlockAST; other val: {0:x}", (long)other); 
 		llvm::Value *ret;
 		for (int i = 0; i < Contents.size(); i++)
 		{
@@ -1373,6 +1389,7 @@ namespace jimpilier
 	}
 	llvm::Value *MemberAccessExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("MemberAccessExprAST; other val: {0:x}", (long)other); 
 		// return NULL;
 		llvm::Value *lhs = base->codegen(dereferenceParent);
 		auto returnTy = AliasMgr(lhs->getType()->getContainedType(0), member);
@@ -1392,6 +1409,7 @@ namespace jimpilier
 		{
 			logError("A function with name was never declared: " + Callee);
 		}
+		spdlog::debug("CallExprAST; other val: {0:x}", (long)other); 
 		std::vector<llvm::Value *> ArgsV;
 		std::vector<llvm::Type *> ArgsT;
 		for (unsigned i = 0, e = Args.size(); i != e; ++i)
@@ -1415,6 +1433,7 @@ namespace jimpilier
 
 	llvm::Value *ObjectFunctionCallExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("ObjectFunctionCallExprAST; other val: {0:x}", (long)other); 
 		llvm::Value *parval = parent->codegen(dereferenceParent);
 		std::vector<llvm::Value *> ArgsV;
 		std::vector<llvm::Type *> ArgsT;
@@ -1441,6 +1460,8 @@ namespace jimpilier
 
 	llvm::Value *ObjectConstructorCallExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("ObjectConstructorCallExprAST; other val: {0:x}", (long)other); 
+
 		// Get data type by name or by generating it directly
 		llvm::Type *TargetType = CalledTyConstructor == NULL ? AliasMgr(Callee) : this->CalledTyConstructor->codegen();
 
@@ -1498,6 +1519,7 @@ namespace jimpilier
 
 	llvm::Value *ConstructorExprAST::codegen(bool autoderef, llvm::Value *other)
 	{
+		spdlog::debug("ConstructorExprAST; other val: {0:x}", (long)other); 
 		std::vector<std::string> argnames;
 		std::vector<llvm::Type *> argtypes;
 		std::unique_ptr<TypeExpr> retType = std::make_unique<StructTypeExpr>(objName);
@@ -1554,6 +1576,7 @@ namespace jimpilier
 
 	llvm::StructType *ObjectHeaderExpr::codegen(bool autoderef, llvm::Value *other)
 	{
+
 		// TODO: This could cause bugs later. Find a better (non-bandaid) solution
 		llvm::StructType *ty = llvm::StructType::getTypeByName(*ctxt, name);
 		ty = ty == NULL ? llvm::StructType::create(*ctxt, name) : ty;
@@ -1562,6 +1585,7 @@ namespace jimpilier
 	}
 	llvm::Value *ObjectExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("ObjectExprAST; other val: {0:x}", (long)other); 
 		llvm::StructType *ty = base.codegen();
 		std::vector<llvm::Type *> types;
 		std::vector<std::string> names;
@@ -1621,6 +1645,7 @@ namespace jimpilier
 
 	llvm::Function *PrototypeAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("PrototypeAST; other val: {0:x}", (long)other); 
 		std::vector<std::string> Argnames;
 		std::vector<llvm::Type *> Argt;
 		std::vector<llvm::Type *> Errt;
@@ -1663,8 +1688,7 @@ namespace jimpilier
 
 	llvm::Value *FunctionAST::codegen(bool autoDeref, llvm::Value *other)
 	{
-		if (DEBUGGING)
-			std::cout << Proto->getName();
+		spdlog::debug("FunctionAST; other val: {0:x}", (long)other); 
 		llvm::Function *prevFunction = currentFunction;
 		std::vector<llvm::Type *> argtypes = (Proto->getArgTypes());
 		currentFunction = AliasMgr.functions.getFunction(Proto->Name, argtypes);
@@ -1734,6 +1758,7 @@ namespace jimpilier
 
 	llvm::Value *OperatorOverloadAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("OperatorOverloadAST; other val: {0:x}", (long)other); 
 
 		name += oper + "_";
 		llvm::raw_string_ostream stringstream(name);
@@ -1839,6 +1864,7 @@ namespace jimpilier
 
 	llvm::Value *AsOperatorOverloadAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("AsOperatorOverloadAST; other val: {0:x}", (long)other);
 		name += "operator_as_";
 		llvm::raw_string_ostream stringstream(name);
 		arg1[0].ty->codegen()->print(stringstream);
@@ -1920,6 +1946,7 @@ namespace jimpilier
 	}
 	llvm::Value *AssertionExprAST::codegen(bool autoDeref, llvm::Value *other)
 	{
+		spdlog::debug("AssertionExprAST; other val: {0:x}", (long)other); 
 		llvm::FunctionCallee abortfunc = GlobalVarsAndFunctions->getOrInsertFunction("abort",
 																					 llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false));
 		llvm::FunctionCallee printfunc = GlobalVarsAndFunctions->getOrInsertFunction("printf",
@@ -1949,6 +1976,7 @@ namespace jimpilier
 
 	llvm::Value *ASMExprAST::codegen(bool autoderef, llvm::Value *other)
 	{
+		spdlog::debug("ASMExprAST; other val: {0:x}", (long)other); 
 		llvm::InlineAsm *v = llvm::InlineAsm::get(llvm::FunctionType::get(llvm::Type::getVoidTy(*ctxt), false), assembly, "~{dirflag},~{fpsr},~{flags}", true, false, llvm::InlineAsm::AD_ATT);
 		builder->CreateCall(v, {});
 		return v;
