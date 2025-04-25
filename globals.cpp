@@ -1,5 +1,6 @@
 #include <iomanip>
 #include <stack>
+#include <spdlog/spdlog.h>
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -51,11 +52,13 @@ namespace jimpilier
 	void logError(const std::string &s, Token t)
 	{
 		std::cout << s << ' ' << t.toString() << std::endl;
+		spdlog::debug("{0} {1}", s, t);
 		assert(false);
 	}
 	void logError(const std::string &s)
 	{
 		std::cout << s << ' ' << std::endl;
+		spdlog::error(s);
 		assert(false);
 	}
 	/**
@@ -69,21 +72,25 @@ namespace jimpilier
 	 */
 	llvm::Value *makeCallWithReferences(std::vector<llvm::Value *> &ptrsToArgs, FunctionHeader &CalleeF, bool hasParent = false)
 	{
+		spdlog::debug("Making call with references. {0}() -> {1} (Has parent: {2})", CalleeF.func->getName().str(), AliasMgr.getTypeName(CalleeF.func->getReturnType()), (hasParent ? "true" : "false"));
 		for (unsigned i = hasParent; i < ptrsToArgs.size(); ++i)
 		{
 			if (!CalleeF.args[i-hasParent].isRef && ptrsToArgs[i]->getType() == CalleeF.args[i-hasParent].ty->getPointerTo())
 				ptrsToArgs[i] = builder->CreateLoad(ptrsToArgs[i]->getType()->getNonOpaquePointerElementType(), ptrsToArgs[i], "dereftmp");
 			if (!ptrsToArgs[i])
 			{
+				spdlog::error("Error saving function args. Arg number {0}/{1} is null!", i,ptrsToArgs.size()); 
 				assert(false && "Error saving function args");
 			}
 		}
 		if (!CalleeF.canThrow())
 			return CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateCall(CalleeF.func, ptrsToArgs) : builder->CreateCall(CalleeF.func, ptrsToArgs, "calltmp");
+		spdlog::debug("Function can throw; making checks for unwind blocks...");
 		assert(currentUnwindBlock != NULL && "Attempted to call a function that throws errors with no way to catch the error!");
 		llvm::BasicBlock *normalUnwindBlock = llvm::BasicBlock::Create(*ctxt, "NormalExecBlock", currentFunction);
 		llvm::Value *retval = CalleeF.func->getReturnType() == llvm::Type::getVoidTy(*ctxt) ? builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock, ptrsToArgs) : builder->CreateInvoke(CalleeF.func, normalUnwindBlock, currentUnwindBlock, ptrsToArgs, "calltmp");
 		builder->SetInsertPoint(normalUnwindBlock);
+		spdlog::debug("Unwind blocks found!");
 		return retval;
 	}
 
@@ -96,10 +103,22 @@ namespace jimpilier
 	 * @return FunctionHeader& - The operator to be called
 	 */
 	FunctionHeader getOperatorFromTypes(llvm::Type *arg1, const std::string& opStr, llvm::Type* arg2){
+		spdlog::debug("Retrieving operator ({0}) {1} ({2})", AliasMgr.getTypeName(arg1) ,opStr, AliasMgr.getTypeName(arg2));
 		FunctionHeader ret = operators[arg1][opStr][arg2];
-		if(ret.func == NULL) ret = operators[arg1 == NULL ? NULL : arg1->getPointerTo()][opStr][arg2]; 
-		if(ret.func == NULL) ret = operators[arg1][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
-		if(ret.func == NULL) ret = operators[arg1 == NULL? NULL : arg1->getPointerTo()][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
+		if(ret.func == NULL)
+		{
+			spdlog::debug("Operator not found. retrying with first arg as reference");
+			ret = operators[arg1 == NULL ? NULL : arg1->getPointerTo()][opStr][arg2]; 
+		}
+		if(ret.func == NULL) {
+			spdlog::debug("Operator not found. retrying with second arg as reference");
+			ret = operators[arg1][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
+		}
+		if(ret.func == NULL) {
+			spdlog::debug("Operator not found. retrying with both args as reference");
+			ret = operators[arg1 == NULL? NULL : arg1->getPointerTo()][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
+		}
+		spdlog::debug("Returning from operator search. Found? {}", ret.func == NULL? "false": "true");
 		return ret; 
 	}
 	/**
