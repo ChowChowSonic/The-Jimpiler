@@ -44,8 +44,6 @@ namespace jimpilier
 	std::map<llvm::Type *, std::map<std::string, std::map<llvm::Type *, FunctionHeader>>> operators;
 	std::map<llvm::Type *, llvm::Value *> classInfoVals;
 	std::string currentFile;
-	/* Strictly for testing purposes, not meant for releases*/
-	const bool DEBUGGING = false;
 
 	// <-- BEGINNING OF UTILITY FUNCTIONS -->
 

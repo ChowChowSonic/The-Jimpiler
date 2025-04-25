@@ -100,8 +100,6 @@ int main(int argc, char **args)
         x = jimpilier::getValidStmt(tokens);
         if (x != NULL)
             x->codegen();
-        if (jimpilier::DEBUGGING)
-            std::cout << endl;
     }
     if (jimpilier::GlobalVarsAndFunctions->getFunction("main") == NULL && jimpilier::STATIC != NULL)
         jimpilier::STATIC->setName("main");

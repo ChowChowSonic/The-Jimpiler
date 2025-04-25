@@ -64,7 +64,6 @@ namespace jimpilier
 			{
 				if (fheader.func == f)
 					return fheader;
-				if(DEBUGGING) std::cout << fheader.toString() <<endl; 
 			}
 		}
 		assert(false && "Function not found");

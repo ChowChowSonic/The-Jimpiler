@@ -96,8 +96,6 @@ namespace jimpilier
 				x = getValidStmt(tokens2);
 				if (x != NULL)
 					x->codegen();
-				if (DEBUGGING)
-					std::cout << endl;
 			}
 			currentFile = oldfile;
 		} while (tokens.peek() == COMMA && tokens.next() == COMMA);

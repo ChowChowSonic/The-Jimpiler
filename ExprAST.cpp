@@ -1078,9 +1078,6 @@ namespace jimpilier
 		llvm::Value *L = LHS->codegen();
 		llvm::Value *R = RHS->codegen();
 
-		if (DEBUGGING)
-			std::cout << " )";
-
 		switch (Op[0])
 		{
 		case '+':
@@ -1382,8 +1379,6 @@ namespace jimpilier
 			ret = Contents[i]->codegen();
 			for (auto &x : Contents[i]->throwables)
 				this->throwables.insert(x);
-			if (DEBUGGING)
-				std::cout << std::endl;
 		};
 		return ret;
 	}
@@ -1552,8 +1547,6 @@ namespace jimpilier
 		builder->CreateRet(builder->CreateLoad(AliasMgr["this"].val->getType()->getNonOpaquePointerElementType(), AliasMgr["this"].val));
 		// Validate the generated code, checking for consistency.
 		verifyFunction(*currentFunction);
-		if (DEBUGGING)
-			std::cout << "//end of " << objName << "'s constructor" << std::endl;
 		// remove the arguments now that they're out of scope
 		for (auto &Arg : currentFunction->args())
 		{
@@ -1736,8 +1729,6 @@ namespace jimpilier
 				builder->CreateRet(llvm::ConstantAggregateZero::get(currentFunction->getReturnType()));
 			// Validate the generated code, checking for consistency.
 			verifyFunction(*currentFunction);
-			if (DEBUGGING)
-				std::cout << "//end of " << Proto->getName() << std::endl;
 			// remove the arguments now that they're out of scope
 		}
 		else
@@ -1835,8 +1826,6 @@ namespace jimpilier
 		{
 			// Validate the generated code, checking for consistency.
 			verifyFunction(*currentFunction);
-			if (DEBUGGING)
-				std::cout << "//end of " << Proto.getName() << std::endl;
 			transform(oper.begin(), oper.end(), oper.begin(), ::toupper);
 		}
 		else
@@ -1925,8 +1914,6 @@ namespace jimpilier
 		{
 			// Validate the generated code, checking for consistency.
 			verifyFunction(*currentFunction);
-			if (DEBUGGING)
-				std::cout << "//end of " << Proto.getName() << std::endl;
 			operators[argtypes[0]]["AS"][argtypes[1]] = FunctionHeader(this->arg1, currentFunction, this->ret->isReference());
 			// remove the arguments now that they're out of scope
 		}
