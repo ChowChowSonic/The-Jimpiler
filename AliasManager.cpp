@@ -1,4 +1,5 @@
 #pragma once
+#include <spdlog/spdlog.h>
 #include <map>
 #include "llvm/IR/Function.h"
 #include "globals.cpp"
@@ -77,7 +78,7 @@ namespace jimpilier
 			// for(auto& x : f.args) tys.push_back(x.ty);
 			if (f == args)
 				return f.func;
-			// std::cout << f.args.size() << " " << args.size() << " " << (f.args[0] == args[0]) <<endl;
+			spdlog::debug("Searching for function {0} {1}(argc={2})", f.toString(), name, args.size());
 		}
 		return NULL;
 	}
@@ -89,17 +90,18 @@ namespace jimpilier
 			// for(auto& x : f.args) tys.push_back(x.ty);
 			if (f == args)
 				return f;
-			// std::cout << f.args.size() << " " << args.size() << " " << (f.args[0] == args[0]) <<endl;
+			spdlog::debug("Searching for function {0} {1}(argc={2})", f.toString(), name, args.size());
 		}
-		std::cout << "Unknown object function referenced, or incorrect arg types were passed: " << name << '(';
+		std::string msg = "Unknown object function referenced, or incorrect arg types were passed: " + name + "(";
 		int ctr = 0;
 		for (auto &x : args)
 		{
-			std::cout << AliasMgr.getTypeName(x);
+			msg += AliasMgr.getTypeName(x);
 			if (ctr < args.size() - 1)
-				std::cout << ", ";
+				msg += ", ";
 		}
-		std::cout << ')' << std::endl;
+		msg += ')';
+		spdlog::error(msg);
 		assert(false);
 	}
 	void FunctionAliasManager::addFunction(std::string name, llvm::Function *func, std::vector<jimpilier::Variable> &args, bool returnsRef)
@@ -158,7 +160,7 @@ namespace jimpilier
 		{
 			if (f == args)
 				return f.func;
-			// std::cout << f.args.size() << " " << args.size() << " " << (f.args[0] == args[0]) <<endl;
+			spdlog::debug("Searching for function {0} {1}(argc={2})", f.toString(), name, args.size());
 		}
 		return NULL;
 	}
@@ -189,7 +191,7 @@ namespace jimpilier
 	{
 		return structTypes[alias];
 	}
-	
+
 	bool ObjectAliasManager::addObject(std::string alias, llvm::Type *objType, std::vector<llvm::Type *> memberTypes, std::vector<std::string> memberNames)
 	{
 		if (structTypes[alias].ptr != NULL)
@@ -227,10 +229,11 @@ namespace jimpilier
 		structTypes[objName].functions.addFunction(funcAlias, func, types);
 	}
 
-	void ObjectAliasManager::removeObject(std::string name){
+	void ObjectAliasManager::removeObject(std::string name)
+	{
 		structTypes[name].ptr = NULL;
-		structTypes[name].members.clear(); 
-		structTypes[name].functions.clear(); 
+		structTypes[name].members.clear();
+		structTypes[name].functions.clear();
 	}
 	// ends ObjectAliasManager functions
 
