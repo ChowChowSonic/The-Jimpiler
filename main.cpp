@@ -17,9 +17,10 @@ g++ unlinked_exe $(llvm-config --ldflags --libs) -lpthread -o jmb && ./jmb
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include "jimpilier.h"
 
-template<>
+template <>
 struct fmt::formatter<Token> : fmt::formatter<std::string>
 {
     auto format(Token my, format_context &ctx) const -> decltype(ctx.out())
@@ -27,34 +28,45 @@ struct fmt::formatter<Token> : fmt::formatter<std::string>
         return fmt::format_to(ctx.out(), "[Token i={}]", my.toString());
     }
 };
-bool initialize_logger() {
-    try {
+bool initialize_logger()
+{
+    try
+    {
         // Create logs directory if it doesn't exist
-        mkdir("logs", 0777); 
+        mkdir("logs", 0777);
 
         // Create a rotating file sink with 5MB max size and 3 rotated files
-        auto max_size = 5 * 1024 * 1024;  // 5MB
-        auto max_files = 3;               // Keep 3 rotated files
-        auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-            "logs/compile.log", max_size, max_files
-        );
+        auto max_size = 5 * 1024 * 1024; // 5MB
+        auto max_files = 3;              // Keep 3 rotated files
+        // File sink (all levels >= debug)
+        auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+            "logs/compile.log", max_size, max_files);
 
-        // Create logger with multi-thread support
-        auto logger = std::make_shared<spdlog::logger>("multi_thread_logger", sink);
-        
+        // Console sink (only warnings and errors)
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        console_sink->set_level(spdlog::level::info);
+
+        // Create combined logger with both sinks
+        std::vector<spdlog::sink_ptr> sinks = {file_sink, console_sink};
+        auto logger = std::make_shared<spdlog::logger>(
+            "multi_thread_logger",
+            sinks.begin(),
+            sinks.end());
+
         // Set as default logger
         spdlog::set_default_logger(logger);
-        
+
         // Optional: Set log pattern
         spdlog::set_pattern("[thread %t:%l] %v");
-        
+
         // Set flush policy (immediately flush messages at or above warning level)
         spdlog::flush_on(spdlog::level::warn);
-        spdlog::set_level(spdlog::level::debug); 
+        spdlog::set_level(spdlog::level::debug);
         spdlog::info("--------- Logger initialized successfully. Begin New session. ----------");
         return true;
     }
-    catch (const spdlog::spdlog_ex& ex) {
+    catch (const spdlog::spdlog_ex &ex)
+    {
         std::cerr << "Log initialization failed: " << ex.what() << std::endl;
         return false;
     }
@@ -62,7 +74,7 @@ bool initialize_logger() {
 
 int main(int argc, char **args)
 {
-    initialize_logger(); 
+    initialize_logger();
     std::vector<std::string> all_args;
     if (argc > 1)
     {
