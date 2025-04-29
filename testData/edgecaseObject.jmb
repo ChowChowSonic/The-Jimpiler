@@ -1,0 +1,17 @@
+// Edge Case: Objects and member access
+object Foo {
+    int x;
+    constructor(int val) {
+        x = val;
+    }
+    int getX() {
+        return x;
+    }
+}
+
+int main() {
+    Foo obj = Foo(42);
+    println obj.x;
+    println obj.getX();
+    return 0;
+}

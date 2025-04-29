@@ -1,0 +1,28 @@
+// Edge Case: Nested template types
+// Assuming Jimbo supports C++-like templates
+
+object Box<T>{
+    T value;
+    constructor(T val) {
+        this.value = val;
+    }
+    T get() {
+        return this.value;
+    }
+}
+
+object Wrapper<U>{
+    Box<U> val 
+    constructor(U val){
+        this.val = Box<U>(val)
+    }
+    U get(){
+        return this.val.get()
+    }
+}
+
+int main() {
+    Wrapper< Box<int> > w = Wrapper< Box<int> >(123);
+    println w.get().get()
+    return 0;
+}

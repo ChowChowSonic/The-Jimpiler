@@ -1,0 +1,14 @@
+// Edge Case 4: Switch with overlapping/ambiguous cases and missing default
+int main(){
+    int val = 2;
+    switch auto break val {
+        case 1, 2, 2 {
+            println "Case 1, 2, 2 reached";
+        }
+        case 2, 3 {
+            println "Case 2, 3 reached";
+        }
+        // No default case
+    }
+    return 0;
+}

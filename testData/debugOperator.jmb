@@ -1,0 +1,10 @@
+// Edge Case 3: Debug print operator in unusual ways
+int main(){
+    int a = 2;
+    int b = 3;
+    (a + b)! // Chained debug print on expression
+    (a * (b + 1))! // Nested expression debug print
+    int c = (a + b) + (a * b)! // Multiple debug prints in one line
+    c!
+    return 0;
+}

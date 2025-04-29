@@ -1,0 +1,16 @@
+// Edge Case: Nested try/catch statements
+int main() {
+    try {
+        println "Outer try";
+        try {
+            println "Inner try";
+            throw "Inner error";
+        } catch char* e {
+            println "Caught inner: ", e;
+            throw "Outer error";
+        }
+    } catch char* e {
+        println "Caught outer: ", e;
+    }
+    return 0;
+}

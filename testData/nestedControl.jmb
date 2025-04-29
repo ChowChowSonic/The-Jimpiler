@@ -1,0 +1,16 @@
+// Edge Case 2: Deeply nested and empty control flow
+int main(){
+    int x = 0;
+    if (x == 0) {
+        while (x < 1) {
+            switch auto break x {
+                case 0 {
+                    // Empty case
+                }
+                default {
+                    // Also empty
+                }
+            }
+        }
+    }
+}

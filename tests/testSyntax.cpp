@@ -21,3 +21,27 @@ TEST(TestSyntax, TestTemplateTypes){
 	int result = system("./jmb testData/templateType.jmb 2> /dev/null");
     EXPECT_EQ(result, EXIT_SUCCESS);
 }
+TEST(TestSyntax, TestDebugPrintOperator){
+	int result = system("./jmb testData/debugOperator.jmb 2> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+}
+TEST(TestSyntax, TestNestedControl){
+	int result = system("./jmb testData/nestedControl.jmb 2> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+}
+TEST(TestSyntax, TestNestedTemplates){
+	int result = system("./jmb testData/nestedTemplates.jmb 2> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+}
+TEST(TestSyntax, TestComplexObjects){
+	int result = system("./jmb testData/edgecaseObject.jmb 2> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+}
+TEST(TestSyntax, TestEdgecaseSwitchStmts){
+	int result = system("./jmb testData/edgecaseSwitchCase.jmb 2> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+}
+TEST(TestSyntax, TestNestedTryCatch){
+	int result = system("./jmb testData/nestedTryCatch.jmb 2> /dev/null");
+    EXPECT_EQ(result, EXIT_SUCCESS);
+}
