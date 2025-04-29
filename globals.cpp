@@ -49,13 +49,11 @@ namespace jimpilier
 
 	void logError(const std::string &s, Token t)
 	{
-		std::cout << s << ' ' << t.toString() << std::endl;
-		spdlog::debug("{0} {1}", s, t);
+		spdlog::error("{0} {1}", s, t);
 		assert(false);
 	}
 	void logError(const std::string &s)
 	{
-		std::cout << s << ' ' << std::endl;
 		spdlog::error(s);
 		assert(false);
 	}

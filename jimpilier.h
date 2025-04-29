@@ -1,3 +1,4 @@
+#include <spdlog/spdlog.h>
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
@@ -52,7 +53,6 @@ namespace jimpilier
 		file.open(fileDir);
 		if (!file)
 		{
-			std::cout << "File '" << fileDir << "' does not exist" << std::endl;
 			logError("File does not exist!", Token(ERR, "ERROR", -1));
 		}
 		int ln = 1;
@@ -854,7 +854,6 @@ namespace jimpilier
 				if(tokens.peek() != CLOSESQUARE){// assert(tokens.next() == CLOSESQUARE)
 					logError("Expected a closing square bracket here ", tokens.next());
 				}
-				//std::cout << tokens.next().toString() << endl; 
 				tokens.next(); 
 				type = std::make_unique<ArrayOfTypeExpr>(type);  
 				continue; 

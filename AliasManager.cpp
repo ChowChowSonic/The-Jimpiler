@@ -160,7 +160,7 @@ namespace jimpilier
 		{
 			if (f == args)
 				return f.func;
-			spdlog::debug("Searching for function {0} {1}(argc={2})", f.toString(), name, args.size());
+			spdlog::debug("Searching for function {0} {1}(argc={2})", f.toString(), AliasMgr.getTypeName(ty), args.size());
 		}
 		return NULL;
 	}

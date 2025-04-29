@@ -62,7 +62,7 @@ bool initialize_logger()
         // Set flush policy (immediately flush messages at or above warning level)
         spdlog::flush_on(spdlog::level::warn);
         spdlog::set_level(spdlog::level::debug);
-        spdlog::info("--------- Logger initialized successfully. Begin New session. ----------");
+        spdlog::debug("--------- Logger initialized successfully. Begin New session. ----------");
         return true;
     }
     catch (const spdlog::spdlog_ex &ex)
@@ -82,7 +82,7 @@ int main(int argc, char **args)
     }
     else
     {
-        std::cout << "Error: No args provided" << endl;
+        spdlog::error("Error: No args provided");
         return 1;
     }
 
@@ -121,7 +121,7 @@ int main(int argc, char **args)
     }
     time_t end = time(nullptr);
 
-    std::cout << "; Code was compiled in approx: " << (end - now) << " seconds" << endl;
+    spdlog::debug("; Code was compiled in approx: {} seconds",(end - now) );
     jimpilier::GlobalVarsAndFunctions->dump();
-    spdlog::info("--------- End Existing session. ----------");
+    spdlog::debug("--------- End Existing session. ----------");
 }

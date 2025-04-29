@@ -880,7 +880,8 @@ namespace jimpilier
 		rval = rhs->codegen(true, lval);
 		for (auto &x : rhs->throwables)
 			this->throwables.insert(x);
-		spdlog::debug("{0:x} = {1:x}", (long)lhs, (long)rhs); 
+		spdlog::debug("LHS == null?  {0}", lhs == NULL ? "True":"False"); 
+		spdlog::debug("RHS == null?  {0}", rhs == NULL ? "True":"False"); 
 		if (lval != NULL && rval != NULL)
 		{
 			if (currentFunction == NULL)

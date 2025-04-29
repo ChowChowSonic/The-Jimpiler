@@ -2,10 +2,10 @@
 object Foo {
     int x;
     constructor(int val) {
-        x = val;
+        this.x = val;
     }
     int getX() {
-        return x;
+        return this.x;
     }
 }
 

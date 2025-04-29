@@ -151,7 +151,7 @@ namespace jimpilier
 			logError("Unknown object of name: " + name);
 			return NULL;
 		}
-		spdlog::debug("Retrieving template type expression: {}", name);
+		spdlog::debug("Retrieving struct type expression: {}", name);
 		return ty;
 	}
 	std::string StructTypeExpr::getName() { return name; }
