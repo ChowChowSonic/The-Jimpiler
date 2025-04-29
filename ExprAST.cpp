@@ -1676,6 +1676,9 @@ namespace jimpilier
 			Arg.setName(Argnames[Idx++]);
 		}
 		AliasMgr.functions.addFunction(Name, F, Args, Errt, retType->isReference());
+		if(parent != ""){
+			Args.erase(Args.begin()); 
+		}
 		return F;
 	}
 
@@ -1708,6 +1711,7 @@ namespace jimpilier
 			areReferences.push_back(true);
 		for (auto &arg : Proto->Args)
 			areReferences.push_back(arg.ty->isReference());
+		std::string debugnames;  
 		for (auto &Arg : currentFunction->args())
 		{
 			int argno = Arg.getArgNo();
@@ -1716,8 +1720,9 @@ namespace jimpilier
 			std::string name = std::string(Arg.getName());
 			// std::cout << Proto->Name +" " << Proto->Args.size() << " " <<Arg.getArgNo() << " " << currentFunction->arg_size() <<endl;
 			AliasMgr[name] = {storedvar, areReferences[argno]};
+			debugnames+=name+","; 
 		}
-
+		spdlog::debug("Set argument names for {0}({1})", Proto->getName(), debugnames); 
 		llvm::Instruction *currentEntry = &BB->getIterator()->back();
 		llvm::Value *RetVal = Body == NULL ? NULL : Body->codegen();
 
