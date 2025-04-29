@@ -145,7 +145,7 @@ namespace jimpilier
 		{
 			// TODO: Implement operator overloading
 		}
-		std::cout << "Error: you're trying to take a negation of a non-boolean value!" << std::endl;
+		spdlog::error("Error: you're trying to take a negation of a non-boolean value!");
 		return NULL;
 	}
 
@@ -661,7 +661,7 @@ namespace jimpilier
 		std::vector<llvm::Type *> argstmp;
 		argstmp.push_back(deletedthing->getType());
 		std::string nametmp = "destructor@" + AliasMgr.objects.getObjectName(deletedthing->getType()->getContainedType(0));
-		// std::cout << AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr) << std::endl;
+		spdlog::debug("Typename of the thing we're deleting: {}", AliasMgr.getTypeName(AliasMgr.objects.getObject(deletedthing->getType()->getContainedType(0)).ptr));
 		deletedthing = builder->CreateBitCast(deletedthing, llvm::Type::getInt8PtrTy(*ctxt), "bitcasttmp");
 		builder->CreateCall((llvm::Function *)freefunc, deletedthing, "freedValue");
 		return NULL;
@@ -805,8 +805,6 @@ namespace jimpilier
 		for (auto i = Contents.end(); i < Contents.begin(); i--)
 		{
 			ret = i->get()->codegen();
-			if (i != Contents.end() - 1)
-				std::cout << ", ";
 		};
 		return ret;
 	}
@@ -876,13 +874,13 @@ namespace jimpilier
 	{
 		spdlog::debug("AssignStmtAST; other val: {0:x}", (long)other); 
 		llvm::Value *lval, *rval;
-		// std::cout << std::hex << LHS << RHS <<endl;
 		lval = lhs->codegen(false);
 		for (auto &x : lhs->throwables)
 			this->throwables.insert(x);
 		rval = rhs->codegen(true, lval);
 		for (auto &x : rhs->throwables)
 			this->throwables.insert(x);
+		spdlog::debug("{0:x} = {1:x}", (long)lhs, (long)rhs); 
 		if (lval != NULL && rval != NULL)
 		{
 			if (currentFunction == NULL)
@@ -1135,7 +1133,7 @@ namespace jimpilier
 		case 'o':
 			return builder->CreateLogicalOr(L, R, "ortmp");
 		default:
-			std::cout << "Error: Unknown operator" << Op;
+			spdlog::error("Error: Unknown operator {}", Op);
 			return NULL;
 		}
 	}
@@ -1286,7 +1284,7 @@ namespace jimpilier
 		if (classInfoVals[ballval->getType()] == NULL)
 		{
 			llvm::GlobalVariable *thrownerror = (llvm::GlobalVariable *)GlobalVarsAndFunctions->getOrInsertGlobal(thrownerrorname, errorMetadataType);
-			// std::cout << AliasMgr.getTypeName(ballval->getType(), true) <<endl;
+			spdlog::debug("Typename of the thrown object: {}", AliasMgr.getTypeName(ballval->getType(), true));
 			classInfoVals[ballval->getType()] = thrownerror;
 			assert(thrownerror != NULL && "Fatal error trying to generate throw statement");
 			// initialize the globals:
@@ -1494,7 +1492,7 @@ namespace jimpilier
 			ArgsV.push_back(Args[i]->codegen(false));
 			if (!ArgsV.back())
 			{
-				std::cout << "Error saving function args";
+				spdlog::error("Error saving function args (arg no. {})", i);
 				return nullptr;
 			}
 			ArgsT.push_back(ArgsV.back()->getType());
@@ -1718,7 +1716,7 @@ namespace jimpilier
 			llvm::Value *storedvar = builder->CreateAlloca(Arg.getType(), NULL, Arg.getName());
 			builder->CreateStore(&Arg, storedvar);
 			std::string name = std::string(Arg.getName());
-			// std::cout << Proto->Name +" " << Proto->Args.size() << " " <<Arg.getArgNo() << " " << currentFunction->arg_size() <<endl;
+			spdlog::debug("creating prototype args: {0}(argc={1};proto.argc={3}) current arg no{2}", Proto->Name, Proto->Args.size(), Arg.getArgNo(), currentFunction->arg_size());
 			AliasMgr[name] = {storedvar, areReferences[argno]};
 			debugnames+=name+","; 
 		}
@@ -1837,7 +1835,7 @@ namespace jimpilier
 		{
 			currentFunction->deleteBody();
 		}
-		// std::cout << AliasMgr.getTypeName(nullableArgtypes[0]) << " " << oper << " " << AliasMgr.getTypeName(nullableArgtypes[1]) <<endl;
+		spdlog::debug("{0} {1} {2}", AliasMgr.getTypeName(nullableArgtypes[0]), oper, AliasMgr.getTypeName(nullableArgtypes[1]));
 
 		// remove the arguments now that they're out of scope
 		for (auto &Arg : currentFunction->args())
