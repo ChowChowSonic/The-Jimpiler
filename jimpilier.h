@@ -1408,7 +1408,7 @@ namespace jimpilier
 		}
 		std::unique_ptr<ExprAST> val = NULL;
 		if (!(tokens.peek() == SEMICOL || tokens.peek() == CLOSECURL))
-			val = std::move(jimpilier::listExpr(tokens));
+			val = std::move(jimpilier::debugPrintStmt(tokens));
 		return std::make_unique<RetStmtAST>(val);
 	}
 

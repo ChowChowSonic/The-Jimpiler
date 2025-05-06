@@ -4,7 +4,7 @@ int main(){
     int b = 3;
     (a + b)! // Chained debug print on expression
     (a * (b + 1))! // Nested expression debug print
-    int c = (a + b) + (a * b)! // Multiple debug prints in one line
+    int c = (a + b) + (a * b)!
     c!
-    return 0;
+    return 0!
 }

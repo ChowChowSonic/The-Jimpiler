@@ -4,13 +4,13 @@ int main() {
         println "Outer try";
         try {
             println "Inner try";
-            throw "Inner error";
+            throw "inner try";
         } catch char* e {
-            println "Caught inner: ", e;
-            throw "Outer error";
+            println "Caught inner:", e;
+            throw 1;
         }
-    } catch char* e {
-        println "Caught outer: ", e;
+    } catch int e {
+        println "Caught outer:", e;
     }
     return 0;
 }

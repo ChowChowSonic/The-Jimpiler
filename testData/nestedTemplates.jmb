@@ -14,7 +14,7 @@ object Box<T>{
 object Wrapper<U>{
     Box<U> val 
     constructor(U val){
-        this.val = Box<U>(val)
+        this.val = val
     }
     U get(){
         return this.val.get()
@@ -22,7 +22,9 @@ object Wrapper<U>{
 }
 
 int main() {
-    Wrapper< Box<int> > w = Wrapper< Box<int> >(123);
-    println w.get().get()
+    Box<int> x = Box<int>(123)
+    Wrapper< Box<int> > w = Wrapper< Box<int> >(x);
+    x= w.get()
+    println x.get()
     return 0;
 }
