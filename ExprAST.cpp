@@ -1153,6 +1153,7 @@ namespace jimpilier
 		builder->SetInsertPoint(tryBlock);
 		currentUnwindBlock = landingpad;
 		llvm::Value *ballval = body->codegen();
+		currentUnwindBlock = oldLP; 
 		builder->CreateBr(tryEnd);
 		builder->SetInsertPoint(landingpad);
 
@@ -1195,7 +1196,7 @@ namespace jimpilier
 				nextblock = catchCheckBlock;
 
 				builder->SetInsertPoint(catchBlock);
-				AliasMgr[x->second.second] = {(llvm::Value *)builder->CreateBitCast(builder->CreateCall(begin_catch, {extractedval}), x->first->codegen()->getPointerTo(), "errorptr"), false};
+				AliasMgr[x->second.second] = {(llvm::Value *)builder->CreateBitCast(builder->CreateCall(begin_catch, {extractedval}, "catchtmp"), x->first->codegen()->getPointerTo(), "errorptr"), false};
 				llvm::Value *caughtError = AliasMgr[x->second.second].val; 
 				FunctionHeader fh = getOperatorFromTypes(NULL, "CATCH", x->first->codegen());
 				if (fh.func != NULL)
