@@ -1,0 +1,7 @@
+import testData._IO_FILE
+
+int main(){
+	_IO_FILE f; 
+	println "Import Successful!"
+	return 0
+}
