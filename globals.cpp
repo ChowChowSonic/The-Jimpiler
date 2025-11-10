@@ -12,8 +12,7 @@
 #include "tokenizer.cpp"
 #include "AliasManager.h"
 #include "TemplateGenerator.cpp"
-namespace jimpilier
-{
+namespace jimpilier {
 	class AliasManager;
 	/*
 	 * General Naming rule:
@@ -46,36 +45,45 @@ namespace jimpilier
 	std::string currentFile;
 
 	// <-- BEGINNING OF UTILITY FUNCTIONS -->
+	void beginNewModule(const std::string& moduleName) {
 
-	void logError(const std::string &s, Token t)
-	{
+		// 1. Verify the import statement is being called correctly:
+		assert(GlobalVarsAndFunctions == NULL && "Old module must be safely stored and/or prepared for merging before a new module can be created!");
+		assert(currentFunction == NULL || currentFunction == STATIC && "Cannot call import statements inside of functions!");
+		assert(currentUnwindBlock == NULL && "Cannot call import statements when currentUnwindBlock is not null!");
+		assert(escapeBlock.empty() && "EscapeBlock stack must be empty for a new module to be imported!");
+		// 2. Instantiate the NEW module (replaces the old one)
+		GlobalVarsAndFunctions = std::make_unique<llvm::Module>(moduleName, *ctxt);
+
+		// The builder must be re-pointed to a block in the NEW module when the first function is created.
+		// We can reset its insertion point for safety:
+		builder->ClearInsertionPoint();
+	}
+
+	void logError(const std::string &s, Token t) {
 		spdlog::error("{0} {1}", s, t);
 		assert(false);
 	}
-	void logError(const std::string &s)
-	{
+	void logError(const std::string &s) {
 		spdlog::error(s);
 		assert(false);
 	}
 	/**
 	 * @brief Makes a call to a function (defined in `CalleeF`) using a std::vector<> containing pointers to each of the args.
-	 * Dereferences each arg as necessary to ensure that non-references are passed correctly, while references may be passed as 
+	 * Dereferences each arg as necessary to ensure that non-references are passed correctly, while references may be passed as
 	 * pointers to the object or as the object itself (in other words, if we have `int* x`, we don't have to say `@x` when passing x to a `int@ arg`)
-	 * 
+	 *
 	 * @param ptrsToArgs - The arguments passed to this object, ideally via their `codegen(false)` method
 	 * @param CalleeF - The function header to call
 	 * @return llvm::Value* - The result of the call
 	 */
-	llvm::Value *makeCallWithReferences(std::vector<llvm::Value *> &ptrsToArgs, FunctionHeader &CalleeF, bool hasParent = false)
-	{
+	llvm::Value *makeCallWithReferences(std::vector<llvm::Value *> &ptrsToArgs, FunctionHeader &CalleeF, bool hasParent = false) {
 		spdlog::debug("Making call with references. {0}() -> {1} (Has parent: {2})", CalleeF.func->getName().str(), AliasMgr.getTypeName(CalleeF.func->getReturnType()), (hasParent ? "true" : "false"));
-		for (unsigned i = hasParent; i < ptrsToArgs.size(); ++i)
-		{
+		for (unsigned i = hasParent; i < ptrsToArgs.size(); ++i) {
 			if (!CalleeF.args[i-hasParent].isRef && ptrsToArgs[i]->getType() == CalleeF.args[i-hasParent].ty->getPointerTo())
 				ptrsToArgs[i] = builder->CreateLoad(ptrsToArgs[i]->getType()->getNonOpaquePointerElementType(), ptrsToArgs[i], "dereftmp");
-			if (!ptrsToArgs[i])
-			{
-				spdlog::error("Error saving function args. Arg number {0}/{1} is null!", i,ptrsToArgs.size()); 
+			if (!ptrsToArgs[i]) {
+				spdlog::error("Error saving function args. Arg number {0}/{1} is null!", i,ptrsToArgs.size());
 				assert(false && "Error saving function args");
 			}
 		}
@@ -92,42 +100,41 @@ namespace jimpilier
 
 	/**
 	 * @brief Get the Operator called between two types. Attempts to retrieve operators with references if one with raw object types are not found
-	 * 
-	 * @param arg1 - the left-hand ("first") argument type passed to the operator 
+	 *
+	 * @param arg1 - the left-hand ("first") argument type passed to the operator
 	 * @param opStr - The string representing the operator being called
 	 * @param arg2 - the right-hand ("second") argument type passed to the operator
 	 * @return FunctionHeader& - The operator to be called
 	 */
-	FunctionHeader getOperatorFromTypes(llvm::Type *arg1, const std::string& opStr, llvm::Type* arg2){
-		spdlog::debug("Retrieving operator ({0}) {1} ({2})", AliasMgr.getTypeName(arg1) ,opStr, AliasMgr.getTypeName(arg2));
+	FunctionHeader getOperatorFromTypes(llvm::Type *arg1, const std::string& opStr, llvm::Type* arg2) {
+		spdlog::debug("Retrieving operator ({0}) {1} ({2})", AliasMgr.getTypeName(arg1),opStr, AliasMgr.getTypeName(arg2));
 		FunctionHeader ret = operators[arg1][opStr][arg2];
-		if(ret.func == NULL)
-		{
+		if(ret.func == NULL) {
 			spdlog::debug("Operator not found. retrying with first arg as reference");
-			ret = operators[arg1 == NULL ? NULL : arg1->getPointerTo()][opStr][arg2]; 
+			ret = operators[arg1 == NULL ? NULL : arg1->getPointerTo()][opStr][arg2];
 		}
 		if(ret.func == NULL) {
 			spdlog::debug("Operator not found. retrying with second arg as reference");
-			ret = operators[arg1][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
+			ret = operators[arg1][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()];
 		}
 		if(ret.func == NULL) {
 			spdlog::debug("Operator not found. retrying with both args as reference");
-			ret = operators[arg1 == NULL? NULL : arg1->getPointerTo()][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()]; 
+			ret = operators[arg1 == NULL? NULL : arg1->getPointerTo()][opStr][arg2 == NULL ? NULL : arg2->getPointerTo()];
 		}
 		spdlog::debug("Returning from operator search. Found? {}", ret.func == NULL? "false": "true");
-		return ret; 
+		return ret;
 	}
 	/**
 	 * @brief Get the Operator called between two values. Attempts to retrieve operators with references if one with raw object types are not found
-	 * 
-	 * @param arg1 - the left-hand ("first") argument passed to the operator 
+	 *
+	 * @param arg1 - the left-hand ("first") argument passed to the operator
 	 * @param opStr - The string representing the operator being called
 	 * @param arg2 - the right-hand ("second") argument passed to the operator
 	 * @return FunctionHeader& - the operator to be called
 	 */
-	FunctionHeader getOperatorFromVals(llvm::Value *arg1, const std::string& opStr, llvm::Value* arg2){
-		llvm::Type *t1 = arg1 == NULL ? (llvm::Type*)NULL : (llvm::Type*)arg1->getType(), *t2 = arg2 == NULL ? (llvm::Type*) NULL : (llvm::Type*)arg2->getType(); 
-		return getOperatorFromTypes(t1, opStr, t2); 
+	FunctionHeader getOperatorFromVals(llvm::Value *arg1, const std::string& opStr, llvm::Value* arg2) {
+		llvm::Type *t1 = arg1 == NULL ? (llvm::Type*)NULL : (llvm::Type*)arg1->getType(), *t2 = arg2 == NULL ? (llvm::Type*) NULL : (llvm::Type*)arg2->getType();
+		return getOperatorFromTypes(t1, opStr, t2);
 	}
 }
 
